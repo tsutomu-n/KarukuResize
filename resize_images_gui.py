@@ -25,12 +25,13 @@ try:
         resize_and_compress_image,
         get_destination_path,
         sanitize_filename,
+        format_file_size,
     )
 except ImportError:
 
     def resize_and_compress_image(*args, **kwargs):
         print("ダミー: resize_and_compress_image")
-        return True, True, "ダミー処理成功"
+        return True, {'original_size': 100000, 'new_size': 50000, 'compression_ratio': 50.0}, "ダミー処理成功"
 
     def get_destination_path(source_path, source_dir, dest_dir):
         print("ダミー: get_destination_path")
@@ -39,6 +40,13 @@ except ImportError:
     def sanitize_filename(filename):
         print("ダミー: sanitize_filename")
         return filename
+        
+    def format_file_size(size_in_bytes):
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_in_bytes < 1024.0 or unit == 'GB':
+                break
+            size_in_bytes /= 1024.0
+        return f"{size_in_bytes:.1f} {unit}"
 
 
 class App(ctk.CTk):
@@ -690,8 +698,28 @@ class App(ctk.CTk):
         except Exception as e:
             print(f"ログ表示エラー: {e} - メッセージ: {message}")
 
-    def update_progress(self, value):
-        self.progress_bar.set(value)
+    def update_progress(self, value, pulse=False):
+        """
+        進捗バーを更新する
+        
+        Args:
+            value: 0.0-1.0の間の進捗値
+            pulse: Trueの場合、パルスモードを使用（処理中アニメーション）
+        """
+        if pulse:
+            # パルスモードの場合、少し値を変動させて動きを演出
+            current = self.progress_bar.get()
+            # 0.45-0.55の間で値を変動させる
+            if current < 0.45 or current > 0.55:
+                self.progress_bar.set(0.5)
+            else:
+                # 少しずつ値を変更して動きを作る
+                delta = 0.01
+                new_value = current + delta if current < 0.55 else current - delta
+                self.progress_bar.set(new_value)
+        else:
+            # 通常モード
+            self.progress_bar.set(value)
 
     def center_window(self):
         """Windows環境でも正しく動作するよう修正した中央配置メソッド"""
@@ -732,97 +760,42 @@ class App(ctk.CTk):
                 "エラー: 入力ファイルが選択されていません。ファイルを選択してください。"
             )
             self.finish_resize_process(success=False)
-            return
-        if not Path(input_file_str).is_file():
-            self.add_log_message(
-                f"エラー: 入力ファイルが見つかりません: {input_file_str}\nファイルが存在するか確認してください。"
-            )
-            self.finish_resize_process(success=False)
-            return
-        if not output_dir_str:
-            self.add_log_message(
-                "エラー: 出力先フォルダが選択されていません。出力先フォルダを指定してください。"
-            )
-            self.finish_resize_process(success=False)
-            return
-        if not Path(output_dir_str).is_dir():
-            self.add_log_message(
-                f"エラー: 出力先フォルダが見つからないか、フォルダではありません: {output_dir_str}\n有効なフォルダを指定してください。"
-            )
-            self.finish_resize_process(success=False)
-            return
 
-        try:
-            resize_value = int(resize_value_str)
-            if resize_value <= 0:
-                raise ValueError("リサイズ値は正の整数である必要があります。")
-        except ValueError:
-            self.add_log_message(
-                f"エラー: リサイズ値が無効です: {resize_value_str}\n正の整数値を入力してください。"
-            )
-            self.finish_resize_process(success=False)
-            return
-
-        source_path = Path(input_file_str)
-        dest_dir = Path(output_dir_str)
-
-        mode_map = {"パーセント": "percentage", "幅指定": "width", "高さ指定": "height"}
-        core_resize_mode = mode_map.get(resize_mode_gui, "percentage")
-
-        format_map = {
-            "元のフォーマットを維持": "original",
-            "PNG": "png",
+        core_output_format = {
             "JPEG": "jpeg",
-            "WEBP": "webp",
-        }
-        core_output_format = format_map.get(output_format_gui, "original")
+            "PNG": "png",
+            "WebP": "webp",
+            "入力と同じ": "same",
+        }.get(output_format, "same")
 
+<<<<<<< HEAD
         exif_map = {"EXIFを保持": "keep", "EXIFを削除": "remove"}
         core_exif_handling = exif_map.get(exif_handling_gui, "keep")
 
+=======
+        # 出力ファイルパスの生成
+>>>>>>> b075772798eee0bc805bb3427626dc77c4066421
         base_name = source_path.stem
-        if core_output_format != "original":
-            ext = f".{core_output_format.lower()}"
-        else:
-            ext = source_path.suffix
+        ext = source_path.suffix
 
         sanitized_stem = sanitize_filename(base_name)
-        output_filename = sanitized_stem + ext
-        dest_path = dest_dir / output_filename
-
-        self.add_log_message(f"入力: {source_path}")
-        self.add_log_message(f"出力先: {dest_path}")
         self.add_log_message(
-            f"モード: {core_resize_mode}, 値: {resize_value}, アスペクト比維持: {keep_aspect_ratio}"
+            "エラー: 入力ファイルが選択されていません。ファイルを選択してください。"
         )
-        self.add_log_message(
-            f"フォーマット: {core_output_format}, 品質: {quality if core_output_format in ['jpeg', 'webp'] else 'N/A'}"
-        )
-        self.add_log_message(f"EXIF情報: {exif_handling_gui}") # Log EXIF handling
+        self.finish_resize_process(success=False)
 
-        self.update_progress(0.3)
+    core_output_format = {
+        "JPEG": "jpeg",
+        "PNG": "png",
+        "WebP": "webp",
+        "入力と同じ": "same",
+    }.get(output_format, "same")
 
-        try:
-            self.add_log_message("画像処理の準備ができました。スレッドを開始します...")
+    exif_map = {"EXIFを保持": "keep", "EXIFを削除": "remove"}
+    core_exif_handling = exif_map.get(exif_handling_gui, "keep")
 
-            # Create and start the thread
-            thread = threading.Thread(
-                target=self._execute_resize_in_thread,
-                args=(
-                    source_path,
-                    dest_path,
-                    core_resize_mode,
-                    resize_value,
-                    keep_aspect_ratio,
-                    core_output_format,
-                    quality,
-                    core_exif_handling, # Pass EXIF handling to thread
-                ),
-                daemon=True 
-            )
-            thread.start()
-            # スレッドのjoinはここでは行いません。GUIがブロックされるため。
-            # _execute_resize_in_thread 内で self.after を使ってGUIを更新します。
+    base_name = source_path.stem
+    ext = source_path.suffix
 
         except Exception as e: 
             self.add_log_message(f"画像処理スレッドの開始に失敗しました: {e}")
@@ -928,12 +901,25 @@ class App(ctk.CTk):
             self.after(0, lambda: self.add_log_message(detailed_error_message, is_error=True))
             self.after(0, lambda: self.add_log_message(f"トレースバック:\n{tb_str}", is_error=True))
             self.after(0, lambda: self.finish_resize_process(success=False, message=f"予期せぬエラー: {e}"))
+=======
+                ),
+                daemon=True
+            )
+            self.processing_thread.start()
+            
+            # 進捗状況の更新を開始
+            self.after(100, self._check_thread_status)
+        except Exception as e:
+            self.add_log_message(f"画像処理の開始中に予期せぬエラーが発生しました: {e}")
+            self.finish_resize_process(success=False, message=str(e))
+>>>>>>> b075772798eee0bc805bb3427626dc77c4066421
 
     def cancel_resize_process(self):
-        self.add_log_message("リサイズ処理を中断しました。")
-        self.finish_resize_process(
-            success=False, message="ユーザーにより中断されました。"
-        )
+        self.add_log_message("リサイズ処理を中断しています...")
+        self.cancel_requested = True
+        
+        # スレッドは自然に終了するのを待つ
+        # 本格的な実装では、もっと洗練された中断機構が必要
 
     def finish_resize_process(self, success=True, message="処理完了"):
         if success:
