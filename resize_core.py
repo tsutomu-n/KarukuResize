@@ -738,7 +738,7 @@ def find_image_files(source_dir) -> list[Path]:
 
 
 def resize_and_compress_image(source_path, dest_path, target_width: int, quality: int, 
-                       format: str = 'original', keep_exif: bool = True, 
+                       format: str = 'original', exif_handling: str = "keep", 
                        balance: int = 5, webp_lossless: bool = False, 
                        dry_run: bool = False) -> tuple[bool, bool, int | None]:
     """
@@ -750,7 +750,7 @@ def resize_and_compress_image(source_path, dest_path, target_width: int, quality
         target_width: 目標の幅 (ピクセル、1以上の整数)
         quality: 圧縮品質 (1-100の整数)
         format: 出力形式 ('original', 'jpeg', 'png', 'webp')
-        keep_exif: EXIFメタデータを保持するか
+        exif_handling: EXIFメタデータの取り扱い ('keep': 維持, 'remove': 削除)
         balance: 圧縮と品質のバランス (1-10, 1=最高圧縮率, 10=最高品質)
         webp_lossless: WebPをロスレスで保存するかどうか
         dry_run: 実際の処理を行わずサイズ見積もりのみ実施
@@ -783,6 +783,9 @@ def resize_and_compress_image(source_path, dest_path, target_width: int, quality
     
     if format not in ['original', 'jpeg', 'png', 'webp']:
         logger.warning(f"推奨されない出力形式: {format}. 'original', 'jpeg', 'png', 'webp' のいずれかを使用することをお勧めします")
+    
+    if exif_handling not in ["keep", "remove"]:
+        logger.warning(f"推奨されないEXIF取り扱い: {exif_handling}. 'keep' または 'remove' のいずれかを使用することをお勧めします")
     
     # 変数の初期化 - スコープ問題防止のため先に定義
     source_path_str = ""
@@ -970,7 +973,7 @@ def resize_and_compress_image(source_path, dest_path, target_width: int, quality
                         'progressive': True
                     }
                     # EXIF情報を保持する場合
-                    if keep_exif and hasattr(img, 'info') and 'exif' in img.info:
+                    if exif_handling == "keep" and hasattr(img, 'info') and 'exif' in img.info:
                         save_options['exif'] = img.info['exif']
                     
                     # JPEGはRGBモードである必要がある
@@ -990,7 +993,7 @@ def resize_and_compress_image(source_path, dest_path, target_width: int, quality
                         'compress_level': compress_level
                     }
                     # EXIFはPNG標準では保存されないことが多いが、念のため試みる (Pillow次第)
-                    if keep_exif and hasattr(img, 'info') and 'exif' in img.info:
+                    if exif_handling == "keep" and hasattr(img, 'info') and 'exif' in img.info:
                          if 'exif' not in save_options: save_options['exif'] = img.info['exif'] # 試すだけ
 
                 elif actual_output_format == 'WEBP':
@@ -1003,7 +1006,7 @@ def resize_and_compress_image(source_path, dest_path, target_width: int, quality
                         'method': 6 # 高品質な圧縮方法
                     }
                     # EXIF情報を保持する場合
-                    if keep_exif and hasattr(img, 'info') and 'exif' in img.info:
+                    if exif_handling == "keep" and hasattr(img, 'info') and 'exif' in img.info:
                         save_options['exif'] = img.info['exif']
                     
                     # ロスレスで透明度がある場合は RGBA のまま保存
