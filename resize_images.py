@@ -55,9 +55,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="画像ファイルを指定された幅にリサイズし、JPEG形式で圧縮して保存します。"
     )
-    parser.add_argument(
-        "-s", "--source", required=True, help="入力元のディレクトリパス"
-    )
+    parser.add_argument("-s", "--source", required=True, help="入力元のディレクトリパス")
     parser.add_argument("-d", "--dest", required=True, help="出力先のディレクトリパス")
     parser.add_argument(
         "-w",
@@ -78,18 +76,14 @@ def parse_args():
         action="store_true",
         help="ドライランモード（実際にファイルを保存せずシミュレートする）",
     )
-    parser.add_argument(
-        "--resume", action="store_true", help="既存の出力ファイルがあればスキップする"
-    )
+    parser.add_argument("--resume", action="store_true", help="既存の出力ファイルがあればスキップする")
     parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="ログレベルを設定する (デフォルト: INFO)",
     )
-    parser.add_argument(
-        "--check-disk", action="store_true", help="処理前にディスク容量を確認する"
-    )
+    parser.add_argument("--check-disk", action="store_true", help="処理前にディスク容量を確認する")
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -118,14 +112,12 @@ def setup_logger(verbose=False):
 
     # ファイル出力用のロガー設定
     # ログファイルの出力先ディレクトリを指定
-    log_dir = Path("/home/tn/projects/tools/edit-img/log")
+    log_dir = Path("/home/tn/projects/tools/karukuresize/log")
     # ディレクトリが存在しない場合は作成
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # ログファイル名を生成
-    log_file_name_only = (
-        f"process_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S_%f')}.log"
-    )
+    log_file_name_only = f"process_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S_%f')}.log"
     # 完全なログファイルパスを構築
     full_log_path = log_dir / log_file_name_only
 
@@ -234,9 +226,7 @@ def main():
             image_files = core_find_image_files(source_dir)
 
             if not image_files:
-                logger.warning(
-                    f"ディレクトリ '{args.source}' には画像ファイルが見つかりませんでした。"
-                )
+                logger.warning(f"ディレクトリ '{args.source}' には画像ファイルが見つかりませんでした。")
                 return 0
         except Exception as e:
             logger.error(f"画像ファイル検索中にエラーが発生しました: {e}")
@@ -259,9 +249,7 @@ def main():
     # 処理開始前にソースディレクトリの総サイズを取得（ドライラン時のみ）
     if args.dry_run:
         total_size_before_display = core_get_directory_size(args.source)
-        logger.info(
-            f"処理前の総合サイズ: {core_format_file_size(total_size_before_display)}"
-        )
+        logger.info(f"処理前の総合サイズ: {core_format_file_size(total_size_before_display)}")
 
     # 出力ディレクトリを作成 (存在しない場合)
     # create_output_directory(args.dest, args.dry_run)
@@ -341,9 +329,7 @@ def main():
             }
 
             if original_size and new_size:
-                tqdm.write(
-                    f"  ✓ サイズ変更: {original_size[0]}x{original_size[1]} → {new_size[0]}x{new_size[1]}"
-                )
+                tqdm.write(f"  ✓ サイズ変更: {original_size[0]}x{original_size[1]} → {new_size[0]}x{new_size[1]}")
                 processed_count += 1
                 result_item["status"] = "success"
 
@@ -352,11 +338,7 @@ def main():
                     # ドライランで予測サイズがある場合
                     estimated_size_str = core_format_file_size(estimated_size)
                     size_diff = file_size_before - estimated_size
-                    reduction_percent = (
-                        (size_diff / file_size_before * 100)
-                        if file_size_before > 0
-                        else 0
-                    )
+                    reduction_percent = (size_diff / file_size_before * 100) if file_size_before > 0 else 0
                     tqdm.write(
                         f"  ✓ 予測ファイルサイズ: {core_format_file_size(file_size_before)} → {estimated_size_str} ({reduction_percent:.1f}% 削減予定)"
                     )
@@ -371,11 +353,7 @@ def main():
                         file_size_after = dest_path.stat().st_size
                         total_size_after += file_size_after
                         size_diff = file_size_before - file_size_after
-                        reduction_percent = (
-                            (size_diff / file_size_before * 100)
-                            if file_size_before > 0
-                            else 0
-                        )
+                        reduction_percent = (size_diff / file_size_before * 100) if file_size_before > 0 else 0
                         tqdm.write(
                             f"  ✓ ファイルサイズ: {core_format_file_size(file_size_before)} → {core_format_file_size(file_size_after)} ({reduction_percent:.1f}% 削減)"
                         )
@@ -431,9 +409,7 @@ def main():
     #     logger.info(f"HTMLレポートを生成しました: {report_file}")
 
     if args.dry_run:
-        print(
-            "\n実際に処理を実行するには、--dry-runオプションを外して再実行してください。"
-        )
+        print("\n実際に処理を実行するには、--dry-runオプションを外して再実行してください。")
 
     return 0
 

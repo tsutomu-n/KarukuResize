@@ -24,18 +24,15 @@ class JapaneseFontManager:
         """初期化処理"""
         self.system_name = platform.system()
         self.selected_font = self._get_best_font()
-        self.size_normal = 11
-        self.size_small = 10
-        self.size_large = 13
-        self.size_heading = 15
+        self.size_normal = 13
+        self.size_small = 12
+        self.size_large = 15
+        self.size_heading = 17
 
         # フォント調整（OSごとの差異を吸収）
         self._adjust_font_size_for_platform()
 
-        logger.debug(
-            f"選択された日本語フォント: {self.selected_font}, "
-            f"通常サイズ: {self.size_normal}"
-        )
+        logger.debug(f"選択された日本語フォント: {self.selected_font}, " f"通常サイズ: {self.size_normal}")
 
     def _get_best_font(self):
         """プラットフォームに最適なフォントを選択"""

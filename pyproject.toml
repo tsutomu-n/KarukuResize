@@ -1,7 +1,7 @@
 [project]
-name = "edit-img"
+name = "karukuresize"
 version = "0.2.1"
-description = "日本語対応の画像リサイズ・圧縮ツール（GUI対応版・Windows長パス対応）"
+description = "KarukuResize:日本語対応の画像リサイズ・圧縮ツール（GUI対応版・Windows長パス対応）"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [project.scripts]
-edit-img-cli = "resize_images:main"
-edit-img-gui = "resize_images_gui:main"
+karukuresize-cli = "resize_images:main"
+karukuresize-gui = "resize_images_gui:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
