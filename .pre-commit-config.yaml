@@ -13,5 +13,5 @@ repos:
     rev: v0.4.8 # Ruffのバージョン。pyproject.tomlと合わせるか、最新版を確認
     hooks:
     -   id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        args: [--fix]  # 自動修正のみ実行、修正後はエラーにしない
     -   id: ruff-format

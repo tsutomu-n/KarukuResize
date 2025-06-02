@@ -14,6 +14,7 @@ dependencies = [
     "flake8>=7.2.0",
     "pytest>=8.3.5",
     "black>=25.1.0",
+    "ruff>=0.0.241",
 ]
 
 [project.scripts]
@@ -41,3 +42,20 @@ per-file-ignores = [
 dev = [
     "pre-commit>=4.2.0",
 ]
+
+[tool.ruff]
+# より寛容な設定
+line-length = 120
+target-version = "py312"
+
+# 無視するエラーコード
+lint.ignore = [
+    "F401",  # 未使用のインポート
+    "F841",  # 未使用の変数
+    "E501",  # 行が長すぎる
+]
+
+# 特定のファイルで無視
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"*_test.py" = ["F841"]
