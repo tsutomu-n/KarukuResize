@@ -173,25 +173,25 @@ class CodecType(Enum):
 
 class CodecAdapter(ABC):
     """画像コーデックの抽象アダプタクラス"""
-    
+
     @classmethod
     @abstractmethod
     def is_available(cls) -> bool:
         """コーデックが利用可能か確認"""
         pass
-        
+
     @classmethod
     @abstractmethod
     def get_supported_formats(cls) -> list[str]:
         """サポートする入力フォーマットリスト"""
         pass
-        
+
     @classmethod
     @abstractmethod
     def get_default_options(cls) -> Dict[str, Any]:
         """デフォルトオプション"""
         pass
-        
+
     @abstractmethod
     def encode(self, img: Image.Image, output_path: Path, options: Dict[str, Any]) -> Tuple[bool, int]:
         """画像をエンコード"""
@@ -204,20 +204,20 @@ class CodecAdapter(ABC):
 # resize_core.py の拡張部分
 from codecs import CodecRegistry, CodecType
 
-def resize_and_compress_image(source_path, dest_path, target_width: int, quality: int, 
-                      format: str = 'original', keep_exif: bool = True, 
+def resize_and_compress_image(source_path, dest_path, target_width: int, quality: int,
+                      format: str = 'original', keep_exif: bool = True,
                       balance: int = 5, webp_lossless: bool = False,
                       codec_type: str = 'standard', codec_options: dict = None,
                       dry_run: bool = False):
     # 既存コード...
-    
+
     # 高度なコーデックを使用する場合の処理
     selected_codec = None
-    
+
     if codec_type != 'standard' and not dry_run:
         try:
             codec_enum = CodecType[codec_type.upper()]
-            
+
             # コーデックの登録と取得
             if CodecRegistry.register(codec_enum):
                 adapter_class = CodecRegistry.get(codec_enum)
@@ -225,7 +225,7 @@ def resize_and_compress_image(source_path, dest_path, target_width: int, quality
                     selected_codec = adapter_class()
         except (KeyError, ValueError):
             logger.warning(f"不明なコーデックタイプ: {codec_type}")
-    
+
     # 標準処理またはコーデック処理
     # ...
 ```
@@ -280,11 +280,11 @@ from typing import List, Callable, Any
 
 class ParallelProcessor:
     """画像処理の並列実行を管理するクラス"""
-    
+
     def __init__(self, max_workers: int = None):
         """
         並列処理マネージャーの初期化
-        
+
         Args:
             max_workers: 最大ワーカー数（None=CPUコア数の75%を使用）
         """
@@ -293,22 +293,22 @@ class ParallelProcessor:
             self.max_workers = max(2, (multiprocessing.cpu_count() * 3) // 4)
         else:
             self.max_workers = max_workers
-    
+
     def process_batch(self, items: List[Any], process_func: Callable[[Any], Any]) -> List[Any]:
         """
         アイテムのバッチを並列処理
-        
+
         Args:
             items: 処理するアイテムのリスト
             process_func: 各アイテムに適用する関数
-            
+
         Returns:
             処理結果のリスト
         """
         # マルチプロセスプールを使用（GILの制約を回避）
         with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             results = list(executor.map(process_func, items))
-        
+
         return results
 ```
 
@@ -331,9 +331,9 @@ from pathlib import Path
 
 class MemoryEfficientImageProcessor:
     """メモリ効率の良い画像処理を提供するクラス"""
-    
+
     @staticmethod
-    def process_large_image(input_path: Path, output_path: Path, 
+    def process_large_image(input_path: Path, output_path: Path,
                           process_func: Callable[[np.ndarray], np.ndarray],
                           max_memory_mb: int = 1024) -> bool:
         """大きな画像を効率的に処理する"""
@@ -342,11 +342,11 @@ class MemoryEfficientImageProcessor:
             with Image.open(input_path) as img:
                 width, height = img.size
                 mode = img.mode
-                
+
                 # 必要なメモリを推定
                 estimated_memory = width * height * len(mode) * 4  # 32bit浮動小数点を想定
                 estimated_memory_mb = estimated_memory / (1024 * 1024)
-                
+
                 if estimated_memory_mb > max_memory_mb:
                     # 分割処理が必要
                     return MemoryEfficientImageProcessor._process_by_chunks(
@@ -356,16 +356,16 @@ class MemoryEfficientImageProcessor:
                     # 一度に処理可能
                     img_array = np.array(img)
                     result_array = process_func(img_array)
-                    
+
                     # 結果を保存
                     result_img = Image.fromarray(result_array)
                     result_img.save(output_path)
-                    
+
                     # メモリ解放を明示的に行う
                     del img_array
                     del result_array
                     gc.collect()
-                    
+
                     return True
         except Exception as e:
             logger.error(f"画像処理エラー: {e}")
@@ -394,14 +394,14 @@ class HardwareFeatures(Enum):
 
 class OptimizationDetector:
     """ハードウェア最適化機能の検出とコーデック選択"""
-    
+
     @staticmethod
     def detect_simd_features() -> set:
         """利用可能なSIMD命令セットを検出"""
         features = set()
         system = platform.system()
         machine = platform.machine()
-        
+
         if system == "Linux":
             try:
                 # /proc/cpuinfoからフラグを読み取る
@@ -419,7 +419,7 @@ class OptimizationDetector:
             except:
                 pass
         # 他のプラットフォーム検出...
-                
+
         return features
 ```
 

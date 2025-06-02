@@ -90,7 +90,7 @@ def _process_image_thread(self, source_path, dest_path, resize_mode, resize_valu
         # 実際の画像処理を呼び出し
         # resize_core.pyに進捗コールバックを追加した場合
         self.after(0, lambda: self.update_progress(0.3))  # 処理開始を30%として表示
-        
+
         success, output_path, message = resize_and_compress_image(
             source_path,
             resize_mode=resize_mode,
@@ -101,10 +101,10 @@ def _process_image_thread(self, source_path, dest_path, resize_mode, resize_valu
             dest_path=dest_path,
             progress_callback=progress_callback  # 進捗コールバック
         )
-        
+
         # UIスレッドで結果を表示
         self.after(0, lambda: self._handle_process_result(success, output_path, message))
-        
+
     except Exception as e:
         # UIスレッドでエラーを表示
         self.after(0, lambda: self._handle_process_error(e))
@@ -117,11 +117,11 @@ def _handle_process_result(self, success, output_path, message):
         readable_size = self._get_readable_file_size(file_size)
         self.add_log_message(f"処理完了: {output_path}")
         self.add_log_message(f"出力ファイルサイズ: {readable_size}")
-        
+
         # 出力フォルダを開くボタンを表示
         output_dir = Path(output_path).parent
         self.show_open_folder_button(output_dir)
-        
+
         self.finish_resize_process(success=True, message=message)
     else:
         self.add_log_message(f"処理失敗: {message}")
@@ -131,14 +131,14 @@ def _handle_process_error(self, error):
     """例外エラーをユーザーフレンドリーなメッセージに変換"""
     error_message = str(error)
     user_message = "エラーが発生しました"
-    
+
     if isinstance(error, FileNotFoundError):
         user_message = "ファイルが見つかりません。ファイルが存在するか確認してください。"
     elif isinstance(error, PermissionError):
         user_message = "ファイルへのアクセス権限がありません。別の場所を指定するか、管理者権限で実行してください。"
     elif "too long" in error_message.lower():
         user_message = "ファイルパスが長すぎます。より短いパスを使用するか、ファイル名を短くしてください。"
-    
+
     self.add_log_message(f"エラー: {user_message}")
     self.add_log_message(f"詳細: {error_message}")
     self.finish_resize_process(success=False, message=user_message)
@@ -150,42 +150,42 @@ def _handle_process_error(self, error):
 `resize_core.py`の`resize_and_compress_image`関数に進捗コールバックを追加します：
 
 ```python
-def resize_and_compress_image(source_path, resize_mode, resize_value, keep_aspect_ratio=True, 
-                             output_format="original", quality=85, dest_path=None, 
+def resize_and_compress_image(source_path, resize_mode, resize_value, keep_aspect_ratio=True,
+                             output_format="original", quality=85, dest_path=None,
                              progress_callback=None):
     """画像のリサイズと圧縮を行う（進捗コールバック対応版）"""
-    
+
     try:
         # 処理開始
         if progress_callback:
             progress_callback(0.0)  # 0%
-            
+
         # 画像を開く
         img = Image.open(source_path)
-        
+
         if progress_callback:
             progress_callback(0.2)  # 20%
-            
+
         # リサイズ処理
         # ...
-        
+
         if progress_callback:
             progress_callback(0.5)  # 50%
-            
+
         # 保存処理
         # ...
-        
+
         if progress_callback:
             progress_callback(0.9)  # 90%
-            
+
         # 成功情報を返す
         # ...
-        
+
         if progress_callback:
             progress_callback(1.0)  # 100%
-            
+
         return True, dest_path, "処理完了"
-        
+
     except Exception as e:
         return False, None, str(e)
 ```
@@ -201,13 +201,13 @@ def resize_and_compress_image(...):
             # メモリ消費を抑えるため、処理中は最小限のデータだけ保持
             original_format = img.format
             # ...処理...
-            
+
             # 処理後は明示的に変数をクリア
             del img
             # 必要に応じてガベージコレクションを呼び出し
             import gc
             gc.collect()
-            
+
         return True, dest_path, "処理完了"
     except Exception as e:
         return False, None, str(e)
@@ -226,24 +226,24 @@ def sanitize_filename(filename):
     safe_name = filename
     for char in unsafe_chars:
         safe_name = safe_name.replace(char, '_')
-    
+
     # 長すぎるファイル名の処理（Windowsの260文字制限対応）
     if len(safe_name) > 200:  # 余裕を持たせる
         name, ext = os.path.splitext(safe_name)
         safe_name = name[:200-len(ext)] + ext
-        
+
     # 先頭と末尾のスペースやピリオドを削除（Windowsでの問題回避）
     safe_name = safe_name.strip('. ')
-    
+
     # 予約語をチェック
-    reserved_names = {'CON', 'PRN', 'AUX', 'NUL', 
+    reserved_names = {'CON', 'PRN', 'AUX', 'NUL',
                      'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
                      'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'}
     name_without_ext = os.path.splitext(safe_name)[0].upper()
     if name_without_ext in reserved_names:
         name, ext = os.path.splitext(safe_name)
         safe_name = f"{name}_file{ext}"
-    
+
     return safe_name
 ```
 
@@ -254,7 +254,7 @@ def sanitize_filename(filename):
 # messages.py
 class Messages:
     """メッセージ定義（将来の国際化対応）"""
-    
+
     # 日本語メッセージ
     JA = {
         'app_title': "画像処理ツール",
@@ -269,10 +269,10 @@ class Messages:
         'error_prefix': "エラー: ",
         # ...他のメッセージ...
     }
-    
+
     # 将来的に他の言語を追加
     # EN = { ... }
-    
+
     @classmethod
     def get(cls, key, lang='JA'):
         """指定された言語のメッセージを取得"""
@@ -287,7 +287,7 @@ import json
 
 class ConfigManager:
     """設定の保存と読み込みを管理"""
-    
+
     def __init__(self, config_file="settings.json"):
         self.config_file = config_file
         self.default_config = {
@@ -300,7 +300,7 @@ class ConfigManager:
             'quality': 85,
             'presets': []
         }
-        
+
     def load_config(self):
         """設定を読み込む"""
         try:
@@ -310,7 +310,7 @@ class ConfigManager:
             return self.default_config.copy()
         except Exception:
             return self.default_config.copy()
-    
+
     def save_config(self, config):
         """設定を保存する"""
         try:
@@ -319,46 +319,46 @@ class ConfigManager:
             return True
         except Exception:
             return False
-            
+
     def save_current_settings(self, app):
         """現在の設定を保存"""
         config = self.load_config()
-        
+
         # GUIから現在の設定を取得
         if app.resize_input_file_entry.get():
             config['last_input_dir'] = str(Path(app.resize_input_file_entry.get()).parent)
         if app.resize_output_dir_entry.get():
             config['last_output_dir'] = app.resize_output_dir_entry.get()
-        
+
         config['resize_mode'] = app.resize_mode_var.get()
         config['resize_value'] = app.resize_value_entry.get()
         config['keep_aspect_ratio'] = bool(app.resize_aspect_ratio_var.get())
         config['output_format'] = app.resize_output_format_var.get()
         config['quality'] = app.resize_quality_var.get()
-        
+
         self.save_config(config)
-        
+
     def apply_settings(self, app):
         """保存された設定をGUIに適用"""
         config = self.load_config()
-        
+
         # ディレクトリ設定
         if config['last_output_dir']:
             app.resize_output_dir_entry.delete(0, "end")
             app.resize_output_dir_entry.insert(0, config['last_output_dir'])
-        
+
         # リサイズ設定
         app.resize_mode_var.set(config['resize_mode'])
         app.on_resize_mode_change(config['resize_mode'])
-        
+
         app.resize_value_entry.delete(0, "end")
         app.resize_value_entry.insert(0, config['resize_value'])
-        
+
         app.resize_aspect_ratio_var.set(config['keep_aspect_ratio'])
-        
+
         app.resize_output_format_var.set(config['output_format'])
         app.on_output_format_change(config['output_format'])
-        
+
         app.resize_quality_var.set(config['quality'])
         app.update_quality_label(config['quality'])
 ```

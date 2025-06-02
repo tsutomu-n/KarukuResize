@@ -227,6 +227,6 @@
 
 *   **CustomTkinter Official Documentation (Wiki)**: [https://github.com/TomSchimansky/CustomTkinter/wiki](https://github.com/TomSchimansky/CustomTkinter/wiki)
 *   **CustomTkinter GitHub Repository (Examples & Discussions)**: [https://github.com/TomSchimansky/CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)
-*   **Sample CustomTkinter Projects/Snippets**: 
+*   **Sample CustomTkinter Projects/Snippets**:
     *   [dei8bit/tkinter-and-CustomTKinter](https://github.com/dei8bit/tkinter-and-CustomTKinter)
     *   (その他、有用なリポジトリがあれば追記)

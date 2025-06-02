@@ -169,8 +169,8 @@ There are other helpful articles as well.
 
 ## Compatibility with PySimpleGUI
 
-- When using basic functionalities, it is compatible with PySimpleGUI. Programs can be written using the same event-driven model as PySimpleGUI.  
-- The names of basic GUI components are kept the same, but some property names differ.  
+- When using basic functionalities, it is compatible with PySimpleGUI. Programs can be written using the same event-driven model as PySimpleGUI.
+- The names of basic GUI components are kept the same, but some property names differ.
 - TkEasyGUI has been completely reimplemented from scratch and is licensed under the MIT License.
 - However, full compatibility with PySimpleGUI is not intended.
 
@@ -501,7 +501,7 @@ def trim_docstring(doc):
         if stripped:
             indent = line.find(stripped)
             break
-    trimmed = [lines[0].strip()] 
+    trimmed = [lines[0].strip()]
     for line in lines[1:]:
         trimmed.append(line[indent:].rstrip())
     res = "\n".join(trimmed).strip()
@@ -977,8 +977,8 @@ window.close()
 
 ## PySimpleGUI와의 호환성
 
-- 기본 기능을 사용할 때 PySimpleGUI와 호환됩니다. PySimpleGUI와 동일한 이벤트 구동 모델을 사용하여 프로그램을 작성할 수 있습니다.  
-- 기본 GUI 구성 요소의 이름은 동일하게 유지되지만, 일부 속성 이름은 다릅니다.  
+- 기본 기능을 사용할 때 PySimpleGUI와 호환됩니다. PySimpleGUI와 동일한 이벤트 구동 모델을 사용하여 프로그램을 작성할 수 있습니다.
+- 기본 GUI 구성 요소의 이름은 동일하게 유지되지만, 일부 속성 이름은 다릅니다.
 - TkEasyGUI는 완전히 새로 구현되었으며 MIT 라이선스 하에 제공됩니다.
 - 그러나 PySimpleGUI와의 완전한 호환성을 목표로 하지는 않습니다.
 
@@ -1452,7 +1452,7 @@ FILE: docs/installation_trouble.md
   - その影響で古いバージョンからアップデートしようとすると、`ModuleNotFoundError: No module named 'TkEasyGUI'`というエラーが発生します。
   - これを防ぐために、`pip uninstall TkEasyGUI`実行後に、下記のPythonコードをIDLEやREPL(`python`コマンドで起動するインタプリタ)で実行してください。
   - その後、`pip install TkEasyGUI`を実行して最新版をインストールしてください。
-  
+
 ```py:remove_old_package.py
 # 古いTkEasyGUIパッケージを完全に削除するプログラム
 import os, shutil, PIL
@@ -1510,7 +1510,7 @@ python -m pip install TkEasyGUI
 ### (en) Installation troubles
 
 - From version 0.2.24, the package name has also been changed from `TkEasyGUI` to `TkEasyGUI`.
-  - Updating from older versions (less than 0.2.24) will fail. 
+  - Updating from older versions (less than 0.2.24) will fail.
   - If you have used a previous version, you will see `ModuleNotFoundError: No module named 'TkEasyGUI'`.
   - Please run the command below to completely remove the old `TkEasyGUI` package.
   - It seems that cache files remain even if you use the `pip uninstall TkEasyGUI` command.
@@ -3064,7 +3064,7 @@ class Button(
     use_ttk_buttons: bool = False,
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2114)
@@ -3300,7 +3300,7 @@ class CalendarBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4547)
@@ -3517,7 +3517,7 @@ class CalendarButton(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4547)
@@ -3734,7 +3734,7 @@ class Canvas(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3252)
@@ -3940,7 +3940,7 @@ class Checkbox(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2278)
@@ -4161,7 +4161,7 @@ class CloseButton(
     button_text: str = "Close",
     key: Union[str, None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2245)
@@ -4407,7 +4407,7 @@ class ColorBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4401)
@@ -4629,7 +4629,7 @@ class Column(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1600)
@@ -4822,7 +4822,7 @@ class Combo(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3854)
@@ -5046,7 +5046,7 @@ class Element(
     has_value: bool,  # has value
     metadata: Union[dict[str, Any], None] = None,  # meta data
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1148)
@@ -5243,7 +5243,7 @@ class FileBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4206)
@@ -5459,7 +5459,7 @@ class FileSaveAs(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4327)
@@ -5675,7 +5675,7 @@ class FileSaveAsBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4327)
@@ -5891,7 +5891,7 @@ class FilesBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4300)
@@ -6107,7 +6107,7 @@ class FolderBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4360)
@@ -6336,7 +6336,7 @@ class Frame(
     metadata: Union[dict[str, Any], None] = None,
     use_ttk: bool = False,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1525)
@@ -6530,7 +6530,7 @@ class Graph(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3309)
@@ -6899,7 +6899,7 @@ class HSeparator(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3683)
@@ -7097,7 +7097,7 @@ class Image(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3495)
@@ -7364,7 +7364,7 @@ class Input(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2468)
@@ -7755,7 +7755,7 @@ class InputText(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2468)
@@ -8135,7 +8135,7 @@ class Label(
     # other
     metadata: Union[dict[str, Any], None] = None,  # user metadata
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1842)
@@ -8354,7 +8354,7 @@ class ListBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4442)
@@ -8571,7 +8571,7 @@ class Listbox(
     metadata: Union[dict[str, Any], None] = None,
     items: Union[list[str], None] = None,  # same as values (alias values)
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3711)
@@ -8840,7 +8840,7 @@ class Menu(
     key: Union[str, None] = None,
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1998)
@@ -9075,7 +9075,7 @@ class Multiline(
     readonly_background_color: Union[str, None] = None,
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2760)
@@ -9483,7 +9483,7 @@ class MultilineBrowse(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L4496)
@@ -9713,7 +9713,7 @@ class Output(
     readonly_background_color: Union[str, None] = None,
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2760)
@@ -10124,7 +10124,7 @@ while win.is_running():
 ```py
 class Push(
     self, metadata: Union[dict[str, Any], None] = None, **kw  # user metadata
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1938)
@@ -10339,7 +10339,7 @@ class Radio(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2363)
@@ -10584,7 +10584,7 @@ class Slider(
     default: Union[float, None] = None,  # same as default_value
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3119)
@@ -10829,7 +10829,7 @@ class Submit(
     use_ttk_buttons: bool = False,
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2114)
@@ -11089,7 +11089,7 @@ class Tab(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1686)
@@ -11307,7 +11307,7 @@ class TabGroup(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1770)
@@ -11519,7 +11519,7 @@ class Table(
     # other
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L3934)
@@ -11751,7 +11751,7 @@ class Text(
     # other
     metadata: Union[dict[str, Any], None] = None,  # user metadata
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1842)
@@ -11981,7 +11981,7 @@ class Textarea(
     readonly_background_color: Union[str, None] = None,
     metadata: Union[dict[str, Any], None] = None,
     **kw,
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L2760)
@@ -12423,7 +12423,7 @@ while window.is_alive():
 ```py
 class VPush(
     self, metadata: Union[dict[str, Any], None] = None, **kw  # user metadata
-    ) 
+    )
 ```
 
 - [source](https://github.com/kujirahand/TkEasyGUI-python/blob/main/TkEasyGUI/widgets.py#L1968)
