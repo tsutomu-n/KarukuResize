@@ -2,6 +2,130 @@
 
 このドキュメントはKarukuResizeの開発者向け技術情報を提供します。
 
+## 更新履歴
+- 2025-06-26: GUIバッチ処理機能の実装完了
+- 2025-06-26: テストスイートの追加
+- 2025-06-26: API仕様書の作成
+
+## アーキテクチャ概要
+
+KarukuResizeは3つの主要モジュールで構成されています：
+
+1. **resize_core.py** - 画像処理のコア機能
+2. **resize_images.py** - CLIインターフェース
+3. **resize_images_gui.py** - GUIインターフェース
+
+## 最近の更新内容
+
+### GUIバッチ処理機能（2025-06-26実装）
+
+従来TODOだったGUIのバッチ処理機能が完全に実装されました：
+
+```python
+def start_batch_process(self):
+    # 入力検証
+    # パラメータ準備
+    # ワーカースレッド起動
+
+def process_batch_worker(self, params):
+    # 画像ファイル検索
+    # 各ファイルの処理
+    # 進捗表示
+    # 結果サマリー
+
+def cancel_batch_process(self):
+    # 処理の中断
+```
+
+実装の特徴：
+- CLIと同等の機能をGUIで提供
+- 別スレッドで実行し、UIの応答性を維持
+- リアルタイムの進捗表示
+- 中断機能のサポート
+
+### テストスイート（2025-06-26追加）
+
+包括的なテストスイートを追加しました：
+
+**ユニットテスト（test_resize_core.py）:**
+- ファイル名のサニタイズ
+- パス操作
+- 画像処理機能
+- エラーハンドリング
+
+**統合テスト（test_integration.py）:**
+- CLIワークフロー
+- バッチ処理
+- エラーケース
+- パフォーマンステスト
+
+**GUIテスト（test_gui.py）:**
+- ロジックテスト（UIをモック化）
+- 入力検証
+- 処理フロー
+
+### テスト実行方法
+
+```bash
+# 全テストを実行
+pytest
+
+# 特定のテストファイルを実行
+pytest tests/test_resize_core.py
+
+# カバレッジ付きで実行
+pytest --cov=resize_core --cov-report=html
+```
+
+## 開発環境のセットアップ
+
+```bash
+# リポジトリをクローン
+git clone https://github.com/yourusername/KarukuResize.git
+cd KarukuResize
+
+# 開発モードでインストール
+uv pip install -e .
+
+# pre-commitフックをインストール
+pre-commit install
+```
+
+## コーディング規約
+
+- Python 3.12+の機能を活用
+- ruffによる自動フォーマット
+- 日本語コメントとエラーメッセージ
+- 型ヒントの使用を推奨
+
+## 拡張ポイント
+
+### 新しい画像フォーマットの追加
+
+`resize_core.py`の`SUPPORTED_FORMATS`に追加：
+
+```python
+SUPPORTED_FORMATS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".新形式"}
+```
+
+### 新しいリサイズモードの追加
+
+GUIとCLIの両方で対応が必要：
+
+1. GUIの`batch_resize_modes`リストに追加
+2. モード変換マッピングを更新
+3. `resize_core.py`に処理ロジックを実装
+
+## トラブルシューティング
+
+### Windows長パスエラー
+
+`normalize_long_path()`関数が自動的に処理しますが、レジストリ設定も確認してください。
+
+### 日本語ファイル名の問題
+
+Unicode正規化（NFC）を使用しています。問題がある場合は`sanitize_filename()`の設定を確認してください。
+
 ## 技術スタック
 
 KarukuResizeは以下の技術スタックで構築されています：

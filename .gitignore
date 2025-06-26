@@ -21,7 +21,6 @@ log/
 process_*.log
 
 # 処理結果レポート
-report.html
 progress.json
 
 # パッケージング関連

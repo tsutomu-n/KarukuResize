@@ -26,6 +26,7 @@ try:
         get_destination_path,
         sanitize_filename,
         format_file_size,
+        find_image_files,
     )
 except ImportError:
 
@@ -1393,13 +1394,300 @@ class App(ctk.CTk):
 
     def start_batch_process(self):
         """一括処理を開始"""
-        self.add_log_message("一括処理機能は現在開発中です...")
-        # TODO: 実際の一括処理実装
+        # 入力値の検証
+        input_folder = self.batch_input_folder_path_var.get().strip()
+        output_folder = self.batch_output_folder_path_var.get().strip()
+        
+        if not input_folder:
+            self.add_log_message("エラー: 入力フォルダが選択されていません。", is_error=True)
+            return
+            
+        if not output_folder:
+            self.add_log_message("エラー: 出力フォルダが選択されていません。", is_error=True)
+            return
+            
+        # パスの存在確認
+        input_path = Path(input_folder)
+        if not input_path.exists():
+            self.add_log_message(f"エラー: 入力フォルダが存在しません: {input_folder}", is_error=True)
+            return
+            
+        # 出力フォルダの作成（存在しない場合）
+        output_path = Path(output_folder)
+        if not output_path.exists():
+            try:
+                output_path.mkdir(parents=True, exist_ok=True)
+                self.add_log_message(f"出力フォルダを作成しました: {output_folder}")
+            except Exception as e:
+                self.add_log_message(f"エラー: 出力フォルダの作成に失敗しました: {e}", is_error=True)
+                return
+                
+        # リサイズモードの取得と変換
+        resize_mode = self.batch_resize_mode_var.get()
+        resize_value = self.batch_resize_value_var.get().strip()
+        
+        # リサイズモードを resize_core の形式に変換
+        mode_mapping = {
+            "指定なし": None,
+            "幅を指定": "width",
+            "高さを指定": "height",
+            "縦横最大": "longest_side",
+            "パーセント指定": "percentage"
+        }
+        core_resize_mode = mode_mapping.get(resize_mode)
+        
+        # リサイズ値の検証
+        if core_resize_mode and core_resize_mode != "percentage":
+            try:
+                resize_value_int = int(resize_value)
+                if resize_value_int <= 0:
+                    raise ValueError("リサイズ値は正の整数である必要があります")
+            except ValueError as e:
+                self.add_log_message(f"エラー: 無効なリサイズ値: {resize_value}", is_error=True)
+                return
+        elif core_resize_mode == "percentage":
+            try:
+                resize_value_float = float(resize_value)
+                if resize_value_float <= 0:
+                    raise ValueError("パーセンテージは正の数値である必要があります")
+            except ValueError as e:
+                self.add_log_message(f"エラー: 無効なパーセンテージ値: {resize_value}", is_error=True)
+                return
+                
+        # その他の設定値を取得
+        keep_aspect_ratio = self.batch_keep_aspect_ratio_var.get()
+        enable_compression = self.batch_enable_compression_var.get()
+        output_format = self.batch_output_format_var.get()
+        
+        # 出力フォーマットの変換
+        format_mapping = {
+            "オリジナルを維持": None,
+            "JPEG": "JPEG",
+            "PNG": "PNG",
+            "WEBP": "WEBP"
+        }
+        core_output_format = format_mapping.get(output_format)
+        
+        # 品質設定の取得
+        jpeg_quality = self.batch_jpeg_quality_var.get() if core_output_format == "JPEG" else 85
+        webp_quality = self.batch_webp_quality_var.get() if core_output_format == "WEBP" else 85
+        webp_lossless = self.batch_webp_lossless_var.get() if core_output_format == "WEBP" else False
+        
+        # UIの状態を更新（処理中）
+        self.batch_start_button.configure(state="disabled")
+        self.batch_cancel_button.configure(state="normal")
+        self.progress_bar.set(0)
+        self.cancel_requested = False
+        
+        # ログをクリア
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state="disabled")
+        
+        self.add_log_message("一括処理を開始します...")
+        self.add_log_message(f"入力フォルダ: {input_folder}")
+        self.add_log_message(f"出力フォルダ: {output_folder}")
+        
+        # 処理パラメータをまとめる
+        params = {
+            "input_folder": input_folder,
+            "output_folder": output_folder,
+            "resize_mode": core_resize_mode,
+            "resize_value": resize_value,
+            "keep_aspect_ratio": keep_aspect_ratio,
+            "enable_compression": enable_compression,
+            "output_format": core_output_format,
+            "jpeg_quality": jpeg_quality,
+            "webp_quality": webp_quality,
+            "webp_lossless": webp_lossless
+        }
+        
+        # バッチ処理をスレッドで実行
+        self.batch_thread = threading.Thread(
+            target=self.process_batch_worker,
+            args=(params,),
+            daemon=True
+        )
+        self.batch_thread.start()
+
+    def process_batch_worker(self, params):
+        """バッチ処理のワーカースレッド"""
+        try:
+            # パラメータを展開
+            input_folder = params["input_folder"]
+            output_folder = params["output_folder"]
+            resize_mode = params["resize_mode"]
+            resize_value = params["resize_value"]
+            keep_aspect_ratio = params["keep_aspect_ratio"]
+            enable_compression = params["enable_compression"]
+            output_format = params["output_format"]
+            jpeg_quality = params["jpeg_quality"]
+            webp_quality = params["webp_quality"]
+            webp_lossless = params["webp_lossless"]
+            
+            # 画像ファイルを検索
+            self.after(0, lambda: self.add_log_message("画像ファイルを検索中..."))
+            image_files = find_image_files(input_folder)
+            
+            if not image_files:
+                self.after(0, lambda: self.add_log_message("処理対象の画像ファイルが見つかりませんでした。", is_warning=True))
+                self.after(0, lambda: self.finish_batch_process(success=False))
+                return
+                
+            total_files = len(image_files)
+            self.after(0, lambda: self.add_log_message(f"処理対象: {total_files} ファイル"))
+            
+            # 処理カウンタの初期化
+            processed_count = 0
+            skipped_count = 0
+            error_count = 0
+            total_size_before = 0
+            total_size_after = 0
+            
+            # 各画像ファイルを処理
+            for idx, source_path in enumerate(image_files):
+                # 中断リクエストのチェック
+                if self.cancel_requested:
+                    self.after(0, lambda: self.add_log_message("ユーザーによる中断リクエストにより処理を停止します", is_warning=True))
+                    break
+                    
+                # 進捗の更新
+                progress = (idx) / total_files
+                self.after(0, lambda p=progress: self.progress_bar.set(p))
+                
+                # ファイル情報をログに表示
+                self.after(0, lambda p=source_path, i=idx+1, t=total_files: 
+                    self.add_log_message(f"[{i}/{t}] 処理中: {p.name}"))
+                
+                try:
+                    # 元のファイルサイズを取得
+                    file_size_before = source_path.stat().st_size
+                    total_size_before += file_size_before
+                    
+                    # 出力パスを生成
+                    dest_path = get_destination_path(source_path, input_folder, output_folder)
+                    
+                    # 出力フォーマットが指定されている場合は拡張子を変更
+                    if output_format:
+                        dest_path = dest_path.with_suffix(f".{output_format.lower()}")
+                    
+                    # 出力ディレクトリが存在しない場合は作成
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # リサイズ値の設定（リサイズモードに応じて）
+                    if resize_mode == "width":
+                        target_width = int(resize_value)
+                    elif resize_mode == "height":
+                        # 高さ指定の場合は、アスペクト比から幅を計算
+                        img = Image.open(source_path)
+                        aspect_ratio = img.width / img.height
+                        target_width = int(int(resize_value) * aspect_ratio)
+                    elif resize_mode == "longest_side":
+                        # 長辺指定の場合
+                        img = Image.open(source_path)
+                        if img.width > img.height:
+                            target_width = int(resize_value)
+                        else:
+                            aspect_ratio = img.width / img.height
+                            target_width = int(int(resize_value) * aspect_ratio)
+                    elif resize_mode == "percentage":
+                        # パーセンテージ指定の場合
+                        img = Image.open(source_path)
+                        target_width = int(img.width * float(resize_value) / 100)
+                    else:
+                        # リサイズなしの場合は元の幅を使用
+                        img = Image.open(source_path)
+                        target_width = img.width
+                    
+                    # 品質設定の決定
+                    if output_format == "JPEG":
+                        quality = jpeg_quality
+                    elif output_format == "WEBP":
+                        quality = webp_quality
+                    else:
+                        quality = 85  # デフォルト
+                    
+                    # 画像をリサイズ・圧縮
+                    success, skipped, new_size_kb = resize_and_compress_image(
+                        source_path=source_path,
+                        dest_path=dest_path,
+                        target_width=target_width,
+                        quality=quality,
+                        format=output_format.lower() if output_format else "original",
+                        exif_handling="keep",
+                        balance=5,
+                        webp_lossless=webp_lossless if output_format == "WEBP" else False,
+                        dry_run=False
+                    )
+                    
+                    
+                    if success and not skipped:  # 成功した場合
+                        processed_count += 1
+                        
+                        # 新しいファイルサイズを取得
+                        if dest_path.exists():
+                            file_size_after = dest_path.stat().st_size
+                            total_size_after += file_size_after
+                            size_reduction = ((file_size_before - file_size_after) / file_size_before * 100) if file_size_before > 0 else 0
+                            
+                            # 画像サイズの情報を取得
+                            img_before = Image.open(source_path)
+                            img_after = Image.open(dest_path)
+                            
+                            self.after(0, lambda ob=img_before.size, na=img_after.size, s=size_reduction: 
+                                self.add_log_message(f"  ✓ サイズ: {ob[0]}x{ob[1]} → {na[0]}x{na[1]} (ファイルサイズ {s:.1f}% 削減)"))
+                    else:
+                        skipped_count += 1
+                        self.after(0, lambda: self.add_log_message("  - スキップ: 処理できませんでした", is_warning=True))
+                        
+                except Exception as e:
+                    error_count += 1
+                    self.after(0, lambda e=e: self.add_log_message(f"  ✗ エラー: {str(e)}", is_error=True))
+                    
+            # 最終進捗を100%に
+            self.after(0, lambda: self.progress_bar.set(1.0))
+            
+            # 処理結果のサマリー
+            self.after(0, lambda: self.add_log_message("=" * 50))
+            self.after(0, lambda: self.add_log_message("処理完了"))
+            self.after(0, lambda: self.add_log_message(f"成功: {processed_count} ファイル"))
+            if skipped_count > 0:
+                self.after(0, lambda: self.add_log_message(f"スキップ: {skipped_count} ファイル", is_warning=True))
+            if error_count > 0:
+                self.after(0, lambda: self.add_log_message(f"エラー: {error_count} ファイル", is_error=True))
+                
+            # ファイルサイズの削減量を表示
+            if total_size_before > 0 and total_size_after > 0:
+                total_reduction = ((total_size_before - total_size_after) / total_size_before * 100)
+                self.after(0, lambda: self.add_log_message(
+                    f"総ファイルサイズ: {format_file_size(total_size_before)} → {format_file_size(total_size_after)} ({total_reduction:.1f}% 削減)"
+                ))
+                
+            # 処理完了
+            success = error_count == 0 and processed_count > 0
+            self.after(0, lambda: self.finish_batch_process(success=success))
+            
+        except Exception as e:
+            self.after(0, lambda: self.add_log_message(f"バッチ処理中に予期せぬエラーが発生しました: {str(e)}", is_error=True))
+            self.after(0, lambda: self.finish_batch_process(success=False))
+            
+    def finish_batch_process(self, success=True):
+        """バッチ処理の終了処理"""
+        # UIの状態を元に戻す
+        self.batch_start_button.configure(state="normal")
+        self.batch_cancel_button.configure(state="disabled")
+        self.cancel_requested = False
+        
+        if success:
+            self.add_log_message("✅ 一括処理が正常に完了しました")
+        else:
+            self.add_log_message("❌ 一括処理が中断またはエラーで終了しました", is_error=True)
 
     def cancel_batch_process(self):
         """一括処理を中断"""
-        self.add_log_message("一括処理を中断します...")
-        # TODO: 実際の中断処理実装
+        self.cancel_requested = True
+        self.add_log_message("一括処理の中断をリクエストしました...")
+        self.batch_cancel_button.configure(state="disabled")
 
 
 def main():

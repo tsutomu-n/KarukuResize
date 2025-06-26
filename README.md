@@ -218,6 +218,38 @@ python -m karukuresize.cli -s 入力フォルダ -d 出力フォルダ
 - 圧縮と品質のバランス調整
 - 詳細なエラー分析と日本語エラーメッセージ
 
+## 🚀 クイックスタート
+
+```bash
+# 1. インストール
+uv pip install -e .
+
+# 2. CLI実行
+karukuresize-cli -s input -d output -w 1280 -q 85
+
+# 3. GUI実行
+karukuresize-gui
+```
+
+詳細は[クイックスタートガイド](./QUICK_START.md)をご覧ください。
+
+## 📚 ドキュメント
+
+- [インストールガイド](./INSTALLATION.md) - 詳細なインストール手順
+- [クイックスタート](./QUICK_START.md) - すぐに使い始めるためのガイド
+- [開発者ガイド](./docs/developer_guide.md) - 開発者向けの技術情報
+- [APIリファレンス](./docs/api_reference.md) - 関数とクラスの詳細仕様
+
+## 🧪 テスト
+
+```bash
+# すべてのテストを実行
+pytest
+
+# カバレッジ付きで実行
+pytest --cov=resize_core --cov-report=html
+```
+
 ## 開発
 
 プルリクエストや機能提案は大歓迎です。コード品質維持のため、pre-commitフックを使用したruffとruff-formatによる自動チェックを導入しています。
@@ -227,7 +259,10 @@ python -m karukuresize.cli -s 入力フォルダ -d 出力フォルダ
 ```cmd
 :: 開発モードでインストール
 cd C:\path\to\your\projects\KarukuResize
-uv add -e .
+uv pip install -e .
+
+:: pre-commitフックをインストール
+pre-commit install
 ```
 
 ## ライセンス
