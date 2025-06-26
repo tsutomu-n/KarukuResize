@@ -845,9 +845,9 @@ def resize_and_compress_image(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    if format not in ["original", "jpeg", "png", "webp"]:
+    if format not in ["original", "jpeg", "jpg", "png", "webp"]:
         logger.warning(
-            f"推奨されない出力形式: {format}. 'original', 'jpeg', 'png', 'webp' のいずれかを使用することをお勧めします"
+            f"推奨されない出力形式: {format}. 'original', 'jpeg', 'jpg', 'png', 'webp' のいずれかを使用することをお勧めします"
         )
 
     if exif_handling not in ["keep", "remove"]:
@@ -959,6 +959,9 @@ def resize_and_compress_image(
                 elif format.upper() in SUPPORTED_FORMATS:
                     # 特定の形式が指定された場合 (WEBP含む)
                     actual_output_format = format.upper()
+                elif format.upper() == "JPG":
+                    # JPGはJPEGとして扱う
+                    actual_output_format = "JPEG"
                 else:
                     # 指定された形式がサポート外の場合、JPEGにフォールバック
                     logger.warning(

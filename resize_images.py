@@ -310,17 +310,37 @@ def main():
             tqdm.write(f"  → 出力先: {dest_path}")
 
             # 画像をリサイズして圧縮
-            resize_result = core_resize_and_compress_image(
-                source_path, dest_path, args.width, args.quality, args.dry_run
+            # resize_coreの新しいシグネチャに合わせて呼び出し
+            success, skipped, new_size_kb = core_resize_and_compress_image(
+                source_path=source_path,
+                dest_path=dest_path,
+                target_width=args.width,
+                quality=args.quality,
+                format="original",  # オリジナル形式を維持
+                dry_run=args.dry_run
             )
-
-            # ドライランの場合は3つの値が返される（サイズ予測あり）
-            if args.dry_run and len(resize_result) == 3:
-                original_size, new_size, estimated_size = resize_result
-                has_size_estimate = True
+            
+            # ドライランモードの場合、別の形式で返される可能性があるため
+            # 互換性のために元の動作をエミュレート
+            if success:
+                # 画像のサイズ情報を取得
+                from PIL import Image
+                try:
+                    with Image.open(source_path) as img:
+                        original_size = img.size
+                    if not args.dry_run and dest_path.exists():
+                        with Image.open(dest_path) as img:
+                            new_size = img.size
+                    else:
+                        # ドライランの場合は計算
+                        aspect_ratio = original_size[1] / original_size[0]
+                        new_size = (args.width, int(args.width * aspect_ratio))
+                except Exception:
+                    original_size = None
+                    new_size = None
             else:
-                original_size, new_size = resize_result
-                has_size_estimate = False
+                original_size = None
+                new_size = None
 
             result_item = {
                 "path": str(source_path),
@@ -334,19 +354,19 @@ def main():
                 result_item["status"] = "success"
 
                 # ファイルサイズ情報の表示
-                if args.dry_run and has_size_estimate:
-                    # ドライランで予測サイズがある場合
-                    estimated_size_str = core_format_file_size(estimated_size)
-                    size_diff = file_size_before - estimated_size
-                    reduction_percent = (size_diff / file_size_before * 100) if file_size_before > 0 else 0
-                    tqdm.write(
-                        f"  ✓ 予測ファイルサイズ: {core_format_file_size(file_size_before)} → {estimated_size_str} ({reduction_percent:.1f}% 削減予定)"
-                    )
-                    total_size_after += estimated_size
-
-                    result_item["new_size"] = estimated_size_str
-                    result_item["reduction"] = f"{reduction_percent:.1f}"
-
+                if args.dry_run:
+                    # ドライランの場合は推定サイズを使用
+                    if new_size_kb:
+                        estimated_size = new_size_kb * 1024  # KBをバイトに変換
+                        estimated_size_str = core_format_file_size(estimated_size)
+                        size_diff = file_size_before - estimated_size
+                        reduction_percent = (size_diff / file_size_before * 100) if file_size_before > 0 else 0
+                        tqdm.write(
+                            f"  ✓ 予測ファイルサイズ: {core_format_file_size(file_size_before)} → {estimated_size_str} ({reduction_percent:.1f}% 削減予定)"
+                        )
+                        total_size_after += estimated_size
+                        result_item["new_size"] = estimated_size_str
+                        result_item["reduction"] = f"{reduction_percent:.1f}"
                 # 実際の処理結果のファイルサイズを取得（ドライランでない場合）
                 elif not args.dry_run and dest_path.exists():
                     try:

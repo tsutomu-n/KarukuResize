@@ -237,6 +237,8 @@ karukuresize-gui
 
 - [インストールガイド](./INSTALLATION.md) - 詳細なインストール手順
 - [クイックスタート](./QUICK_START.md) - すぐに使い始めるためのガイド
+- [WSL2ガイド](./WSL2_GUIDE.md) - WSL2での使用方法
+- [Windowsガイド](./WINDOWS_GUIDE.md) - Windows 11での使用方法
 - [開発者ガイド](./docs/developer_guide.md) - 開発者向けの技術情報
 - [APIリファレンス](./docs/api_reference.md) - 関数とクラスの詳細仕様
 
