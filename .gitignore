@@ -1,62 +1,89 @@
-# Python仮想環境
-.venv/
-venv/
-env/
-
-# Pythonキャッシュファイル
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+*.pyc
 
-# テスト関連
-.pytest_cache/
-.coverage
-.tox/
+# 仮想環境
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
-# ログファイル
-*.log
-log/
-process_*.log
+# 環境変数
+.env
+.env.*
 
-# 処理結果レポート
-progress.json
-
-# パッケージング関連
+# パッケージング
 dist/
 build/
 *.egg-info/
 *.egg
 .eggs/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# uv
 uv.lock
 
-# IDE関連
-.idea/
+# テスト・カバレッジ
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+htmlcov/
+
+# ログ
+*.log
+logs/
+log/
+process_*.log
+
+# 処理結果
+progress.json
+output/
+resized/
+thumbnails/
+
+# IDE・エディタ
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
 
-# OS関連
+# OS固有
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# 画像ファイル（必要に応じてコメントアウト）
-# input/**/*.jpg
-# input/**/*.jpeg
-# input/**/*.png
-# output/
-# output/**/*.jpg
-# output/**/*.jpeg
-# output/**/*.png
+# その他
+.autoenv_approved
+*.bak
+*.tmp
+*.temp
 
-# OS固有ファイル
-.DS_Store
-.Thumbs.db
-
-# エディタの設定ファイル
-.vscode/
-.idea/
-*.swp
-*.swo.autoenv_approved
+# テスト用画像（開発時のみコメントアウト）
+# input/
+# test_images/
