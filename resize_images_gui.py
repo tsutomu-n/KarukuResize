@@ -136,8 +136,7 @@ class App(ctk.CTk):
             print(f"タブフォント設定エラー(改): {e}")
 
         # タブを追加
-        self.tab_resize = self.tab_view.add("リサイズ")
-        self.tab_compress = self.tab_view.add("圧縮")
+        self.tab_resize = self.tab_view.add("単一画像処理")
         self.tab_batch_process = self.tab_view.add("一括処理")  # This tab is for batch processing
 
         # 必要な変数を初期化
@@ -159,6 +158,8 @@ class App(ctk.CTk):
             self.on_resize_mode_change(self.resize_mode_var.get())
         if hasattr(self, "resize_output_format_var"):
             self.on_output_format_change(self.resize_output_format_var.get())
+        if hasattr(self, "resize_enable_compression_var"):
+            self.update_resize_compression_settings_state()
 
         # ウィンドウを中央に配置
         self.center_window()
@@ -234,14 +235,62 @@ class App(ctk.CTk):
         # ログメッセージは初期化完了後のみ表示
         if hasattr(self, "log_textbox") and self.log_textbox is not None:
             self.add_log_message(f"リサイズモード変更: {selected_mode}")
-        if hasattr(self, "resize_value_unit_label") and self.resize_value_unit_label:
-            if selected_mode == "パーセント":
-                self.resize_value_unit_label.configure(text="%")
-            else:
-                self.resize_value_unit_label.configure(text="px")
+        
+        # リサイズなしモードの場合
+        if selected_mode == "リサイズなし":
+            if hasattr(self, "resize_value_entry"):
+                self.resize_value_entry.configure(state="disabled")
+                self.resize_value_entry.delete(0, "end")
+            if hasattr(self, "resize_value_unit_label"):
+                self.resize_value_unit_label.configure(text="")
+            if hasattr(self, "resize_aspect_ratio_checkbox"):
+                self.resize_aspect_ratio_checkbox.configure(state="disabled")
+        else:
+            if hasattr(self, "resize_value_entry"):
+                self.resize_value_entry.configure(state="normal")
+            if hasattr(self, "resize_aspect_ratio_checkbox"):
+                self.resize_aspect_ratio_checkbox.configure(state="normal")
+            
+            if hasattr(self, "resize_value_unit_label") and self.resize_value_unit_label:
+                if selected_mode == "パーセント":
+                    self.resize_value_unit_label.configure(text="%")
+                else:
+                    self.resize_value_unit_label.configure(text="px")
 
-        if hasattr(self, "resize_value_entry"):
+        if hasattr(self, "resize_value_entry") and selected_mode != "リサイズなし":
             self.resize_value_entry.delete(0, "end")
+
+    def update_resize_compression_settings_state(self):
+        """圧縮設定の有効/無効を切り替える"""
+        enable_compression = self.resize_enable_compression_var.get()
+        state = "normal" if enable_compression else "disabled"
+        
+        # 圧縮関連のUI要素の状態を更新
+        if hasattr(self, "resize_target_size_label"):
+            self.resize_target_size_label.configure(state=state)
+        if hasattr(self, "resize_target_size_entry"):
+            self.resize_target_size_entry.configure(state=state)
+        if hasattr(self, "resize_balance_label"):
+            self.resize_balance_label.configure(state=state)
+        if hasattr(self, "resize_balance_slider"):
+            self.resize_balance_slider.configure(state=state)
+        if hasattr(self, "resize_balance_value_label"):
+            self.resize_balance_value_label.configure(state=state)
+            
+        self.add_log_message(f"圧縮設定: {'有効' if enable_compression else '無効'}")
+
+    def update_balance_label(self, value):
+        """バランススライダーの値に応じてラベルを更新"""
+        int_value = int(value)
+        if int_value <= 3:
+            text = "サイズ優先"
+        elif int_value >= 8:
+            text = "品質優先"
+        else:
+            text = "バランス"
+        
+        if hasattr(self, "resize_balance_value_label"):
+            self.resize_balance_value_label.configure(text=f"{text} ({int_value})")
 
     def create_tab_content_frames(self):
         self.resize_tab_content = ctk.CTkFrame(self.tab_resize, corner_radius=0, fg_color="transparent")
@@ -255,7 +304,7 @@ class App(ctk.CTk):
 
         # ラベルでタイトル（アイコン付き）
         title_label = ctk.CTkLabel(
-            self.resize_tab_content, text="🔧 リサイズ設定", font=self.heading_font, text_color="#212529"
+            self.resize_tab_content, text="🖼️ 単一画像処理", font=self.heading_font, text_color="#212529"
         )
         title_label.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="w")
         current_row += 1
@@ -341,6 +390,7 @@ class App(ctk.CTk):
 
         self.resize_mode_var = ctk.StringVar(value="幅を指定")
         resize_modes = [
+            ("リサイズなし", "リサイズなし"),
             ("幅を指定", "幅を指定"),
             ("高さを指定", "高さを指定"),
             ("縦横最大", "縦横最大"),
@@ -359,7 +409,10 @@ class App(ctk.CTk):
                 hover_color="#5A52D5",
                 border_color="#CED4DA",
             )
-            radio.grid(row=0, column=i, padx=(0, 10), sticky="w")
+            # 2列表示にする
+            row = i // 3
+            col = i % 3
+            radio.grid(row=row, column=col, padx=(0, 10), pady=(0, 5), sticky="w")
         rs_current_row += 1
 
         # リサイズ値入力部分のフレームを作成
@@ -464,6 +517,145 @@ class App(ctk.CTk):
 
         current_row += 1  # resize_settings_frame の分
 
+        # 圧縮設定フレーム
+        compress_settings_frame = ctk.CTkFrame(
+            self.resize_tab_content, corner_radius=10, fg_color="#FFFFFF", border_width=1, border_color="#DEE2E6"
+        )
+        compress_settings_frame.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(10, 10), sticky="ew")
+        compress_settings_frame.grid_columnconfigure(1, weight=1)
+
+        # 圧縮設定のタイトル
+        compress_settings_title = ctk.CTkLabel(
+            compress_settings_frame, text="🗜️ 圧縮設定", font=ctk.CTkFont(size=16, weight="bold"), text_color="#212529"
+        )
+        compress_settings_title.grid(row=0, column=0, columnspan=3, padx=20, pady=(15, 20), sticky="w")
+
+        cs_current_row = 1
+
+        # 圧縮を有効にするチェックボックス
+        self.resize_enable_compression_var = ctk.BooleanVar(value=True)
+        self.resize_enable_compression_checkbox = ctk.CTkCheckBox(
+            compress_settings_frame,
+            text="圧縮を有効にする",
+            variable=self.resize_enable_compression_var,
+            command=self.update_resize_compression_settings_state,
+            font=self.normal_font,
+            fg_color="#6C63FF",
+            hover_color="#5A52D5",
+            border_color="#CED4DA",
+        )
+        self.resize_enable_compression_checkbox.grid(row=cs_current_row, column=0, columnspan=3, padx=20, pady=10, sticky="w")
+        cs_current_row += 1
+
+        # ファイルサイズ目標（オプション）
+        self.resize_target_size_label = ctk.CTkLabel(
+            compress_settings_frame, text="目標ファイルサイズ:", font=self.normal_font, text_color="#212529"
+        )
+        self.resize_target_size_label.grid(row=cs_current_row, column=0, padx=(20, 5), pady=10, sticky="w")
+        
+        target_size_frame = ctk.CTkFrame(compress_settings_frame, fg_color="transparent")
+        target_size_frame.grid(row=cs_current_row, column=1, columnspan=2, padx=5, pady=10, sticky="ew")
+        
+        self.resize_target_size_entry = ctk.CTkEntry(
+            target_size_frame,
+            font=self.normal_font,
+            width=100,
+            corner_radius=6,
+            border_width=2,
+            border_color="#CED4DA",
+            placeholder_text="KB単位",
+        )
+        self.resize_target_size_entry.pack(side="left", padx=(0, 5))
+        
+        ctk.CTkLabel(
+            target_size_frame, text="KB (オプション)", font=self.normal_font, text_color="#212529"
+        ).pack(side="left")
+        cs_current_row += 1
+
+        # バランススライダー（サイズと品質のバランス）
+        self.resize_balance_label = ctk.CTkLabel(
+            compress_settings_frame, text="サイズ/品質バランス:", font=self.normal_font, text_color="#212529"
+        )
+        self.resize_balance_label.grid(row=cs_current_row, column=0, padx=(20, 5), pady=10, sticky="w")
+        
+        balance_frame = ctk.CTkFrame(compress_settings_frame, fg_color="transparent")
+        balance_frame.grid(row=cs_current_row, column=1, columnspan=2, padx=5, pady=10, sticky="ew")
+        
+        self.resize_balance_var = ctk.IntVar(value=5)
+        self.resize_balance_slider = ctk.CTkSlider(
+            balance_frame,
+            from_=1,
+            to=10,
+            number_of_steps=9,
+            variable=self.resize_balance_var,
+            command=self.update_balance_label,
+            progress_color="#6C63FF",
+            button_color="#6C63FF",
+            button_hover_color="#5A52D5",
+            width=300,
+        )
+        self.resize_balance_slider.pack(side="left", padx=(0, 10))
+        
+        self.resize_balance_value_label = ctk.CTkLabel(
+            balance_frame,
+            text="バランス",
+            font=self.normal_font,
+        )
+        self.resize_balance_value_label.pack(side="left")
+        cs_current_row += 1
+
+        current_row += 1  # compress_settings_frame の分
+
+        # ファイル名設定フレーム
+        filename_settings_frame = ctk.CTkFrame(
+            self.resize_tab_content, corner_radius=10, fg_color="#FFFFFF", border_width=1, border_color="#DEE2E6"
+        )
+        filename_settings_frame.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(10, 10), sticky="ew")
+        filename_settings_frame.grid_columnconfigure(1, weight=1)
+
+        # ファイル名設定のタイトル
+        filename_settings_title = ctk.CTkLabel(
+            filename_settings_frame, text="📝 ファイル名設定", font=ctk.CTkFont(size=16, weight="bold"), text_color="#212529"
+        )
+        filename_settings_title.grid(row=0, column=0, columnspan=3, padx=20, pady=(15, 20), sticky="w")
+
+        fs_current_row = 1
+
+        # プレフィックス
+        ctk.CTkLabel(
+            filename_settings_frame, text="プレフィックス:", font=self.normal_font, text_color="#212529"
+        ).grid(row=fs_current_row, column=0, padx=(20, 5), pady=10, sticky="w")
+        
+        self.resize_prefix_entry = ctk.CTkEntry(
+            filename_settings_frame,
+            font=self.normal_font,
+            corner_radius=6,
+            border_width=2,
+            border_color="#CED4DA",
+            placeholder_text="ファイル名の先頭に追加（オプション）",
+        )
+        self.resize_prefix_entry.grid(row=fs_current_row, column=1, columnspan=2, padx=5, pady=10, sticky="ew")
+        fs_current_row += 1
+
+        # サフィックス
+        ctk.CTkLabel(
+            filename_settings_frame, text="サフィックス:", font=self.normal_font, text_color="#212529"
+        ).grid(row=fs_current_row, column=0, padx=(20, 5), pady=10, sticky="w")
+        
+        self.resize_suffix_entry = ctk.CTkEntry(
+            filename_settings_frame,
+            font=self.normal_font,
+            corner_radius=6,
+            border_width=2,
+            border_color="#CED4DA",
+            placeholder_text="ファイル名の末尾に追加（デフォルト: _resized）",
+        )
+        self.resize_suffix_entry.grid(row=fs_current_row, column=1, columnspan=2, padx=5, pady=10, sticky="ew")
+        self.resize_suffix_entry.insert(0, "_resized")  # デフォルト値
+        fs_current_row += 1
+
+        current_row += 1  # filename_settings_frame の分
+
         action_buttons_frame = ctk.CTkFrame(self.resize_tab_content, fg_color="transparent")
         action_buttons_frame.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(10, 0), sticky="ew")
         action_buttons_frame.grid_columnconfigure(0, weight=1)
@@ -504,13 +696,6 @@ class App(ctk.CTk):
 
         # 全ての初期化が完了した後に初期値を設定する
 
-        self.compress_tab_content = ctk.CTkFrame(self.tab_compress, corner_radius=0, fg_color="transparent")
-        self.compress_tab_content.pack(fill="both", expand=True, padx=5, pady=5)
-        ctk.CTkLabel(
-            self.compress_tab_content,
-            text="圧縮設定はここに配置",
-            font=self.normal_font,
-        ).pack(pady=20)
 
         self.batch_process_content_frame = ctk.CTkScrollableFrame(
             self.tab_batch_process, corner_radius=0, fg_color="transparent"
@@ -1063,6 +1248,15 @@ class App(ctk.CTk):
         output_format_gui = self.resize_output_format_var.get()
         quality = self.resize_quality_var.get()
         exif_handling_gui = self.exif_handling_var.get()  # Get EXIF handling option
+        
+        # 圧縮設定を取得
+        enable_compression = self.resize_enable_compression_var.get()
+        target_size_str = self.resize_target_size_entry.get().strip()
+        balance = self.resize_balance_var.get()
+        
+        # ファイル名設定を取得
+        prefix = self.resize_prefix_entry.get().strip()
+        suffix = self.resize_suffix_entry.get().strip()
 
         if not input_file_str:
             self.add_log_message("エラー: 入力ファイルが選択されていません。ファイルを選択してください。")
@@ -1120,19 +1314,18 @@ class App(ctk.CTk):
                 is_warning=True,
             )
 
-        dest_path = output_directory / (file_stem + new_suffix)
+        # ファイル名にプレフィックスとサフィックスを適用
+        new_filename = f"{prefix}{file_stem}{suffix}{new_suffix}"
+        dest_path = output_directory / new_filename
 
         resize_mode_map = {
-            "パーセント指定": "percent",
-            "幅指定": "width",
-            "高さ指定": "height",
-            "長辺指定": "long_edge",
-            "短辺指定": "short_edge",
+            "リサイズなし": "none",
+            "パーセント": "percentage",
+            "幅を指定": "width",
+            "高さを指定": "height",
+            "縦横最大": "longest_side",
         }
-        if resize_mode_gui == "パーセント指定":
-            core_resize_mode = "percentage"
-        else:
-            core_resize_mode = resize_mode_map.get(resize_mode_gui, "width")
+        core_resize_mode = resize_mode_map.get(resize_mode_gui, "width")
 
         try:
             resize_value_parsed = int(resize_value_str) if resize_value_str else 0
@@ -1163,6 +1356,9 @@ class App(ctk.CTk):
                     core_output_format,
                     quality_parsed,
                     core_exif_handling,
+                    enable_compression,
+                    target_size_str,
+                    balance,
                 ),
             )
             self.processing_thread.start()
@@ -1187,6 +1383,9 @@ class App(ctk.CTk):
         core_output_format,
         quality,
         exif_handling,
+        enable_compression,
+        target_size_str,
+        balance,
     ):
         try:
             self.add_log_message("画像処理スレッドを開始しました...")
@@ -1244,7 +1443,14 @@ class App(ctk.CTk):
                 return
 
             calculated_target_width = 0
-            if core_resize_mode == "width":
+            if core_resize_mode == "none":
+                # リサイズなしの場合は元のサイズを維持
+                calculated_target_width = original_width
+                self.after(
+                    0,
+                    lambda: self.add_log_message("リサイズなしモード - 圧縮のみ実行します。"),
+                )
+            elif core_resize_mode == "width":
                 calculated_target_width = resize_value
             elif core_resize_mode == "percentage":
                 calculated_target_width = int(original_width * (resize_value / 100))
@@ -1267,8 +1473,14 @@ class App(ctk.CTk):
                             is_warning=True,
                         ),
                     )
+            elif core_resize_mode == "longest_side":
+                # 縦横最大モードの場合
+                if original_width > original_height:
+                    calculated_target_width = resize_value
+                else:
+                    calculated_target_width = int(original_width * (resize_value / original_height))
 
-            if calculated_target_width <= 0:
+            if calculated_target_width <= 0 and core_resize_mode != "none":
                 self.after(
                     0,
                     lambda: self.add_log_message(
@@ -1295,16 +1507,38 @@ class App(ctk.CTk):
                 )
                 return
 
+            # 目標ファイルサイズの処理
+            target_size_kb = None
+            if enable_compression and target_size_str:
+                try:
+                    target_size_kb = int(target_size_str)
+                    self.after(
+                        0,
+                        lambda: self.add_log_message(f"目標ファイルサイズ: {target_size_kb} KB"),
+                    )
+                except ValueError:
+                    self.after(
+                        0,
+                        lambda: self.add_log_message(
+                            f"警告: 目標ファイルサイズ '{target_size_str}' は無効な値です。無視します。",
+                            is_warning=True,
+                        ),
+                    )
+
             # resize_and_compress_image を呼び出す
+            # 圧縮が無効の場合は品質100で処理
+            effective_quality = quality if enable_compression else 100
+            
             success, skipped, new_size_kb = resize_and_compress_image(
                 source_path=source_path,
                 dest_path=dest_path,
                 target_width=calculated_target_width,
-                quality=quality,
+                quality=effective_quality,
                 format=core_output_format,
-                exif_handling=exif_handling,  # Pass EXIF handling to core function
-                balance=5,  # balance の値はGUIからは設定できないため固定値
-                webp_lossless=False,  # webp_lossless の値はGUIからは設定できないため固定値
+                exif_handling=exif_handling,
+                balance=balance if enable_compression else 10,  # 圧縮無効時は品質優先
+                webp_lossless=False,
+                target_size_kb=target_size_kb if enable_compression else None,
                 # dry_run=False # dry_run はGUIの主要機能ではないためFalse固定
             )
 
@@ -1480,9 +1714,9 @@ class App(ctk.CTk):
         self.cancel_requested = False
         
         # ログをクリア
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.configure(state="disabled")
+        self.log_textbox.configure(state="normal")
+        self.log_textbox.delete("1.0", "end")
+        self.log_textbox.configure(state="disabled")
         
         self.add_log_message("一括処理を開始します...")
         self.add_log_message(f"入力フォルダ: {input_folder}")
