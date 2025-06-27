@@ -136,8 +136,7 @@ class App(ctk.CTk):
             print(f"タブフォント設定エラー(改): {e}")
 
         # タブを追加
-        self.tab_resize = self.tab_view.add("単一画像処理")
-        self.tab_batch_process = self.tab_view.add("一括処理")  # This tab is for batch processing
+        self.tab_resize = self.tab_view.add("画像リサイズ")
 
         # 必要な変数を初期化
         self.resize_value_unit_label = None
@@ -189,18 +188,55 @@ class App(ctk.CTk):
             entry_widget.insert(0, dirpath)
             self.add_log_message(f"フォルダ選択: {dirpath}")
 
-    def browse_resize_input_file(self):
-        """リサイズ用の入力ファイルを選択"""
-        filetypes = [("画像ファイル", "*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif"), ("すべてのファイル", "*.*")]
-        filename = filedialog.askopenfilename(title="入力ファイルを選択", filetypes=filetypes)
-        if filename:
-            self.resize_input_file_entry.delete(0, "end")
-            self.resize_input_file_entry.insert(0, filename)
-            self.add_log_message(f"ファイル選択: {filename}")
+    def browse_input(self):
+        """処理モードに応じて入力を選択"""
+        if self.processing_mode_var.get() == "single":
+            # 単一ファイルモード
+            filetypes = [("画像ファイル", "*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif"), ("すべてのファイル", "*.*")]
+            filename = filedialog.askopenfilename(title="入力ファイルを選択", filetypes=filetypes)
+            if filename:
+                self.input_entry.delete(0, "end")
+                self.input_entry.insert(0, filename)
+                self.add_log_message(f"ファイル選択: {filename}")
+        else:
+            # フォルダ一括処理モード
+            dirpath = filedialog.askdirectory(title="入力フォルダを選択")
+            if dirpath:
+                self.input_entry.delete(0, "end")
+                self.input_entry.insert(0, dirpath)
+                self.add_log_message(f"フォルダ選択: {dirpath}")
 
-    def browse_resize_output_dir(self):
-        """リサイズ用の出力先フォルダを選択"""
-        self._select_directory(self.resize_output_dir_entry, title="出力先フォルダを選択")
+    def browse_output_dir(self):
+        """出力先フォルダを選択"""
+        self._select_directory(self.output_dir_entry, title="出力先フォルダを選択")
+    
+    def on_processing_mode_change(self):
+        """処理モードが変更されたときの処理"""
+        mode = self.processing_mode_var.get()
+        
+        # 入力ラベルとプレースホルダーを更新
+        if mode == "single":
+            self.input_label.configure(text="入力ファイル:")
+            self.input_entry.configure(placeholder_text="画像ファイルを選択してください...")
+            if hasattr(self, "start_button"):
+                self.start_button.configure(text="処理開始")
+        else:
+            self.input_label.configure(text="入力フォルダ:")
+            self.input_entry.configure(placeholder_text="処理するフォルダを選択してください...")
+            if hasattr(self, "start_button"):
+                self.start_button.configure(text="一括処理開始")
+        
+        # 入力をクリア
+        self.input_entry.delete(0, "end")
+        
+        # サブフォルダ処理オプションの表示/非表示
+        if hasattr(self, "include_subdirs_checkbox"):
+            if mode == "batch":
+                self.include_subdirs_checkbox.grid()
+            else:
+                self.include_subdirs_checkbox.grid_remove()
+        
+        self.add_log_message(f"処理モード変更: {'単一ファイル' if mode == 'single' else 'フォルダ一括処理'}")
 
     def on_output_format_change(self, selected_format):
         # ログメッセージは初期化完了後のみ表示
@@ -304,16 +340,42 @@ class App(ctk.CTk):
 
         # ラベルでタイトル（アイコン付き）
         title_label = ctk.CTkLabel(
-            self.resize_tab_content, text="🖼️ 単一画像処理", font=self.heading_font, text_color="#212529"
+            self.resize_tab_content, text="🖼️ 画像リサイズ", font=self.heading_font, text_color="#212529"
         )
         title_label.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="w")
         current_row += 1
 
-        # 入力ファイル・フォルダ選択
-        ctk.CTkLabel(self.resize_tab_content, text="入力ファイル:", font=self.normal_font, text_color="#212529").grid(
-            row=current_row, column=0, padx=(10, 5), pady=15, sticky="w"
+        # 処理モード選択
+        mode_frame = ctk.CTkFrame(self.resize_tab_content, corner_radius=10, border_width=1, border_color="#E9ECEF")
+        mode_frame.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="ew")
+        mode_frame.grid_columnconfigure(1, weight=1)
+        mode_frame.grid_columnconfigure(2, weight=1)
+        
+        ctk.CTkLabel(mode_frame, text="処理モード:", font=self.normal_font, text_color="#212529").grid(
+            row=0, column=0, padx=(10, 5), pady=10, sticky="w"
         )
-        self.resize_input_file_entry = ctk.CTkEntry(
+        
+        self.processing_mode_var = ctk.StringVar(value="single")
+        
+        self.single_mode_radio = ctk.CTkRadioButton(
+            mode_frame, text="単一ファイル", variable=self.processing_mode_var, value="single",
+            command=self.on_processing_mode_change, font=self.normal_font
+        )
+        self.single_mode_radio.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        
+        self.batch_mode_radio = ctk.CTkRadioButton(
+            mode_frame, text="フォルダ一括処理", variable=self.processing_mode_var, value="batch",
+            command=self.on_processing_mode_change, font=self.normal_font
+        )
+        self.batch_mode_radio.grid(row=0, column=2, padx=10, pady=10, sticky="w")
+        
+        current_row += 1
+
+        # 入力選択（モードに応じて変化）
+        self.input_label = ctk.CTkLabel(self.resize_tab_content, text="入力ファイル:", font=self.normal_font, text_color="#212529")
+        self.input_label.grid(row=current_row, column=0, padx=(10, 5), pady=15, sticky="w")
+        
+        self.input_entry = ctk.CTkEntry(
             self.resize_tab_content,
             font=self.normal_font,
             corner_radius=6,
@@ -321,11 +383,12 @@ class App(ctk.CTk):
             border_color="#CED4DA",
             placeholder_text="画像ファイルを選択してください...",
         )
-        self.resize_input_file_entry.grid(row=current_row, column=1, padx=5, pady=15, sticky="ew")
-        self.resize_input_file_button = ctk.CTkButton(
+        self.input_entry.grid(row=current_row, column=1, padx=5, pady=15, sticky="ew")
+        
+        self.input_button = ctk.CTkButton(
             self.resize_tab_content,
             text="📁 参照",
-            command=self.browse_resize_input_file,
+            command=self.browse_input,
             width=100,
             height=36,
             font=self.normal_font,
@@ -334,14 +397,14 @@ class App(ctk.CTk):
             hover_color="#5A52D5",
             text_color="#FFFFFF",
         )
-        self.resize_input_file_button.grid(row=current_row, column=2, padx=5, pady=15)
+        self.input_button.grid(row=current_row, column=2, padx=5, pady=15)
         current_row += 1
 
         ctk.CTkLabel(self.resize_tab_content, text="出力先フォルダ:", font=self.normal_font, text_color="#212529").grid(
             row=current_row, column=0, padx=(10, 5), pady=15, sticky="w"
         )
 
-        self.resize_output_dir_entry = ctk.CTkEntry(
+        self.output_dir_entry = ctk.CTkEntry(
             self.resize_tab_content,
             font=self.normal_font,
             corner_radius=6,
@@ -349,12 +412,12 @@ class App(ctk.CTk):
             border_color="#CED4DA",
             placeholder_text="出力先フォルダを選択してください...",
         )
-        self.resize_output_dir_entry.grid(row=current_row, column=1, padx=5, pady=15, sticky="ew")
+        self.output_dir_entry.grid(row=current_row, column=1, padx=5, pady=15, sticky="ew")
 
-        self.resize_output_dir_button = ctk.CTkButton(
+        self.output_dir_button = ctk.CTkButton(
             self.resize_tab_content,
             text="📁 参照",
-            command=self.browse_resize_output_dir,
+            command=self.browse_output_dir,
             width=100,
             height=36,
             font=self.normal_font,
@@ -363,7 +426,23 @@ class App(ctk.CTk):
             hover_color="#5A52D5",
             text_color="#FFFFFF",
         )
-        self.resize_output_dir_button.grid(row=current_row, column=2, padx=5, pady=15)
+        self.output_dir_button.grid(row=current_row, column=2, padx=5, pady=15)
+        current_row += 1
+        
+        # サブフォルダ処理オプション（バッチモードのみ表示）
+        self.include_subdirs_var = ctk.BooleanVar(value=False)
+        self.include_subdirs_checkbox = ctk.CTkCheckBox(
+            self.resize_tab_content,
+            text="サブフォルダも処理する",
+            variable=self.include_subdirs_var,
+            font=self.normal_font,
+            text_color="#212529",
+            corner_radius=6,
+            fg_color="#6C63FF",
+            hover_color="#5A52D5"
+        )
+        self.include_subdirs_checkbox.grid(row=current_row, column=1, padx=5, pady=(0, 15), sticky="w")
+        self.include_subdirs_checkbox.grid_remove()  # 初期状態では非表示
         current_row += 1
 
         # リサイズ設定フレーム
@@ -663,10 +742,10 @@ class App(ctk.CTk):
         action_buttons_frame.grid_columnconfigure(2, weight=0)  # Cancel button column
         action_buttons_frame.grid_columnconfigure(3, weight=1)
 
-        self.resize_start_button = ctk.CTkButton(
+        self.start_button = ctk.CTkButton(
             action_buttons_frame,
             text="🚀 処理開始",
-            command=self.start_resize_process,
+            command=self.start_process,
             width=150,
             height=42,
             font=self.button_font,
@@ -675,9 +754,9 @@ class App(ctk.CTk):
             text_color="#FFFFFF",
             corner_radius=8,
         )
-        self.resize_start_button.grid(row=0, column=1, padx=5, pady=10)
+        self.start_button.grid(row=0, column=1, padx=5, pady=10)
 
-        self.resize_cancel_button = ctk.CTkButton(
+        self.cancel_button = ctk.CTkButton(
             action_buttons_frame,
             text="⏹ 中断",
             command=self.request_cancel_processing,
@@ -691,72 +770,10 @@ class App(ctk.CTk):
             text_color_disabled="#FFFFFF",
             corner_radius=8,
         )
-        self.resize_cancel_button.grid(row=0, column=2, padx=5, pady=10)
+        self.cancel_button.grid(row=0, column=2, padx=5, pady=10)
         current_row += 1
 
         # 全ての初期化が完了した後に初期値を設定する
-
-
-        self.batch_process_content_frame = ctk.CTkScrollableFrame(
-            self.tab_batch_process, corner_radius=0, fg_color="transparent"
-        )
-        self.batch_process_content_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        self.batch_process_content_frame.grid_columnconfigure(1, weight=1)
-
-        # タイトル
-        batch_title_label = ctk.CTkLabel(
-            self.batch_process_content_frame, text="📁 一括処理設定", font=self.heading_font, text_color="#212529"
-        )
-        batch_title_label.grid(row=0, column=0, columnspan=3, padx=10, pady=(0, 20), sticky="w")
-
-        # --- 入力フォルダ選択 ---
-        self.label_batch_input_folder = ctk.CTkLabel(
-            self.batch_process_content_frame, text="入力フォルダ:", font=self.normal_font, text_color="#212529"
-        )
-        self.label_batch_input_folder.grid(row=1, column=0, padx=(10, 5), pady=15, sticky="w")
-
-        self.batch_input_folder_path_var = ctk.StringVar()
-        self.entry_batch_input_folder = ctk.CTkEntry(
-            self.batch_process_content_frame,
-            textvariable=self.batch_input_folder_path_var,
-            font=self.normal_font,
-            corner_radius=6,
-            border_width=2,
-            border_color="#CED4DA",
-            placeholder_text="一括処理する入力フォルダを選択...",
-        )
-        self.entry_batch_input_folder.grid(row=1, column=1, padx=5, pady=15, sticky="ew")
-
-        self.button_batch_input_folder = ctk.CTkButton(
-            self.batch_process_content_frame,
-            text="📁 参照",
-            command=self.browse_batch_input_folder,
-            width=100,
-            height=36,
-            font=self.normal_font,
-            corner_radius=6,
-            fg_color="#6C63FF",
-            hover_color="#5A52D5",
-            text_color="#FFFFFF",
-        )
-        self.button_batch_input_folder.grid(row=1, column=2, padx=5, pady=15)
-
-        # --- 出力フォルダ選択 ---
-        self.label_batch_output_folder = ctk.CTkLabel(
-            self.batch_process_content_frame, text="出力フォルダ:", font=self.normal_font, text_color="#212529"
-        )
-        self.label_batch_output_folder.grid(row=2, column=0, padx=(10, 5), pady=15, sticky="w")
-
-        self.batch_output_folder_path_var = ctk.StringVar()
-        self.entry_batch_output_folder = ctk.CTkEntry(
-            self.batch_process_content_frame,
-            textvariable=self.batch_output_folder_path_var,
-            font=self.normal_font,
-            corner_radius=6,
-            border_width=2,
-            border_color="#CED4DA",
-            placeholder_text="一括処理の出力先フォルダを選択...",
-        )
         self.entry_batch_output_folder.grid(row=2, column=1, padx=5, pady=15, sticky="ew")
 
         self.button_batch_output_folder = ctk.CTkButton(
@@ -1098,80 +1115,6 @@ class App(ctk.CTk):
         )
         self.batch_cancel_button.grid(row=0, column=2, padx=5, pady=5)
 
-    def browse_batch_input_folder(self):
-        folder_selected = filedialog.askdirectory(title="一括処理する入力フォルダを選択")
-        if folder_selected:
-            self.batch_input_folder_path_var.set(folder_selected)
-            self.add_log_message(f"一括処理 入力フォルダ: {folder_selected}")
-
-    def browse_batch_output_folder(self):
-        folder_selected = filedialog.askdirectory(title="一括処理後の出力先フォルダを選択")
-        if folder_selected:
-            self.batch_output_folder_path_var.set(folder_selected)
-            self.add_log_message(f"一括処理 出力フォルダ: {folder_selected}")
-
-    def update_batch_resize_value_unit_label(self):
-        mode = self.batch_resize_mode_var.get()
-        if mode == "パーセント指定":
-            self.batch_resize_value_unit_label.configure(text="%")
-        else:
-            self.batch_resize_value_unit_label.configure(text="px")
-        # 「指定なし」の場合、値入力と単位を無効化（または非表示）
-        if mode == "指定なし":
-            self.entry_batch_resize_value.configure(state="disabled")
-            self.batch_resize_value_unit_label.configure(text="")  # 単位を消す
-            self.checkbox_batch_keep_aspect_ratio.configure(state="disabled")
-        else:
-            self.entry_batch_resize_value.configure(state="normal")
-            self.checkbox_batch_keep_aspect_ratio.configure(state="normal")
-
-    def update_batch_compression_settings_state(self):
-        enable_compression = self.batch_enable_compression_var.get()
-        if enable_compression:
-            self.label_batch_output_format.configure(state="normal")
-            self.optionmenu_batch_output_format.configure(state="normal")
-        else:
-            self.label_batch_output_format.configure(state="disabled")
-            self.optionmenu_batch_output_format.configure(state="disabled")
-        self.update_batch_quality_settings_visibility()  # 品質設定の表示/非表示も連動
-
-    def update_batch_quality_settings_visibility(self, _event=None):  # _eventはOptionMenuのcommandから渡されるため追加
-        # 一旦すべての品質設定UIを非表示にする
-        self.label_batch_jpeg_quality.grid_remove()
-        self.slider_batch_jpeg_quality.grid_remove()
-        self.label_batch_jpeg_quality_value.grid_remove()
-        self.label_batch_webp_quality.grid_remove()
-        self.slider_batch_webp_quality.grid_remove()
-        self.label_batch_webp_quality_value.grid_remove()
-        self.checkbox_batch_webp_lossless.grid_remove()
-
-        if not self.batch_enable_compression_var.get():
-            return  # 圧縮が無効なら何も表示しない
-
-        selected_format = self.batch_output_format_var.get()
-        current_row = 14  # 品質設定UIの開始行
-
-        if selected_format == "JPEG":
-            self.label_batch_jpeg_quality.grid(row=current_row, column=0, padx=(0, 5), pady=5, sticky="w")
-            self.slider_batch_jpeg_quality.grid(row=current_row, column=1, padx=5, pady=5, sticky="ew")
-            self.label_batch_jpeg_quality_value.grid(row=current_row, column=2, padx=(0, 5), pady=5, sticky="w")
-            self.slider_batch_jpeg_quality.configure(state="normal")
-        elif selected_format == "WEBP":
-            self.label_batch_webp_quality.grid(row=current_row, column=0, padx=(0, 5), pady=5, sticky="w")
-            self.slider_batch_webp_quality.grid(row=current_row, column=1, padx=5, pady=5, sticky="ew")
-            self.label_batch_webp_quality_value.grid(row=current_row, column=2, padx=(0, 5), pady=5, sticky="w")
-            current_row += 1
-            self.checkbox_batch_webp_lossless.grid(row=current_row, column=1, columnspan=2, padx=5, pady=5, sticky="w")
-            self.update_batch_webp_lossless_state()  # WEBPロスレスチェックボックスの状態を更新
-        # PNGやオリジナルを維持の場合は、専用の品質UIは表示しない
-
-    def update_batch_webp_lossless_state(self):
-        if self.batch_webp_lossless_var.get():
-            self.slider_batch_webp_quality.configure(state="disabled")
-            self.label_batch_webp_quality_value.configure(state="disabled")
-        else:
-            self.slider_batch_webp_quality.configure(state="normal")
-            self.label_batch_webp_quality_value.configure(state="normal")
 
     def add_log_message(self, message, is_warning=False, is_error=False):
         # log_textboxがまだ初期化されていない場合は何もしない
@@ -1232,16 +1175,32 @@ class App(ctk.CTk):
         # 再度サイズを確定させる
         self.update_idletasks()
 
-    def start_resize_process(self):
-        self.add_log_message("リサイズ処理を開始します...")
-        if self.resize_start_button:
-            self.resize_start_button.configure(state="disabled")
-        if self.resize_cancel_button:
-            self.resize_cancel_button.configure(state="normal")
+    def start_process(self):
+        """処理モードに応じて単一ファイル処理またはバッチ処理を開始"""
+        mode = self.processing_mode_var.get()
+        
+        if mode == "single":
+            self.add_log_message("単一ファイル処理を開始します...")
+        else:
+            self.add_log_message("フォルダ一括処理を開始します...")
+            
+        if self.start_button:
+            self.start_button.configure(state="disabled")
+        if self.cancel_button:
+            self.cancel_button.configure(state="normal")
         self.update_progress(0.1)
+        
+        # モードに応じて処理を分岐
+        if mode == "single":
+            self.process_single_file()
+        else:
+            self.process_batch_folder()
+    
+    def process_single_file(self):
+        """単一ファイル処理の実行"""
 
-        input_file_str = self.resize_input_file_entry.get()
-        output_dir_str = self.resize_output_dir_entry.get()
+        input_file_str = self.input_entry.get()
+        output_dir_str = self.output_dir_entry.get()
         resize_mode_gui = self.resize_mode_var.get()
         resize_value_str = self.resize_value_entry.get()
         keep_aspect_ratio = self.resize_aspect_ratio_var.get()
@@ -1260,7 +1219,7 @@ class App(ctk.CTk):
 
         if not input_file_str:
             self.add_log_message("エラー: 入力ファイルが選択されていません。ファイルを選択してください。")
-            self.finish_resize_process(success=False)
+            self.finish_process(success=False)
             return
 
         core_output_format = {
@@ -1293,7 +1252,7 @@ class App(ctk.CTk):
                     f"エラー: 出力ディレクトリの作成に失敗しました: {output_directory} ({e_os})",
                     is_error=True,
                 )
-                self.finish_resize_process(success=False, message="出力ディレクトリ作成失敗")
+                self.finish_process(success=False, message="出力ディレクトリ作成失敗")
                 return
 
         file_stem = source_file_path.stem
@@ -1612,7 +1571,7 @@ class App(ctk.CTk):
         # スレッドは自然に終了するのを待つ
         # 本格的な実装では、もっと洗練された中断機構が必要
 
-    def finish_resize_process(self, success=True, message="処理完了"):
+    def finish_process(self, success=True, message="処理完了"):
         if success:
             self.add_log_message(f"完了: {message}")
             self.update_progress(1)
@@ -1620,144 +1579,64 @@ class App(ctk.CTk):
             self.add_log_message(f"エラー/中断: {message}")
             self.update_progress(0)
 
-        if self.resize_start_button:
-            self.resize_start_button.configure(state="normal")
-        if self.resize_cancel_button:
-            self.resize_cancel_button.configure(state="disabled")
+        if self.start_button:
+            self.start_button.configure(state="normal")
+        if self.cancel_button:
+            self.cancel_button.configure(state="disabled")
         self.cancel_requested = False  # 念のため再度リセット
-
-    def start_batch_process(self):
-        """一括処理を開始"""
-        # 入力値の検証
-        input_folder = self.batch_input_folder_path_var.get().strip()
-        output_folder = self.batch_output_folder_path_var.get().strip()
+    
+    def process_batch_folder(self):
+        """フォルダ一括処理の実行"""
+        input_folder_str = self.input_entry.get()
+        output_dir_str = self.output_dir_entry.get()
+        include_subdirs = self.include_subdirs_var.get()
         
-        if not input_folder:
-            self.add_log_message("エラー: 入力フォルダが選択されていません。", is_error=True)
+        if not input_folder_str or not output_dir_str:
+            self.add_log_message("エラー: 入力フォルダまたは出力フォルダが指定されていません。", is_error=True)
+            self.finish_process(success=False)
             return
             
-        if not output_folder:
-            self.add_log_message("エラー: 出力フォルダが選択されていません。", is_error=True)
-            return
-            
-        # パスの存在確認
-        input_path = Path(input_folder)
-        if not input_path.exists():
-            self.add_log_message(f"エラー: 入力フォルダが存在しません: {input_folder}", is_error=True)
-            return
-            
-        # 出力フォルダの作成（存在しない場合）
-        output_path = Path(output_folder)
-        if not output_path.exists():
-            try:
-                output_path.mkdir(parents=True, exist_ok=True)
-                self.add_log_message(f"出力フォルダを作成しました: {output_folder}")
-            except Exception as e:
-                self.add_log_message(f"エラー: 出力フォルダの作成に失敗しました: {e}", is_error=True)
-                return
-                
-        # リサイズモードの取得と変換
-        resize_mode = self.batch_resize_mode_var.get()
-        resize_value = self.batch_resize_value_var.get().strip()
-        
-        # リサイズモードを resize_core の形式に変換
-        mode_mapping = {
-            "指定なし": None,
-            "幅を指定": "width",
-            "高さを指定": "height",
-            "縦横最大": "longest_side",
-            "パーセント指定": "percentage"
-        }
-        core_resize_mode = mode_mapping.get(resize_mode)
-        
-        # リサイズ値の検証
-        if core_resize_mode and core_resize_mode != "percentage":
-            try:
-                resize_value_int = int(resize_value)
-                if resize_value_int <= 0:
-                    raise ValueError("リサイズ値は正の整数である必要があります")
-            except ValueError as e:
-                self.add_log_message(f"エラー: 無効なリサイズ値: {resize_value}", is_error=True)
-                return
-        elif core_resize_mode == "percentage":
-            try:
-                resize_value_float = float(resize_value)
-                if resize_value_float <= 0:
-                    raise ValueError("パーセンテージは正の数値である必要があります")
-            except ValueError as e:
-                self.add_log_message(f"エラー: 無効なパーセンテージ値: {resize_value}", is_error=True)
-                return
-                
-        # その他の設定値を取得
-        keep_aspect_ratio = self.batch_keep_aspect_ratio_var.get()
-        enable_compression = self.batch_enable_compression_var.get()
-        output_format = self.batch_output_format_var.get()
-        
-        # 出力フォーマットの変換
-        format_mapping = {
-            "オリジナルを維持": None,
-            "JPEG": "JPEG",
-            "PNG": "PNG",
-            "WEBP": "WEBP"
-        }
-        core_output_format = format_mapping.get(output_format)
-        
-        # 品質設定の取得
-        jpeg_quality = self.batch_jpeg_quality_var.get() if core_output_format == "JPEG" else 85
-        webp_quality = self.batch_webp_quality_var.get() if core_output_format == "WEBP" else 85
-        webp_lossless = self.batch_webp_lossless_var.get() if core_output_format == "WEBP" else False
-        
-        # UIの状態を更新（処理中）
-        self.batch_start_button.configure(state="disabled")
-        self.batch_cancel_button.configure(state="normal")
-        self.progress_bar.set(0)
-        self.cancel_requested = False
-        
-        # ログをクリア
-        self.log_textbox.configure(state="normal")
-        self.log_textbox.delete("1.0", "end")
-        self.log_textbox.configure(state="disabled")
-        
-        self.add_log_message("一括処理を開始します...")
-        self.add_log_message(f"入力フォルダ: {input_folder}")
-        self.add_log_message(f"出力フォルダ: {output_folder}")
-        
-        # 処理パラメータをまとめる
+        # パラメータを収集
         params = {
-            "input_folder": input_folder,
-            "output_folder": output_folder,
-            "resize_mode": core_resize_mode,
-            "resize_value": resize_value,
-            "keep_aspect_ratio": keep_aspect_ratio,
-            "enable_compression": enable_compression,
-            "output_format": core_output_format,
-            "jpeg_quality": jpeg_quality,
-            "webp_quality": webp_quality,
-            "webp_lossless": webp_lossless
+            'input_folder': input_folder_str,
+            'output_folder': output_dir_str,
+            'include_subdirs': include_subdirs,
+            'resize_mode': self.resize_mode_var.get(),
+            'resize_value': self.resize_value_entry.get(),
+            'keep_aspect_ratio': self.resize_aspect_ratio_var.get(),
+            'output_format': self.resize_output_format_var.get(),
+            'quality': self.resize_quality_var.get(),
+            'exif_handling': self.exif_handling_var.get(),
+            'enable_compression': self.resize_enable_compression_var.get(),
+            'target_size': self.resize_target_size_entry.get().strip(),
+            'balance': self.resize_balance_var.get(),
+            'prefix': self.resize_prefix_entry.get().strip(),
+            'suffix': self.resize_suffix_entry.get().strip()
         }
         
-        # バッチ処理をスレッドで実行
-        self.batch_thread = threading.Thread(
-            target=self.process_batch_worker,
-            args=(params,),
-            daemon=True
-        )
-        self.batch_thread.start()
+        # ワーカースレッドで処理を実行
+        self.processing_thread = threading.Thread(target=self.batch_worker, args=(params,), daemon=True)
+        self.processing_thread.start()
 
-    def process_batch_worker(self, params):
+
+    def batch_worker(self, params):
         """バッチ処理のワーカースレッド"""
         try:
             # パラメータを展開
             input_folder = params["input_folder"]
             output_folder = params["output_folder"]
+            include_subdirs = params["include_subdirs"]
             resize_mode = params["resize_mode"]
             resize_value = params["resize_value"]
             keep_aspect_ratio = params["keep_aspect_ratio"]
             enable_compression = params["enable_compression"]
             output_format = params["output_format"]
-            jpeg_quality = params["jpeg_quality"]
-            webp_quality = params["webp_quality"]
-            webp_lossless = params["webp_lossless"]
+            quality = params["quality"]
+            exif_handling = params["exif_handling"]
+            target_size = params["target_size"]
+            balance = params["balance"]
+            prefix = params["prefix"]
+            suffix = params["suffix"]
             
             # 画像ファイルを検索
             self.after(0, lambda: self.add_log_message("画像ファイルを検索中..."))
@@ -1765,7 +1644,7 @@ class App(ctk.CTk):
             
             if not image_files:
                 self.after(0, lambda: self.add_log_message("処理対象の画像ファイルが見つかりませんでした。", is_warning=True))
-                self.after(0, lambda: self.finish_batch_process(success=False))
+                self.after(0, lambda: self.finish_process(success=False))
                 return
                 
             total_files = len(image_files)
