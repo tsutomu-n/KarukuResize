@@ -10,6 +10,10 @@ try:
     from error_handler import ErrorHandler
     from validators import PathValidator, ValueValidator
     from thread_safe_gui import ThreadSafeGUI, MessageType
+    from drag_drop_handler import DragDropHandler, DragDropArea, TKDND_AVAILABLE
+    from progress_tracker import ProgressTracker, ProgressItem
+    from settings_manager import SettingsManager
+    from error_dialog import ErrorDialog, show_error_with_details
 except ImportError as e:
     print(f"警告: 追加モジュールのインポートに失敗しました: {e}")
     # フォールバック実装
@@ -32,6 +36,13 @@ except ImportError as e:
         def validate_resize_value(value, mode):
             return int(value) if value else 0
     class ThreadSafeGUI:
+        pass
+    TKDND_AVAILABLE = False
+    class DragDropArea(ctk.CTkFrame):
+        pass
+    class ProgressTracker:
+        pass
+    class SettingsManager:
         pass
 
 # 日本語フォント設定モジュールをインポート
@@ -197,6 +208,14 @@ class App(ctk.CTk, ThreadSafeGUI):
         
         # スレッドセーフティのセットアップ
         self.setup_thread_safety()
+        
+        # 進捗トラッカーと設定マネージャーを初期化
+        self.progress_tracker = ProgressTracker() if 'ProgressTracker' in globals() else None
+        self.settings_manager = SettingsManager() if 'SettingsManager' in globals() else None
+        
+        # 設定を読み込む
+        if self.settings_manager:
+            self.load_settings()
 
     def _select_file(
         self,
@@ -231,6 +250,9 @@ class App(ctk.CTk, ThreadSafeGUI):
                 self.input_entry.delete(0, "end")
                 self.input_entry.insert(0, filename)
                 self.add_log_message(f"ファイル選択: {filename}")
+                # 最近使用したファイルに追加
+                if self.settings_manager:
+                    self.settings_manager.add_recent_input(filename)
         else:
             # フォルダ一括処理モード
             dirpath = filedialog.askdirectory(title="入力フォルダを選択")
@@ -238,10 +260,131 @@ class App(ctk.CTk, ThreadSafeGUI):
                 self.input_entry.delete(0, "end")
                 self.input_entry.insert(0, dirpath)
                 self.add_log_message(f"フォルダ選択: {dirpath}")
+                # 最近使用したフォルダに追加
+                if self.settings_manager:
+                    self.settings_manager.add_recent_input(dirpath)
 
     def browse_output_dir(self):
         """出力先フォルダを選択"""
         self._select_directory(self.output_dir_entry, title="出力先フォルダを選択")
+    
+    def on_files_dropped(self, files: list):
+        """ファイルがドロップされたときの処理"""
+        if not files:
+            return
+            
+        # 処理モードに応じて処理を分岐
+        if self.processing_mode_var.get() == "single":
+            # 単一ファイルモード：最初のファイルのみ使用
+            file_path = str(files[0])
+            self.input_entry.delete(0, "end")
+            self.input_entry.insert(0, file_path)
+            self.add_log_message(f"ファイルドロップ: {file_path}")
+            if self.settings_manager:
+                self.settings_manager.add_recent_input(file_path)
+        else:
+            # バッチモード：親フォルダを使用
+            parent_dir = str(files[0].parent)
+            self.input_entry.delete(0, "end")
+            self.input_entry.insert(0, parent_dir)
+            self.add_log_message(f"フォルダドロップ: {parent_dir} ({len(files)}ファイル)")
+            if self.settings_manager:
+                self.settings_manager.add_recent_input(parent_dir)
+        
+        # ドラッグ&ドロップエリアの状態を更新
+        if hasattr(self, 'drag_drop_area'):
+            self.drag_drop_area.update_status(f"✅ {len(files)}ファイルを読み込みました")
+    
+    def load_settings(self):
+        """設定を読み込む"""
+        if not self.settings_manager:
+            return
+            
+        settings = self.settings_manager.load()
+        
+        # リサイズ設定を適用
+        resize_settings = settings.resize
+        
+        # モード設定
+        mode_map = {
+            "none": "リサイズなし",
+            "width": "幅を指定",
+            "height": "高さを指定",
+            "longest_side": "縦横最大",
+            "percentage": "パーセント"
+        }
+        if resize_settings.mode in mode_map and hasattr(self, 'resize_mode_var'):
+            self.resize_mode_var.set(mode_map[resize_settings.mode])
+            
+        # 値設定
+        if hasattr(self, 'resize_value_entry'):
+            self.resize_value_entry.delete(0, "end")
+            self.resize_value_entry.insert(0, str(resize_settings.value))
+            
+        # 品質設定
+        if hasattr(self, 'resize_quality_var'):
+            self.resize_quality_var.set(resize_settings.quality)
+            
+        # フォーマット設定
+        format_map = {
+            "jpeg": "JPEG",
+            "png": "PNG",
+            "webp": "WEBP"
+        }
+        if resize_settings.format in format_map and hasattr(self, 'resize_output_format_var'):
+            self.resize_output_format_var.set(format_map[resize_settings.format])
+            
+        # UI設定を適用
+        ui_settings = settings.ui
+        if ui_settings.window_width and ui_settings.window_height:
+            self.geometry(f"{ui_settings.window_width}x{ui_settings.window_height}")
+            
+        self.add_log_message("設定を読み込みました")
+    
+    def save_settings(self):
+        """設定を保存する"""
+        if not self.settings_manager:
+            return
+            
+        # リサイズ設定を更新
+        mode_map = {
+            "リサイズなし": "none",
+            "幅を指定": "width",
+            "高さを指定": "height",
+            "縦横最大": "longest_side",
+            "パーセント": "percentage"
+        }
+        
+        if hasattr(self, 'resize_mode_var'):
+            mode = mode_map.get(self.resize_mode_var.get(), "longest_side")
+            self.settings_manager.update_resize_settings(mode=mode)
+            
+        if hasattr(self, 'resize_value_entry'):
+            try:
+                value = int(self.resize_value_entry.get() or "1920")
+                self.settings_manager.update_resize_settings(value=value)
+            except ValueError:
+                pass
+                
+        if hasattr(self, 'resize_quality_var'):
+            self.settings_manager.update_resize_settings(quality=int(self.resize_quality_var.get()))
+            
+        if hasattr(self, 'resize_output_format_var'):
+            format_map = {"JPEG": "jpeg", "PNG": "png", "WEBP": "webp"}
+            format_val = format_map.get(self.resize_output_format_var.get(), "jpeg")
+            self.settings_manager.update_resize_settings(format=format_val)
+            
+        # UI設定を更新
+        self.settings_manager.update_ui_settings(
+            window_width=self.winfo_width(),
+            window_height=self.winfo_height()
+        )
+        
+        # 保存
+        if self.settings_manager.save():
+            self.add_log_message("設定を保存しました")
+        else:
+            self.add_log_message("設定の保存に失敗しました", is_error=True)
     
     def on_processing_mode_change(self):
         """処理モードが変更されたときの処理"""
@@ -432,6 +575,19 @@ class App(ctk.CTk, ThreadSafeGUI):
         )
         self.input_button.grid(row=current_row, column=2, padx=5, pady=15)
         current_row += 1
+        
+        # ドラッグ&ドロップエリア（TKDND_AVAILABLEの場合のみ）
+        if TKDND_AVAILABLE:
+            self.drag_drop_area = DragDropArea(
+                self.resize_tab_content,
+                on_drop=self.on_files_dropped,
+                file_filter=lambda p: PathValidator.is_image_file(p)
+            )
+            self.drag_drop_area.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(0, 15), sticky="ew")
+            self.drag_drop_area.configure(height=80)
+            # クリックイベントを設定
+            self.drag_drop_area._on_click = lambda e: self.browse_input()
+            current_row += 1
 
         ctk.CTkLabel(self.resize_tab_content, text="出力先フォルダ:", font=self.normal_font, text_color="#212529").grid(
             row=current_row, column=0, padx=(10, 5), pady=15, sticky="w"
@@ -1231,6 +1387,10 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.cancel_button.configure(state="normal")
         self.update_progress(0.1)
         
+        # 設定を保存
+        if self.settings_manager:
+            self.save_settings()
+        
         # モードに応じて処理を分岐
         if mode == "single":
             self.process_single_file()
@@ -1381,8 +1541,12 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.processing_thread.start()
         except Exception as e:
             self.add_log_message(f"画像処理の開始中に予期せぬエラーが発生しました: {e}", is_error=True)
-            tb_str = traceback.format_exc()
-            self.add_log_message(f"トレースバック:\n{tb_str}", is_error=True)
+            # エラーダイアログを表示
+            if 'show_error_with_details' in globals():
+                show_error_with_details(self, e, "画像処理")
+            else:
+                tb_str = traceback.format_exc()
+                self.add_log_message(f"トレースバック:\n{tb_str}", is_error=True)
             self.finish_process(success=False, message=str(e))
 
     def request_cancel_processing(self):
@@ -1708,6 +1872,13 @@ class App(ctk.CTk, ThreadSafeGUI):
             total_files = len(image_files)
             self.after(0, lambda: self.add_log_message(f"処理対象: {total_files} ファイル"))
             
+            # 進捗トラッカーを開始
+            if self.progress_tracker:
+                self.progress_tracker.start_batch(total_files)
+                # 進捗更新コールバックを登録
+                self.progress_tracker.register_callback('on_update', 
+                    lambda bp, item: self.after(0, lambda: self._update_progress_display(bp, item)))
+            
             # 処理カウンタの初期化
             processed_count = 0
             skipped_count = 0
@@ -1725,6 +1896,10 @@ class App(ctk.CTk, ThreadSafeGUI):
                 # 進捗の更新
                 progress = (idx) / total_files
                 self.after(0, lambda p=progress: self.progress_bar.set(p))
+                
+                # 進捗トラッカーでアイテムを開始
+                if self.progress_tracker:
+                    progress_item = self.progress_tracker.start_item(source_path.name)
                 
                 # ファイル情報をログに表示
                 self.after(0, lambda p=source_path, i=idx+1, t=total_files: 
@@ -1854,6 +2029,21 @@ class App(ctk.CTk, ThreadSafeGUI):
         self.cancel_requested = True
         self.add_log_message("一括処理の中断をリクエストしました...")
         self.cancel_button.configure(state="disabled")
+    
+    def _update_progress_display(self, batch_progress, current_item=None):
+        """進捗表示を更新"""
+        if self.progress_tracker:
+            status_text = self.progress_tracker.get_status_text()
+            # ステータステキストをログに表示（既存メッセージを上書き）
+            # TODO: より洗練された進捗表示の実装
+            
+    def on_window_close(self):
+        """ウィンドウが閉じられる時の処理"""
+        # 設定を保存
+        if self.settings_manager:
+            self.save_settings()
+        # ウィンドウを破棄
+        self.destroy()
 
 
 def main():
@@ -1868,6 +2058,8 @@ def main():
         ctk.set_default_color_theme("blue")
 
     app = App()
+    # ウィンドウクローズイベントを設定
+    app.protocol("WM_DELETE_WINDOW", app.on_window_close)
     app.mainloop()
 
 
