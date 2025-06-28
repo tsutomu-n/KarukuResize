@@ -5,6 +5,35 @@ from PIL import Image
 import traceback
 import threading
 
+# 新しいモジュールをインポート
+try:
+    from error_handler import ErrorHandler
+    from validators import PathValidator, ValueValidator
+    from thread_safe_gui import ThreadSafeGUI, MessageType
+except ImportError as e:
+    print(f"警告: 追加モジュールのインポートに失敗しました: {e}")
+    # フォールバック実装
+    class ErrorHandler:
+        @staticmethod
+        def get_user_friendly_message(error, **kwargs):
+            return str(error)
+        @staticmethod
+        def get_suggestions(error):
+            return []
+    class PathValidator:
+        @staticmethod
+        def validate_safe_path(path_str):
+            return Path(path_str)
+        @staticmethod
+        def is_image_file(filepath):
+            return Path(filepath).suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}
+    class ValueValidator:
+        @staticmethod
+        def validate_resize_value(value, mode):
+            return int(value) if value else 0
+    class ThreadSafeGUI:
+        pass
+
 # 日本語フォント設定モジュールをインポート
 try:
     from japanese_font_utils import get_normal_font, get_button_font, get_heading_font
@@ -54,10 +83,11 @@ except ImportError:
         return f"{size_in_bytes:.1f} {unit}"
 
 
-class App(ctk.CTk):
+class App(ctk.CTk, ThreadSafeGUI):
     def __init__(self):
-        super().__init__()
-
+        ctk.CTk.__init__(self)
+        ThreadSafeGUI.__init__(self)
+        
         self.title("画像処理ツール")
 
         # ウィンドウサイズを設定
@@ -164,6 +194,9 @@ class App(ctk.CTk):
         self.center_window()
 
         self.cancel_requested = False  # 中断リクエストフラグ
+        
+        # スレッドセーフティのセットアップ
+        self.setup_thread_safety()
 
     def _select_file(
         self,
@@ -1121,19 +1154,27 @@ class App(ctk.CTk):
         if not hasattr(self, "log_textbox") or self.log_textbox is None:
             print(f"ログメッセージ（表示不可）: {message}")
             return
+        
+        # メッセージが辞書形式の場合（スレッドセーフ呼び出し）
+        if isinstance(message, dict):
+            actual_message = message.get('message', '')
+            is_warning = message.get('is_warning', False)
+            is_error = message.get('is_error', False)
+        else:
+            actual_message = message
 
         try:
             self.log_textbox.configure(state="normal")
             if is_warning:
-                self.log_textbox.insert("end", f"[警告] {message}\n", "warning")
+                self.log_textbox.insert("end", f"[警告] {actual_message}\n", "warning")
             elif is_error:
-                self.log_textbox.insert("end", f"[エラー] {message}\n", "error")
+                self.log_textbox.insert("end", f"[エラー] {actual_message}\n", "error")
             else:
-                self.log_textbox.insert("end", f"{message}\n")
+                self.log_textbox.insert("end", f"{actual_message}\n")
             self.log_textbox.configure(state="disabled")
             self.log_textbox.see("end")
         except Exception as e:
-            print(f"ログ表示エラー: {e} - メッセージ: {message}")
+            print(f"ログ表示エラー: {e} - メッセージ: {actual_message}")
 
     def update_progress(self, value, pulse=False):
         """
@@ -1218,7 +1259,20 @@ class App(ctk.CTk):
         suffix = self.resize_suffix_entry.get().strip()
 
         if not input_file_str:
-            self.add_log_message("エラー: 入力ファイルが選択されていません。ファイルを選択してください。")
+            self.add_log_message("エラー: 入力ファイルが選択されていません。ファイルを選択してください。", is_error=True)
+            self.finish_process(success=False)
+            return
+        
+        # パスの安全性を検証
+        try:
+            source_file_path = PathValidator.validate_safe_path(input_file_str)
+            if not PathValidator.is_image_file(source_file_path):
+                self.add_log_message(f"エラー: 選択されたファイルは対応している画像形式ではありません: {source_file_path.suffix}", is_error=True)
+                self.finish_process(success=False)
+                return
+        except ValueError as e:
+            error_msg = ErrorHandler.get_user_friendly_message(e, filepath=input_file_str)
+            self.add_log_message(error_msg, is_error=True)
             self.finish_process(success=False)
             return
 
@@ -1231,8 +1285,6 @@ class App(ctk.CTk):
 
         exif_map = {"EXIFを保持": "keep", "EXIFを削除": "remove"}
         core_exif_handling = exif_map.get(exif_handling_gui, "keep")
-
-        source_file_path = Path(input_file_str)
 
         if not input_file_str or not output_dir_str:
             self.add_log_message(
@@ -1287,20 +1339,26 @@ class App(ctk.CTk):
         core_resize_mode = resize_mode_map.get(resize_mode_gui, "width")
 
         try:
-            resize_value_parsed = int(resize_value_str) if resize_value_str else 0
-        except ValueError:
-            self.add_log_message(
-                f"エラー: リサイズ値 '{resize_value_str}'は不正な数値です。",
-                is_error=True,
-            )
-            self.finish_resize_process(success=False, message="リサイズ値が不正")
+            # リサイズモードに応じた検証
+            if core_resize_mode != "none" and resize_value_str:
+                if core_resize_mode == "percentage":
+                    resize_value_parsed = ValueValidator.validate_percentage(resize_value_str)
+                else:
+                    resize_value_parsed = ValueValidator.validate_resize_value(resize_value_str, core_resize_mode)
+            else:
+                resize_value_parsed = 0
+        except ValueError as e:
+            error_msg = ErrorHandler.get_user_friendly_message(e, value=resize_value_str)
+            self.add_log_message(error_msg, is_error=True)
+            self.finish_process(success=False, message="リサイズ値が不正")
             return
 
         try:
-            quality_parsed = int(quality) if quality else 75
-        except ValueError:
-            self.add_log_message(f"エラー: 品質値 '{quality}'は不正な数値です。", is_error=True)
-            self.finish_resize_process(success=False, message="品質値が不正")
+            quality_parsed = ValueValidator.validate_quality(quality) if quality else 85
+        except ValueError as e:
+            error_msg = ErrorHandler.get_user_friendly_message(e, value=quality)
+            self.add_log_message(error_msg, is_error=True)
+            self.finish_process(success=False, message="品質値が不正")
             return
 
         try:
@@ -1325,7 +1383,7 @@ class App(ctk.CTk):
             self.add_log_message(f"画像処理の開始中に予期せぬエラーが発生しました: {e}", is_error=True)
             tb_str = traceback.format_exc()
             self.add_log_message(f"トレースバック:\n{tb_str}", is_error=True)
-            self.finish_resize_process(success=False, message=str(e))
+            self.finish_process(success=False, message=str(e))
 
     def request_cancel_processing(self):
         self.cancel_requested = True
@@ -1356,7 +1414,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="処理がユーザーによって中断されました。"),
+                    lambda: self.finish_process(success=False, message="処理がユーザーによって中断されました。"),
                 )
                 return
 
@@ -1373,7 +1431,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="入力ファイルが見つかりません。"),
+                    lambda: self.finish_process(success=False, message="入力ファイルが見つかりません。"),
                 )
                 return
             except Exception as e:
@@ -1386,7 +1444,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda e=e: self.finish_resize_process(success=False, message="画像ファイルを開けません。"),
+                    lambda e=e: self.finish_process(success=False, message="画像ファイルを開けません。"),
                 )
                 return
 
@@ -1397,7 +1455,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="処理がユーザーによって中断されました。"),
+                    lambda: self.finish_process(success=False, message="処理がユーザーによって中断されました。"),
                 )
                 return
 
@@ -1449,7 +1507,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="目標幅の計算結果が無効です。"),
+                    lambda: self.finish_process(success=False, message="目標幅の計算結果が無効です。"),
                 )
                 return
 
@@ -1462,7 +1520,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="処理がユーザーによって中断されました。"),
+                    lambda: self.finish_process(success=False, message="処理がユーザーによって中断されました。"),
                 )
                 return
 
@@ -1508,7 +1566,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="処理がユーザーによって中断されました。"),
+                    lambda: self.finish_process(success=False, message="処理がユーザーによって中断されました。"),
                 )
                 return
 
@@ -1530,7 +1588,7 @@ class App(ctk.CTk):
                     )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=True, message="画像処理が正常に完了しました。"),
+                    lambda: self.finish_process(success=True, message="画像処理が正常に完了しました。"),
                 )
             else:
                 self.after(
@@ -1539,7 +1597,7 @@ class App(ctk.CTk):
                 )
                 self.after(
                     0,
-                    lambda: self.finish_resize_process(success=False, message="画像処理中にエラーが発生しました。"),
+                    lambda: self.finish_process(success=False, message="画像処理中にエラーが発生しました。"),
                 )
 
         except Exception as e:
@@ -1562,7 +1620,7 @@ class App(ctk.CTk):
             self.after(100, self._check_thread_status)
         except Exception as e:
             self.add_log_message(f"画像処理の開始中に予期せぬエラーが発生しました: {e}")
-            self.finish_resize_process(success=False, message=str(e))
+            self.finish_process(success=False, message=str(e))
 
     def cancel_resize_process(self):
         self.add_log_message("リサイズ処理を中断しています...")
@@ -1713,12 +1771,7 @@ class App(ctk.CTk):
                         target_width = img.width
                     
                     # 品質設定の決定
-                    if output_format == "JPEG":
-                        quality = jpeg_quality
-                    elif output_format == "WEBP":
-                        quality = webp_quality
-                    else:
-                        quality = 85  # デフォルト
+                    # qualityパラメータは既に渡されているのでそのまま使用
                     
                     # 画像をリサイズ・圧縮
                     success, skipped, new_size_kb = resize_and_compress_image(
@@ -1729,7 +1782,7 @@ class App(ctk.CTk):
                         format=output_format.lower() if output_format else "original",
                         exif_handling="keep",
                         balance=5,
-                        webp_lossless=webp_lossless if output_format == "WEBP" else False,
+                        webp_lossless=False,  # TODO: UIから設定可能にする
                         dry_run=False
                     )
                     
@@ -1787,8 +1840,8 @@ class App(ctk.CTk):
     def finish_batch_process(self, success=True):
         """バッチ処理の終了処理"""
         # UIの状態を元に戻す
-        self.batch_start_button.configure(state="normal")
-        self.batch_cancel_button.configure(state="disabled")
+        self.start_button.configure(state="normal")
+        self.cancel_button.configure(state="disabled")
         self.cancel_requested = False
         
         if success:
@@ -1800,7 +1853,7 @@ class App(ctk.CTk):
         """一括処理を中断"""
         self.cancel_requested = True
         self.add_log_message("一括処理の中断をリクエストしました...")
-        self.batch_cancel_button.configure(state="disabled")
+        self.cancel_button.configure(state="disabled")
 
 
 def main():
