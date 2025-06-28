@@ -1,11 +1,9 @@
 import customtkinter as ctk
 from tkinter import filedialog
-import tkinter as tk
 from pathlib import Path
 from PIL import Image
 import traceback
 import threading
-import time
 
 # 新しいモジュールをインポート
 try:
@@ -46,19 +44,6 @@ except ImportError as e:
         pass
     class SettingsManager:
         pass
-
-# Phase 3の新しいモジュールをインポート
-try:
-    from image_preview import ImagePreviewWidget, ComparisonPreviewWidget
-    from preset_manager import PresetManager, PresetData
-    from history_manager import HistoryManager
-    from statistics_viewer import StatisticsViewer, StatisticsDialog
-    from preset_dialog import PresetManagerDialog
-    from history_viewer import HistoryViewer
-    PHASE3_AVAILABLE = True
-except ImportError as e:
-    print(f"警告: Phase 3モジュールのインポートに失敗しました: {e}")
-    PHASE3_AVAILABLE = False
 
 # 日本語フォント設定モジュールをインポート
 try:
@@ -227,18 +212,6 @@ class App(ctk.CTk, ThreadSafeGUI):
         # 進捗トラッカーと設定マネージャーを初期化
         self.progress_tracker = ProgressTracker() if 'ProgressTracker' in globals() else None
         self.settings_manager = SettingsManager() if 'SettingsManager' in globals() else None
-        
-        # Phase 3のマネージャーを初期化
-        if PHASE3_AVAILABLE:
-            self.preset_manager = PresetManager()
-            self.preset_manager.load()
-            self.history_manager = HistoryManager()
-        else:
-            self.preset_manager = None
-            self.history_manager = None
-        
-        # メニューバーを作成
-        self._create_menu_bar()
         
         # 設定を読み込む
         if self.settings_manager:
@@ -660,59 +633,6 @@ class App(ctk.CTk, ThreadSafeGUI):
         self.include_subdirs_checkbox.grid(row=current_row, column=1, padx=5, pady=(0, 15), sticky="w")
         self.include_subdirs_checkbox.grid_remove()  # 初期状態では非表示
         current_row += 1
-
-        # プリセット選択フレーム（Phase 3）
-        if PHASE3_AVAILABLE and self.preset_manager:
-            preset_frame = ctk.CTkFrame(
-                self.resize_tab_content, corner_radius=10, fg_color="#FFFFFF", border_width=1, border_color="#DEE2E6"
-            )
-            preset_frame.grid(row=current_row, column=0, columnspan=3, padx=10, pady=(10, 10), sticky="ew")
-            preset_frame.grid_columnconfigure(1, weight=1)
-            
-            # プリセットラベル
-            ctk.CTkLabel(
-                preset_frame, 
-                text="📋 プリセット:", 
-                font=self.normal_font, 
-                text_color="#212529"
-            ).grid(row=0, column=0, padx=(20, 5), pady=15, sticky="w")
-            
-            # プリセット選択メニュー
-            self.preset_var = ctk.StringVar(value="カスタム")
-            preset_names = ["カスタム"] + self.preset_manager.get_preset_names()
-            self.preset_menu = ctk.CTkOptionMenu(
-                preset_frame,
-                variable=self.preset_var,
-                values=preset_names,
-                command=self._on_preset_selected,
-                font=self.normal_font,
-                width=300,
-                height=36,
-                corner_radius=6,
-                fg_color="#F8F9FA",
-                button_color="#6C63FF",
-                button_hover_color="#5A52D5",
-                dropdown_fg_color="#FFFFFF",
-                dropdown_text_color="#212529",
-                dropdown_hover_color="#E9ECEF"
-            )
-            self.preset_menu.grid(row=0, column=1, padx=5, pady=15, sticky="ew")
-            
-            # プリセット管理ボタン
-            ctk.CTkButton(
-                preset_frame,
-                text="管理",
-                command=self.open_preset_manager,
-                width=80,
-                height=36,
-                font=self.normal_font,
-                corner_radius=6,
-                fg_color="#6C63FF",
-                hover_color="#5A52D5",
-                text_color="#FFFFFF"
-            ).grid(row=0, column=2, padx=5, pady=15)
-            
-            current_row += 1
 
         # リサイズ設定フレーム
         resize_settings_frame = ctk.CTkFrame(
@@ -1662,13 +1582,9 @@ class App(ctk.CTk, ThreadSafeGUI):
                 )
                 return
 
-            # 処理開始時刻を記録
-            start_time = time.time()
-            
             try:
                 img = Image.open(source_path)
                 original_width, original_height = img.size
-                original_size = source_path.stat().st_size
             except FileNotFoundError:
                 self.after(
                     0,
@@ -1821,49 +1737,6 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.after(0, lambda: self.update_progress(0.9))
 
             if success:
-                # 処理時間を計算
-                processing_time = time.time() - start_time
-                
-                # 新しい画像の情報を取得
-                if dest_path.exists():
-                    dest_size = dest_path.stat().st_size
-                    try:
-                        dest_img = Image.open(dest_path)
-                        dest_width, dest_height = dest_img.size
-                        dest_img.close()
-                    except Exception:
-                        dest_width, dest_height = 0, 0
-                else:
-                    dest_size = 0
-                    dest_width, dest_height = 0, 0
-                
-                # 履歴に記録（Phase 3）
-                if self.history_manager and not skipped:
-                    try:
-                        self.history_manager.add_entry(
-                            source_path=source_path,
-                            dest_path=dest_path,
-                            source_size=original_size,
-                            dest_size=dest_size,
-                            source_dimensions=(original_width, original_height),
-                            dest_dimensions=(dest_width, dest_height),
-                            settings={
-                                'resize_mode': core_resize_mode,
-                                'resize_value': resize_value,
-                                'keep_aspect_ratio': keep_aspect_ratio,
-                                'output_format': core_output_format,
-                                'quality': quality,
-                                'exif_handling': exif_handling,
-                                'enable_compression': enable_compression,
-                                'target_size_kb': int(target_size_str) if target_size_str else None,
-                                'balance': balance
-                            },
-                            success=True,
-                            processing_time=processing_time
-                        )
-                    except Exception as e:
-                        print(f"履歴記録エラー: {e}")
-                
                 if skipped:
                     self.after(
                         0,
@@ -2033,9 +1906,6 @@ class App(ctk.CTk, ThreadSafeGUI):
                     self.add_log_message(f"[{i}/{t}] 処理中: {p.name}"))
                 
                 try:
-                    # 処理開始時刻を記録
-                    item_start_time = time.time()
-                    
                     # 元のファイルサイズを取得
                     file_size_before = source_path.stat().st_size
                     total_size_before += file_size_before
@@ -2105,36 +1975,6 @@ class App(ctk.CTk, ThreadSafeGUI):
                             img_before = Image.open(source_path)
                             img_after = Image.open(dest_path)
                             
-                            # 処理時間を計算
-                            processing_time = time.time() - item_start_time
-                            
-                            # 履歴に記録（Phase 3）
-                            if self.history_manager:
-                                try:
-                                    self.history_manager.add_entry(
-                                        source_path=source_path,
-                                        dest_path=dest_path,
-                                        source_size=file_size_before,
-                                        dest_size=file_size_after,
-                                        source_dimensions=(img_before.width, img_before.height),
-                                        dest_dimensions=(img_after.width, img_after.height),
-                                        settings={
-                                            'resize_mode': resize_mode,
-                                            'resize_value': resize_value,
-                                            'keep_aspect_ratio': keep_aspect_ratio,
-                                            'output_format': output_format,
-                                            'quality': quality,
-                                            'exif_handling': exif_handling,
-                                            'enable_compression': enable_compression,
-                                            'target_size_kb': int(target_size) if target_size else None,
-                                            'balance': balance
-                                        },
-                                        success=True,
-                                        processing_time=processing_time
-                                    )
-                                except Exception as e:
-                                    print(f"履歴記録エラー: {e}")
-                            
                             self.after(0, lambda ob=img_before.size, na=img_after.size, s=size_reduction: 
                                 self.add_log_message(f"  ✓ サイズ: {ob[0]}x{ob[1]} → {na[0]}x{na[1]} (ファイルサイズ {s:.1f}% 削減)"))
                     else:
@@ -2169,7 +2009,7 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.after(0, lambda: self.finish_batch_process(success=success))
             
         except Exception as e:
-            self.after(0, lambda e=e: self.add_log_message(f"バッチ処理中に予期せぬエラーが発生しました: {str(e)}", is_error=True))
+            self.after(0, lambda: self.add_log_message(f"バッチ処理中に予期せぬエラーが発生しました: {str(e)}", is_error=True))
             self.after(0, lambda: self.finish_batch_process(success=False))
             
     def finish_batch_process(self, success=True):
@@ -2204,177 +2044,6 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.save_settings()
         # ウィンドウを破棄
         self.destroy()
-    
-    def _create_menu_bar(self):
-        """メニューバーを作成"""
-        if not PHASE3_AVAILABLE:
-            return
-            
-        self.menubar = tk.Menu(self)
-        self.configure(menu=self.menubar)
-        
-        # ファイルメニュー
-        file_menu = tk.Menu(self.menubar, tearoff=0)
-        self.menubar.add_cascade(label="ファイル", menu=file_menu)
-        file_menu.add_command(label="開く...", command=self.browse_input)
-        file_menu.add_separator()
-        file_menu.add_command(label="設定を保存", command=self.save_settings)
-        file_menu.add_command(label="設定を読み込む", command=self.load_settings)
-        file_menu.add_separator()
-        file_menu.add_command(label="終了", command=self.on_window_close)
-        
-        # 編集メニュー
-        edit_menu = tk.Menu(self.menubar, tearoff=0)
-        self.menubar.add_cascade(label="編集", menu=edit_menu)
-        edit_menu.add_command(label="プリセット管理...", command=self.open_preset_manager)
-        
-        # 表示メニュー
-        view_menu = tk.Menu(self.menubar, tearoff=0)
-        self.menubar.add_cascade(label="表示", menu=view_menu)
-        view_menu.add_command(label="統計...", command=self.open_statistics)
-        
-        # ヘルプメニュー
-        help_menu = tk.Menu(self.menubar, tearoff=0)
-        self.menubar.add_cascade(label="ヘルプ", menu=help_menu)
-        help_menu.add_command(label="使い方", command=self.show_help)
-        help_menu.add_command(label="バージョン情報", command=self.show_about)
-    
-    def open_preset_manager(self):
-        """プリセットマネージャーを開く"""
-        if not self.preset_manager:
-            return
-            
-        dialog = PresetManagerDialog(self, self.preset_manager)
-        dialog.on_preset_selected = self._apply_preset
-        self.wait_window(dialog)
-        
-        # プリセットメニューを更新
-        if hasattr(self, 'preset_menu'):
-            self._update_preset_menu()
-    
-    def open_statistics(self):
-        """統計ダイアログを開く"""
-        if not self.history_manager:
-            return
-            
-        dialog = StatisticsDialog(self, self.history_manager)
-        self.wait_window(dialog)
-    
-    def show_help(self):
-        """ヘルプを表示"""
-        from tkinter import messagebox
-        messagebox.showinfo(
-            "使い方",
-            "KarukuResize - 画像リサイズ・圧縮ツール\n\n"
-            "1. 処理モードを選択（単一ファイル/フォルダ一括処理）\n"
-            "2. 入力ファイル/フォルダを選択\n"
-            "3. 出力先フォルダを選択\n"
-            "4. リサイズ・圧縮設定を調整\n"
-            "5. 処理開始ボタンをクリック\n\n"
-            "詳細はプロジェクトのREADMEをご覧ください。"
-        )
-    
-    def show_about(self):
-        """バージョン情報を表示"""
-        from tkinter import messagebox
-        messagebox.showinfo(
-            "バージョン情報",
-            "KarukuResize v0.2.1\n\n"
-            "日本語対応の画像リサイズ・圧縮ツール\n"
-            "軽く（かるく）画像を処理します\n\n"
-            "© 2024 KarukuResize Project"
-        )
-    
-    def _on_preset_selected(self, preset_name: str):
-        """プリセット選択時"""
-        if preset_name == "カスタム":
-            return
-            
-        if not self.preset_manager:
-            return
-            
-        preset = self.preset_manager.get_preset(preset_name)
-        if preset:
-            self._apply_preset(preset)
-    
-    def _apply_preset(self, preset: PresetData):
-        """プリセットを適用"""
-        # リサイズモード
-        mode_map = {
-            "none": "リサイズなし",
-            "width": "幅を指定",
-            "height": "高さを指定",
-            "longest_side": "縦横最大",
-            "percentage": "パーセント"
-        }
-        if preset.resize_mode in mode_map and hasattr(self, 'resize_mode_var'):
-            self.resize_mode_var.set(mode_map[preset.resize_mode])
-            self.on_resize_mode_change(mode_map[preset.resize_mode])
-        
-        # リサイズ値
-        if hasattr(self, 'resize_value_entry'):
-            self.resize_value_entry.delete(0, "end")
-            self.resize_value_entry.insert(0, str(preset.resize_value))
-        
-        # アスペクト比
-        if hasattr(self, 'resize_aspect_ratio_var'):
-            self.resize_aspect_ratio_var.set(preset.maintain_aspect_ratio)
-        
-        # 出力フォーマット
-        format_map = {
-            "original": "オリジナル",
-            "jpeg": "JPEG",
-            "png": "PNG",
-            "webp": "WEBP"
-        }
-        if preset.output_format in format_map and hasattr(self, 'resize_output_format_var'):
-            self.resize_output_format_var.set(format_map[preset.output_format])
-            self.on_output_format_change(format_map[preset.output_format])
-        
-        # 品質
-        if hasattr(self, 'resize_quality_var'):
-            self.resize_quality_var.set(preset.quality)
-            if hasattr(self, 'resize_quality_slider'):
-                self.resize_quality_slider.set(preset.quality)
-        
-        # メタデータ保持
-        if hasattr(self, 'exif_handling_var'):
-            self.exif_handling_var.set("keep" if preset.preserve_metadata else "remove")
-        
-        # 圧縮設定
-        if hasattr(self, 'resize_enable_compression_var'):
-            self.resize_enable_compression_var.set(preset.enable_compression)
-            self.update_resize_compression_settings_state()
-        
-        # 目標サイズ
-        if preset.target_size_kb and hasattr(self, 'resize_target_size_entry'):
-            self.resize_target_size_entry.delete(0, "end")
-            self.resize_target_size_entry.insert(0, str(preset.target_size_kb))
-        
-        # バランス
-        if hasattr(self, 'resize_balance_var'):
-            self.resize_balance_var.set(preset.balance)
-            if hasattr(self, 'resize_balance_slider'):
-                self.resize_balance_slider.set(preset.balance)
-        
-        # ファイル名設定
-        if hasattr(self, 'resize_prefix_entry'):
-            self.resize_prefix_entry.delete(0, "end")
-            self.resize_prefix_entry.insert(0, preset.prefix)
-        
-        if hasattr(self, 'resize_suffix_entry'):
-            self.resize_suffix_entry.delete(0, "end")
-            self.resize_suffix_entry.insert(0, preset.suffix)
-        
-        self.add_log_message(f"プリセット '{preset.name}' を適用しました")
-    
-    def _update_preset_menu(self):
-        """プリセットメニューを更新"""
-        if not PHASE3_AVAILABLE or not self.preset_manager or not hasattr(self, 'preset_menu'):
-            return
-            
-        preset_names = ["カスタム"] + self.preset_manager.get_preset_names()
-        self.preset_menu.configure(values=preset_names)
 
 
 def main():
