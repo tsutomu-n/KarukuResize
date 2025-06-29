@@ -97,19 +97,21 @@ class DragDropHandler:
         # ドロップされたファイルパスを解析
         files = self._parse_drop_data(event.data)
         
-        # 有効なファイルのみフィルター
-        valid_files = []
+        # 有効なファイル/ディレクトリをフィルター
+        valid_items = []
         for file_path in files:
             try:
                 path = Path(file_path)
-                if path.exists() and path.is_file() and self.file_filter(path):
-                    valid_files.append(path)
+                if path.exists():
+                    # ディレクトリまたはファイルフィルターを通過したファイル
+                    if path.is_dir() or (path.is_file() and self.file_filter(path)):
+                        valid_items.append(path)
             except Exception as e:
                 print(f"ファイルパス解析エラー: {e}")
                 
         # コールバックを呼び出し
-        if valid_files:
-            self.on_drop_callback(valid_files)
+        if valid_items:
+            self.on_drop_callback(valid_items)
             
     def _parse_drop_data(self, data: str) -> List[str]:
         """ドロップデータを解析してファイルパスのリストを返す"""

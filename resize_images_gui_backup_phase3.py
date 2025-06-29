@@ -108,36 +108,6 @@ except ImportError:
             size_in_bytes /= 1024.0
         return f"{size_in_bytes:.1f} {unit}"
 
-class LazyTabManager:
-    """タブの遅延読み込みを管理するクラス"""
-    
-    def __init__(self, app):
-        self.app = app
-        self.loaded_tabs = set()
-        self.tab_initializers = {}
-    
-    def register_tab(self, tab_name: str, initializer_func):
-        """タブと初期化関数を登録"""
-        self.tab_initializers[tab_name] = initializer_func
-    
-    def load_tab_if_needed(self, tab_name: str):
-        """必要に応じてタブを読み込む"""
-        if tab_name not in self.loaded_tabs and tab_name in self.tab_initializers:
-            try:
-                self.tab_initializers[tab_name]()
-                self.loaded_tabs.add(tab_name)
-                self.app.add_log_message(f"タブ「{tab_name}」を読み込みました")
-            except Exception as e:
-                error_msg = f"タブ「{tab_name}」の読み込みに失敗しました: {str(e)}"
-                self.app.add_log_message(error_msg)
-                print(f"タブ読み込みエラー: {e}")
-                traceback.print_exc()
-    
-    def reset_tab(self, tab_name: str):
-        """タブの読み込み状態をリセット"""
-        if tab_name in self.loaded_tabs:
-            self.loaded_tabs.remove(tab_name)
-
 
 class App(ctk.CTk, ThreadSafeGUI):
     def __init__(self):
@@ -223,20 +193,6 @@ class App(ctk.CTk, ThreadSafeGUI):
 
         # タブを追加
         self.tab_resize = self.tab_view.add("画像リサイズ")
-        
-        # Phase 3の新しいタブを追加（PHASE3_AVAILABLEの場合のみ）
-        if PHASE3_AVAILABLE:
-            self.tab_preview = self.tab_view.add("プレビュー")
-            self.tab_history = self.tab_view.add("履歴")
-            self.tab_stats = self.tab_view.add("統計")
-            
-            # タブ切り替えイベントを設定
-            self.tab_view.configure(command=self._on_tab_changed)
-            
-            # 遅延読み込みタブを登録
-            self.lazy_tab_manager.register_tab("プレビュー", self._init_preview_tab)
-            self.lazy_tab_manager.register_tab("履歴", self._init_history_tab)
-            self.lazy_tab_manager.register_tab("統計", self._init_statistics_tab)
 
         # 必要な変数を初期化
         self.resize_value_unit_label = None
@@ -281,14 +237,8 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.preset_manager = None
             self.history_manager = None
         
-        # LazyTabManagerを初期化
-        self.lazy_tab_manager = LazyTabManager(self)
-        
         # メニューバーを作成
         self._create_menu_bar()
-        
-        # キーボードショートカットを設定
-        self._setup_keyboard_shortcuts()
         
         # 設定を読み込む
         if self.settings_manager:
@@ -2266,12 +2216,12 @@ class App(ctk.CTk, ThreadSafeGUI):
         # ファイルメニュー
         file_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="ファイル", menu=file_menu)
-        file_menu.add_command(label="開く...", command=self.browse_input, accelerator="Ctrl+O")
+        file_menu.add_command(label="開く...", command=self.browse_input)
         file_menu.add_separator()
         file_menu.add_command(label="設定を保存", command=self.save_settings)
         file_menu.add_command(label="設定を読み込む", command=self.load_settings)
         file_menu.add_separator()
-        file_menu.add_command(label="終了", command=self.on_window_close, accelerator="Ctrl+Q")
+        file_menu.add_command(label="終了", command=self.on_window_close)
         
         # 編集メニュー
         edit_menu = tk.Menu(self.menubar, tearoff=0)
@@ -2281,25 +2231,12 @@ class App(ctk.CTk, ThreadSafeGUI):
         # 表示メニュー
         view_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="表示", menu=view_menu)
-        
-        # テーマメニュー
-        theme_menu = tk.Menu(view_menu, tearoff=0)
-        view_menu.add_cascade(label="テーマ", menu=theme_menu)
-        
-        self.theme_var = tk.StringVar(value=self.settings_manager.get_ui_settings().theme if self.settings_manager else "light")
-        theme_menu.add_radiobutton(label="ライトモード", variable=self.theme_var, value="light", command=lambda: self.change_theme("light"))
-        theme_menu.add_radiobutton(label="ダークモード", variable=self.theme_var, value="dark", command=lambda: self.change_theme("dark"))
-        theme_menu.add_radiobutton(label="システム設定に従う", variable=self.theme_var, value="system", command=lambda: self.change_theme("system"))
-        
-        view_menu.add_separator()
         view_menu.add_command(label="統計...", command=self.open_statistics)
         
         # ヘルプメニュー
         help_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="ヘルプ", menu=help_menu)
-        help_menu.add_command(label="使い方", command=self.show_help, accelerator="F1")
-        help_menu.add_command(label="ショートカットキー", command=self.show_shortcuts)
-        help_menu.add_separator()
+        help_menu.add_command(label="使い方", command=self.show_help)
         help_menu.add_command(label="バージョン情報", command=self.show_about)
     
     def open_preset_manager(self):
@@ -2314,95 +2251,6 @@ class App(ctk.CTk, ThreadSafeGUI):
         # プリセットメニューを更新
         if hasattr(self, 'preset_menu'):
             self._update_preset_menu()
-    
-    def _setup_keyboard_shortcuts(self):
-        """キーボードショートカットを設定"""
-        # ファイル操作
-        self.bind("<Control-o>", lambda e: self.browse_input())
-        self.bind("<Control-q>", lambda e: self.on_window_close())
-        self.bind("<Control-Q>", lambda e: self.on_window_close())
-        
-        # 処理開始（リサイズタブ選択時のみ）
-        self.bind("<Control-s>", self._on_start_processing_shortcut)
-        self.bind("<Control-S>", self._on_start_processing_shortcut)
-        
-        # キャンセル
-        self.bind("<Escape>", self._on_cancel_processing_shortcut)
-        
-        # ヘルプ
-        self.bind("<F1>", lambda e: self.show_help())
-        
-        # プリセット管理
-        if PHASE3_AVAILABLE:
-            self.bind("<F9>", lambda e: self.open_preset_manager())
-            
-            # タブ切り替え
-            self.bind("<Control-Key-1>", lambda e: self.tab_view.set("画像リサイズ"))
-            self.bind("<Control-Key-2>", lambda e: self.tab_view.set("プレビュー"))
-            self.bind("<Control-Key-3>", lambda e: self.tab_view.set("履歴"))
-            self.bind("<Control-Key-4>", lambda e: self.tab_view.set("統計"))
-    
-    def _on_start_processing_shortcut(self, event):
-        """処理開始ショートカット"""
-        if self.tab_view.get() == "画像リサイズ":
-            # リサイズタブが選択されている場合のみ処理開始
-            self.process_images_with_progress()
-    
-    def _on_cancel_processing_shortcut(self, event):
-        """処理キャンセルショートカット"""
-        if hasattr(self, 'cancel_requested'):
-            self.cancel_requested = True
-            self.add_log_message("処理をキャンセルしています...")
-    
-    def show_shortcuts(self):
-        """ショートカットキーを表示"""
-        shortcuts_text = """【キーボードショートカット一覧】
-
-ファイル操作:
-  Ctrl+O - ファイル/フォルダを開く
-  Ctrl+Q - アプリケーション終了
-
-処理:
-  Ctrl+S - 処理開始（リサイズタブ選択時）
-  Escape - 処理キャンセル
-
-ヘルプ:
-  F1 - ヘルプを表示
-  F9 - プリセット管理
-
-タブ切り替え:
-  Ctrl+1 - 画像リサイズタブ
-  Ctrl+2 - プレビュータブ
-  Ctrl+3 - 履歴タブ
-  Ctrl+4 - 統計タブ"""
-        
-        messagebox.showinfo("ショートカットキー", shortcuts_text)
-    
-    def change_theme(self, theme: str):
-        """テーマを変更"""
-        if theme == "system":
-            # システム設定に従う
-            import darkdetect
-            try:
-                if darkdetect.isDark():
-                    actual_theme = "dark"
-                else:
-                    actual_theme = "light"
-            except:
-                # darkdetectが利用できない場合はライトモードをデフォルトに
-                actual_theme = "light"
-        else:
-            actual_theme = theme
-        
-        # CustomTkinterのテーマを設定
-        ctk.set_appearance_mode(actual_theme)
-        
-        # 設定を保存
-        if self.settings_manager:
-            self.settings_manager.update_ui_settings(theme=theme)
-            self.settings_manager.save()
-        
-        self.add_log_message(f"テーマを{theme}に変更しました")
     
     def open_statistics(self):
         """統計ダイアログを開く"""
@@ -2527,132 +2375,11 @@ class App(ctk.CTk, ThreadSafeGUI):
             
         preset_names = ["カスタム"] + self.preset_manager.get_preset_names()
         self.preset_menu.configure(values=preset_names)
-    
-    def _on_tab_changed(self):
-        """タブが変更されたときの処理"""
-        current_tab = self.tab_view.get()
-        
-        # 遅延読み込みの実行
-        self.lazy_tab_manager.load_tab_if_needed(current_tab)
-        
-        # タブ切り替え時の描画遅延を解消
-        self.update_idletasks()
-    
-    def _init_preview_tab(self):
-        """プレビュータブを初期化"""
-        if not PHASE3_AVAILABLE:
-            return
-            
-        # 比較プレビューウィジェットを作成
-        self.comparison_preview = ComparisonPreviewWidget(self.tab_preview)
-        self.comparison_preview.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # ファイル選択時に自動プレビュー更新するためのコールバック設定
-        # 現在の入力ファイルでプレビューを更新
-        if hasattr(self, 'input_entry') and self.input_entry.get():
-            input_path = self.input_entry.get()
-            if Path(input_path).exists() and Path(input_path).is_file():
-                self.comparison_preview.load_before_image(input_path)
-                
-                # 現在の設定でアフタープレビューを生成
-                self._update_preview_after()
-    
-    def _init_history_tab(self):
-        """履歴タブを初期化"""
-        if not PHASE3_AVAILABLE or not self.history_manager:
-            return
-            
-        # 履歴ビューワーを作成
-        self.history_viewer = HistoryViewer(
-            self.tab_history,
-            self.history_manager
-        )
-        self.history_viewer.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # 履歴からの再処理機能を有効化
-        if hasattr(self.tab_history, 'master'):
-            # 親ウィジェット（self）のメソッドとして再処理機能を提供
-            self.tab_history.master.reprocess_from_history = self.reprocess_from_history
-    
-    def _init_statistics_tab(self):
-        """統計タブを初期化"""
-        if not PHASE3_AVAILABLE or not self.history_manager:
-            return
-            
-        # 統計ビューワーを作成
-        self.stats_viewer = StatisticsViewer(self.tab_stats)
-        self.stats_viewer.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # 初期データ読み込み
-        self._update_statistics()
-    
-    def _update_preview_after(self):
-        """プレビューのアフター画像を更新"""
-        if not hasattr(self, 'comparison_preview'):
-            return
-            
-        # 現在の設定を取得してプレビューを生成
-        # この実装は後で追加可能
-        pass
-    
-    def _update_statistics(self):
-        """統計情報を更新"""
-        if not hasattr(self, 'stats_viewer') or not self.history_manager:
-            return
-            
-        # 履歴から統計データを生成
-        entries = self.history_manager.get_entries(limit=1000)
-        self.stats_viewer.update_data(entries)
-    
-    def reprocess_from_history(self, source_path: str, settings: dict):
-        """履歴から再処理を実行"""
-        # ファイルパスを設定
-        self.input_entry.delete(0, "end")
-        self.input_entry.insert(0, source_path)
-        
-        # 設定を適用
-        if 'resize_mode' in settings and hasattr(self, 'resize_mode_var'):
-            self.resize_mode_var.set(settings['resize_mode'])
-            self.on_resize_mode_change(settings['resize_mode'])
-            
-        if 'resize_value' in settings and hasattr(self, 'resize_value_entry'):
-            self.resize_value_entry.delete(0, "end")
-            self.resize_value_entry.insert(0, str(settings['resize_value']))
-            
-        if 'quality' in settings and hasattr(self, 'resize_quality_var'):
-            self.resize_quality_var.set(settings['quality'])
-            if hasattr(self, 'resize_quality_slider'):
-                self.resize_quality_slider.set(settings['quality'])
-        
-        # プレビュータブに切り替え
-        if hasattr(self, 'tab_view'):
-            self.tab_view.set("プレビュー")
-        
-        self.add_log_message(f"履歴から設定を読み込みました: {Path(source_path).name}")
 
 
 def main():
-    # 設定マネージャーを初期化して、保存されているテーマを読み込む
-    settings_manager = SettingsManager() if 'SettingsManager' in globals() else None
-    if settings_manager:
-        settings_manager.load()
-        theme = settings_manager.get_ui_settings().theme
-        
-        if theme == "system":
-            # システム設定に従う
-            try:
-                import darkdetect
-                if darkdetect.isDark():
-                    ctk.set_appearance_mode("dark")
-                else:
-                    ctk.set_appearance_mode("light")
-            except:
-                ctk.set_appearance_mode("light")
-        else:
-            ctk.set_appearance_mode(theme)
-    else:
-        # デフォルトはライトモード
-        ctk.set_appearance_mode("light")
+    # ライトモードに固定設定
+    ctk.set_appearance_mode("light")
 
     # カスタムテーマを適用
     theme_path = Path(__file__).parent / "karuku_light_theme.json"
