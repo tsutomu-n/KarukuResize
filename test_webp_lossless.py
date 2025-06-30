@@ -52,7 +52,7 @@ def test_webp_lossless():
             )
             
             if result.success:
-                print(f"   ✅ 成功")
+                print("   ✅ 成功")
                 print(f"   出力ファイル: {result.output_path}")
                 print(f"   サイズ: {result.output_size} bytes")
                 
@@ -75,7 +75,7 @@ def test_webp_lossless():
             )
             
             if result.success:
-                print(f"   ✅ 成功")
+                print("   ✅ 成功")
                 print(f"   出力ファイル: {result.output_path}")
                 print(f"   サイズ: {result.output_size} bytes（ロスレス）")
                 
@@ -104,11 +104,11 @@ def test_webp_lossless():
             if len(result) >= 3:
                 success = result[0]
                 if success:
-                    print(f"   ✅ 成功")
+                    print("   ✅ 成功")
                     if output_path.exists():
                         print(f"   出力サイズ: {output_path.stat().st_size} bytes")
                 else:
-                    print(f"   ❌ 失敗")
+                    print("   ❌ 失敗")
             else:
                 print(f"   ❌ 予期しない戻り値: {result}")
     

@@ -219,7 +219,7 @@ class ResizeViewModel(BaseViewModel):
         self.prefix = preset_data.get("prefix", "")
         self.suffix = preset_data.get("suffix", "_resized")
         
-        self.log_message(f"プリセットを適用しました")
+        self.log_message("プリセットを適用しました")
     
     def validate(self) -> bool:
         """入力の検証"""

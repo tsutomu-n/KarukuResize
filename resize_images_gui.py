@@ -171,6 +171,9 @@ class App(ctk.CTk, ThreadSafeGUI):
         self.main_frame.grid_rowconfigure(1, weight=0)
         self.main_frame.grid_columnconfigure(0, weight=1)
 
+        # LazyTabManagerを早期に初期化
+        self.lazy_tab_manager = LazyTabManager(self)
+
         # ログとプログレスバーを先に初期化
         self.log_progress_frame = ctk.CTkFrame(
             self.main_frame, corner_radius=10, border_width=1, border_color="#E9ECEF"
@@ -281,8 +284,6 @@ class App(ctk.CTk, ThreadSafeGUI):
             self.preset_manager = None
             self.history_manager = None
         
-        # LazyTabManagerを初期化
-        self.lazy_tab_manager = LazyTabManager(self)
         
         # メニューバーを作成
         self._create_menu_bar()
