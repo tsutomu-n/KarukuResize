@@ -1,0 +1,65 @@
+[project]
+name = "karukuresize"
+version = "0.2.1"
+description = "KarukuResize:日本語対応の画像リサイズ・圧縮ツール（GUI対応版・Windows長パス対応）"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "loguru>=0.7.3,<0.8.0",
+    "pillow>=9.0.0",
+    "tqdm>=4.60.0,<5.0.0",
+    "TkEasyGUI>=0.2.20,<0.3.0",
+    "emoji>=2.0.0,<3.0.0",
+    "customtkinter>=5.2.2",
+    "flake8>=7.2.0",
+    "pytest>=8.3.5",
+    "black>=25.1.0",
+    "ruff>=0.0.241",
+    "tkinterdnd2>=0.3.0",
+    "matplotlib>=3.8.0",
+    "python-dateutil>=2.8.2",
+    "darkdetect>=0.7.1",
+]
+
+[project.scripts]
+karukuresize-cli = "resize_images:main"
+karukuresize-gui = "resize_images_gui:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["resize_core", "resize_images", "resize_images_gui", "error_handler", "validators", "thread_safe_gui", "drag_drop_handler", "progress_tracker", "settings_manager", "error_dialog", "image_preview", "preset_manager", "history_manager", "statistics_viewer", "preset_dialog", "history_viewer"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.json"]
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
+per-file-ignores = [
+    "__init__.py:F401",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.2.0",
+]
+
+[tool.ruff]
+# より寛容な設定
+line-length = 120
+target-version = "py312"
+
+# 無視するエラーコード
+lint.ignore = [
+    "F401",  # 未使用のインポート
+    "F841",  # 未使用の変数
+    "E501",  # 行が長すぎる
+]
+
+# 特定のファイルで無視
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"*_test.py" = ["F841"]

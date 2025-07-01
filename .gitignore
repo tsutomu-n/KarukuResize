@@ -1,0 +1,105 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+
+# 仮想環境
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# 環境変数
+.env
+.env.*
+
+# パッケージング
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# uv
+uv.lock
+
+# テスト・カバレッジ
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+htmlcov/
+
+# ログ
+*.log
+logs/
+log/
+process_*.log
+
+# 処理結果
+progress.json
+output/
+resized/
+thumbnails/
+
+# IDE・エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS固有
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# その他
+.autoenv_approved
+*.bak
+*.tmp
+*.temp
+
+# PyInstaller
+*.spec.bak
+*.manifest
+*.pyz
+*.pkg
+*.toc
+*.ico
+version_info.txt.bak
+
+# ビルド成果物
+KarukuResize-Windows.zip
+KarukuResize-macOS.zip
+KarukuResize-Linux.tar.gz
+*.dmg
+*.AppImage
+
+# テスト用画像（開発時のみコメントアウト）
+# input/
+# test_images/

@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Processor UI Simulation v2</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background-color: #e9ecef;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .app-container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            overflow: hidden;
+        }
+        .app-header {
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .app-header h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #343a40;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+        }
+        .tab-button {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            font-size: 16px;
+            color: #495057;
+            position: relative;
+            transition: color 0.2s ease-in-out;
+        }
+        .tab-button.active {
+            color: #007bff;
+            font-weight: 600;
+        }
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background-color: #007bff;
+            border-radius: 3px 3px 0 0;
+        }
+        .tab-content {
+            display: none;
+            padding: 25px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #343a40;
+            margin-top: 0;
+            margin-bottom: 20px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="number"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 15px;
+            box-sizing: border-box;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .form-group input[type="text"]:focus,
+        .form-group input[type="number"]:focus {
+            border-color: #80bdff;
+            outline: 0;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+        .directory-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+            border: 2px dashed #ced4da;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+            text-align: center;
+            color: #495057;
+        }
+        .directory-button:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+        }
+        .directory-button i {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #007bff;
+        }
+        .directory-button span {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .switch-group {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .switch-group label {
+            margin-left: 10px;
+            font-size: 14px;
+            color: #495057;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .switch input {display:none;}
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #28a745;
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+        }
+        .checkbox-group label {
+            font-size: 14px;
+            color: #495057;
+            font-weight: normal;
+        }
+        .accordion-header {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 15px;
+        }
+        .accordion-header i {
+            margin-right: 10px;
+            transition: transform 0.3s ease;
+        }
+        .accordion-header.active i {
+            transform: rotate(90deg);
+        }
+        .accordion-content {
+            display: none;
+            padding-left: 25px; /* Indent content */
+        }
+        .numbering-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .numbering-group input[type="number"] {
+            width: 70px;
+        }
+        .example-text {
+            font-size: 13px;
+            color: #6c757d;
+            background-color: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+        }
+        .action-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+            margin-top: 25px;
+        }
+        .action-button:hover {
+            background-color: #0056b3;
+        }
+        .log-controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .log-controls button {
+            padding: 8px 15px;
+            border: 1px solid #ced4da;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .log-controls button.active, .log-controls button:hover {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .log-entry {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        .log-entry:last-child { border-bottom: none; }
+        .log-filename { color: #343a40; }
+        .log-status {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .log-status.success { background-color: #d4edda; color: #155724; }
+        .log-status.error { background-color: #f8d7da; color: #721c24; }
+        .log-progress-bar-container {
+            width: 80px; height: 8px; background-color: #e9ecef; border-radius: 4px;
+        }
+        .log-progress-bar {
+            height: 100%; background-color: #28a745; border-radius: 4px; width: 0%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="app-header">
+        <h1>Image Processor UI Simulation</h1>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="openTab(event, 'basicSettings')">Basic Settings</button>
+        <button class="tab-button" onclick="openTab(event, 'advancedSettings')">Advanced Settings</button>
+        <button class="tab-button" onclick="openTab(event, 'log')">Log</button>
+    </div>
+
+    <div id="basicSettings" class="tab-content active">
+        <h3 class="section-title">Directory Settings</h3>
+        <div class="form-grid">
+            <div class="directory-button" onclick="alert('Select Source Directory')">
+                <i class="fas fa-folder-open"></i>
+                <span>Source Directory</span>
+            </div>
+            <div class="directory-button" onclick="alert('Select Output Directory')">
+                <i class="fas fa-folder-plus"></i>
+                <span>Output Directory</span>
+            </div>
+        </div>
+        <div class="switch-group" style="justify-content: flex-end; margin-bottom: 20px;">
+            <label class="switch">
+                <input type="checkbox" id="create-if-not-exists" checked>
+                <span class="slider"></span>
+            </label>
+            <label for="create-if-not-exists">Create if not exists</label>
+        </div>
+
+        <h3 class="section-title">Image Settings</h3>
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="img-width">Width (px)</label>
+                <input type="number" id="img-width" value="800">
+            </div>
+            <div class="form-group">
+                <label for="img-height">Height (px)</label>
+                <input type="number" id="img-height" value="800">
+            </div>
+        </div>
+        <div class="checkbox-group">
+            <input type="checkbox" id="maintain-aspect-ratio" checked>
+            <label for="maintain-aspect-ratio"><i class="fas fa-lock" style="margin-right: 5px;"></i>Maintain aspect ratio</label>
+        </div>
+
+        <button class="action-button" onclick="startProcessingSimulation()">Start Processing</button>
+    </div>
+
+    <div id="advancedSettings" class="tab-content">
+        <div class="accordion-header" onclick="toggleAccordion(this)">
+            <i class="fas fa-chevron-right"></i>
+            <h3 class="section-title" style="margin-bottom:0; font-size: 17px;">File Renaming Rules</h3>
+        </div>
+        <div class="accordion-content">
+            <div class="form-group">
+                <label for="prefix">Prefix</label>
+                <input type="text" id="prefix" placeholder="e.g., resized_">
+            </div>
+            <div class="form-group">
+                <label>Numbering</label>
+                <div class="numbering-group">
+                    <input type="number" id="num-start" value="1" min="0">
+                    <span>to</span>
+                    <input type="number" id="num-digits" value="3" min="1">
+                    <span>(Digit count)</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="if-exists">If file exists</label>
+                <!-- This would ideally be a select dropdown, but for simplicity using text -->
+                <input type="text" id="if-exists" value="Example_resized_image001_final.jpg" readonly>
+                <div class="example-text">Preview: OriginalName_prefix_001_suffix.jpg</div>
+            </div>
+        </div>
+        <!-- More advanced settings can be added here -->
+    </div>
+
+    <div id="log" class="tab-content">
+        <div class="log-controls">
+            <button class="active" onclick="filterLog('all', this)">All</button>
+            <button onclick="filterLog('success', this)">Success</button>
+            <button onclick="filterLog('error', this)">Error</button>
+        </div>
+        <div id="log-entries">
+            <!-- Log entries will be added here by JavaScript -->
+            <div class="log-entry" data-status="info"><span class="log-filename">Waiting for processing to start...</span></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    function openTab(evt, tabName) {
+        var i, tabcontent, tabbuttons;
+        tabcontent = document.getElementsByClassName("tab-content");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tabbuttons = document.getElementsByClassName("tab-button");
+        for (i = 0; i < tabbuttons.length; i++) {
+            tabbuttons[i].className = tabbuttons[i].className.replace(" active", "");
+        }
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.className += " active";
+    }
+
+    function toggleAccordion(element) {
+        element.classList.toggle('active');
+        var content = element.nextElementSibling;
+        if (content.style.display === "block") {
+            content.style.display = "none";
+        } else {
+            content.style.display = "block";
+        }
+    }
+
+    // Initialize first tab
+    document.addEventListener('DOMContentLoaded', (event) => {
+        document.querySelector('.tab-button.active').click();
+        // Auto-open accordion if it exists
+        const firstAccordion = document.querySelector('.accordion-header');
+        if(firstAccordion) toggleAccordion(firstAccordion);
+    });
+
+    const logEntriesContainer = document.getElementById('log-entries');
+    let logItemId = 0;
+
+    function addLogEntry(filename, status, progress) {
+        logItemId++;
+        const entry = document.createElement('div');
+        entry.classList.add('log-entry');
+        entry.dataset.status = status;
+        entry.id = 'log-item-' + logItemId;
+
+        let html = `<span class="log-filename">${filename}</span>`;
+        if (status === 'processing') {
+            html += `<div class="log-progress-bar-container"><div class="log-progress-bar" style="width: ${progress}%;"></div></div>`;
+        } else if (status === 'success') {
+            html += `<span class="log-status success">Success</span>`;
+        } else if (status === 'error') {
+            html += `<span class="log-status error">Error</span>`;
+        }
+        entry.innerHTML = html;
+        logEntriesContainer.appendChild(entry);
+        logEntriesContainer.scrollTop = logEntriesContainer.scrollHeight; // Auto-scroll
+        return entry.id;
+    }
+
+    function updateLogEntryProgress(entryId, progress) {
+        const entryElement = document.getElementById(entryId);
+        if (entryElement) {
+            const progressBar = entryElement.querySelector('.log-progress-bar');
+            if (progressBar) {
+                progressBar.style.width = progress + '%';
+            }
+        }
+    }
+
+    function completeLogEntry(entryId, status) {
+         const entryElement = document.getElementById(entryId);
+         if (entryElement) {
+            entryElement.dataset.status = status; // Update status for filtering
+            const progressBarContainer = entryElement.querySelector('.log-progress-bar-container');
+            if(progressBarContainer) progressBarContainer.remove(); // Remove progress bar
+
+            const statusSpan = document.createElement('span');
+            statusSpan.classList.add('log-status');
+            statusSpan.classList.add(status);
+            statusSpan.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            entryElement.appendChild(statusSpan);
+         }
+    }
+
+    function startProcessingSimulation() {
+        logEntriesContainer.innerHTML = ''; // Clear previous logs
+        openTab({currentTarget: document.querySelector('.tab-button[onclick*="log"]')}, 'log'); // Switch to log tab
+
+        const files = ['image001.jpg', 'image002.png', 'photo_archive.jpeg', 'document.tiff', 'icon.svg'];
+        let fileIndex = 0;
+
+        function processNextFile() {
+            if (fileIndex >= files.length) {
+                addLogEntry('All files processed.', 'info');
+                return;
+            }
+
+            const currentFile = files[fileIndex];
+            const currentLogId = addLogEntry(currentFile, 'processing', 0);
+            let currentProgress = 0;
+
+            const progressInterval = setInterval(() => {
+                currentProgress += 20;
+                if (currentProgress <= 100) {
+                    updateLogEntryProgress(currentLogId, currentProgress);
+                } else {
+                    clearInterval(progressInterval);
+                    // Simulate success or error
+                    const success = Math.random() > 0.3; // 70% chance of success
+                    completeLogEntry(currentLogId, success ? 'success' : 'error');
+                    fileIndex++;
+                    setTimeout(processNextFile, 300); // Delay before next file
+                }
+            }, 200);
+        }
+        processNextFile();
+    }
+
+    function filterLog(status, buttonElement) {
+        const entries = logEntriesContainer.getElementsByClassName('log-entry');
+        for (let i = 0; i < entries.length; i++) {
+            if (status === 'all' || entries[i].dataset.status === status || (status === 'info' && !entries[i].dataset.status)) {
+                entries[i].style.display = 'flex';
+            } else {
+                entries[i].style.display = 'none';
+            }
+        }
+        // Update active button
+        const buttons = document.querySelectorAll('.log-controls button');
+        buttons.forEach(btn => btn.classList.remove('active'));
+        buttonElement.classList.add('active');
+    }
+
+</script>
+</body>
+</html>

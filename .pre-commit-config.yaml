@@ -1,0 +1,17 @@
+# .pre-commit-config.yaml
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0 # 最新版を確認して適宜更新してください
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-toml
+    -   id: check-merge-conflict
+    -   id: debug-statements
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.8 # Ruffのバージョン。pyproject.tomlと合わせるか、最新版を確認
+    hooks:
+    -   id: ruff
+        args: [--fix]  # 自動修正のみ実行、修正後はエラーにしない
+    -   id: ruff-format
