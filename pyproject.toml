@@ -1,5 +1,5 @@
 [project]
-name = "karukuresize"
+name = "karuku-resizer"
 version = "0.2.1"
 description = "KarukuResize:日本語対応の画像リサイズ・圧縮ツール（GUI対応版・Windows長パス対応）"
 readme = "README.md"
@@ -23,14 +23,14 @@ dependencies = [
 
 [project.scripts]
 karukuresize-cli = "resize_images:main"
-karukuresize-gui = "resize_images_gui:main"
+karuku-resizer = "karuku_resizer.gui_app:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["resize_core", "resize_images", "resize_images_gui", "error_handler", "validators", "thread_safe_gui", "drag_drop_handler", "progress_tracker", "settings_manager", "error_dialog", "image_preview", "preset_manager", "history_manager", "statistics_viewer", "preset_dialog", "history_viewer"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["*.md", "*.json"]
@@ -45,6 +45,7 @@ per-file-ignores = [
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
+    "pytest>=8.4.1",
 ]
 
 [tool.ruff]

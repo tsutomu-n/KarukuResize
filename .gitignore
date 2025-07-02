@@ -49,6 +49,8 @@ htmlcov/
 logs/
 log/
 process_*.log
+logs/
+archive/
 
 # 処理結果
 progress.json
