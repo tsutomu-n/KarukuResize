@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import io
 import tkinter as tk
-import logging, traceback
+import logging
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -56,10 +57,13 @@ class ImageJob:
 
 
 DEBUG = True
+# ログディレクトリを確実に作成
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
 if DEBUG:
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(message)s',
-                        handlers=[logging.FileHandler(Path(__file__).resolve().parent.parent / 'logs' / 'karuku_debug.log', encoding='utf-8'),
+                        handlers=[logging.FileHandler(_LOG_DIR / 'karuku_debug.log', encoding='utf-8'),
                                   logging.StreamHandler()])
 
 class ResizeApp(tk.Tk):
@@ -75,15 +79,12 @@ class ResizeApp(tk.Tk):
         # catch Tkinter callback exceptions in debug mode
         if DEBUG:
             self.report_callback_exception = self._report_callback_exception
-        # 画面解像度に合わせて十分なサイズで起動
+        # 画面解像度に合わせてウィンドウサイズを調整
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
-        if screen_w >= 1600 and screen_h >= 900:
-            # フルHD級なら中央寄せ 1400x850
-            self.geometry("1400x850")
-        else:
-            # 小さい解像度でも要素が収まる最小サイズ
-            self.geometry("1200x750")
+        win_w = max(900, int(screen_w * 0.8))
+        win_h = max(560, int(screen_h * 0.8))
+        self.geometry(f"{win_w}x{win_h}")
 
         # -------------------- Step indicator -------------------
         self._step_labels: list[dict[str, tk.Widget]] = []
@@ -173,43 +174,50 @@ class ResizeApp(tk.Tk):
         tk.Button(top, text="💾 保存", command=self._save_current).pack(side=tk.LEFT)
         tk.Button(top, text="📁 一括保存", command=self._batch_save).pack(side=tk.LEFT)
 
-        # -------------------- Size info labels ---------------------------
-        self.info_orig_var = tk.StringVar(value="--- x ---  ---")
-        self.info_resz_var = tk.StringVar(value="--- x ---  ---  (---)")
-
-        info_frame = tk.Frame(self)
-        tk.Label(info_frame, text="元:", font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
-        tk.Label(info_frame, textvariable=self.info_orig_var, font=("Helvetica", 10)).pack(side=tk.LEFT, padx=(0, 20))
-        tk.Label(info_frame, text="変換後:", font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
-        tk.Label(info_frame, textvariable=self.info_resz_var, font=("Helvetica", 10)).pack(side=tk.LEFT)
-        info_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 2))
-
         # Zoom combobox
         self.zoom_var = tk.StringVar(value="画面に合わせる")
         zoom_cb = ttk.Combobox(top, textvariable=self.zoom_var, values=["画面に合わせる", "100%", "200%", "300%"], width=14, state="readonly")
         zoom_cb.bind("<<ComboboxSelected>>", self._apply_zoom_selection)
         zoom_cb.pack(side=tk.LEFT, padx=4)
 
-        # -------------------- Listbox -----------------------------------
-        list_frame = tk.Frame(self)
-        list_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(4, 0))
-        self.listbox = tk.Listbox(list_frame, width=28, height=28, exportselection=False)
-        self.listbox.pack(side=tk.LEFT, fill=tk.Y)
+        # -------------------- Status Bar ----------------------------------
+        self.status_var = tk.StringVar(value="準備完了")
+        status_bar = tk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor='w', padx=4)
+        status_bar.pack(side=tk.TOP, fill=tk.X, padx=4, pady=(0, 4))
+
+        # -------------------- Main Layout Panes ---------------------------
+        main_pane = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, bg="#f0f0f0")
+        main_pane.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        # --- Left Pane (Listbox) ---
+        list_frame = tk.Frame(main_pane)
+        self.listbox = tk.Listbox(list_frame, width=28, exportselection=False)
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         yscroll = tk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.listbox.yview)
         yscroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.listbox.config(yscrollcommand=yscroll.set)
         self.listbox.bind("<<ListboxSelect>>", self._on_select_change)
+        main_pane.add(list_frame, width=250, stretch="never")
 
-        # -------------------- Preview canvases --------------------------
-        self.lf_original = tk.LabelFrame(self, text="オリジナル", padx=5, pady=5)
-        self.lf_original.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=4, pady=4)
+        # --- Right Pane (Previews) ---
+        preview_pane = tk.PanedWindow(main_pane, orient=tk.VERTICAL, sashrelief=tk.RAISED)
+        main_pane.add(preview_pane, stretch="always")
+
+        # Original Preview
+        self.lf_original = tk.LabelFrame(preview_pane, text="オリジナル", padx=5, pady=5)
         self.canvas_org = tk.Canvas(self.lf_original, bg="#ddd")
         self.canvas_org.pack(expand=True, fill=tk.BOTH)
+        self.info_orig_var = tk.StringVar(value="--- x ---  ---")
+        tk.Label(self.lf_original, textvariable=self.info_orig_var, justify=tk.LEFT).pack(side=tk.BOTTOM, fill=tk.X)
+        preview_pane.add(self.lf_original, stretch="always")
 
-        self.lf_resized = tk.LabelFrame(self, text="変換後プレビュー", padx=5, pady=5)
-        self.lf_resized.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=4, pady=4)
+        # Resized Preview
+        self.lf_resized = tk.LabelFrame(preview_pane, text="変換後プレビュー", padx=5, pady=5)
         self.canvas_resz = tk.Canvas(self.lf_resized, bg="#ddd")
         self.canvas_resz.pack(expand=True, fill=tk.BOTH)
+        self.info_resz_var = tk.StringVar(value="--- x ---  ---  (---)")
+        tk.Label(self.lf_resized, textvariable=self.info_resz_var, justify=tk.LEFT).pack(side=tk.BOTTOM, fill=tk.X)
+        preview_pane.add(self.lf_resized, stretch="always")
 
         self.bind("<Configure>", self._on_root_resize)
         self._last_canvas_size: Tuple[int, int] = (DEFAULT_PREVIEW, DEFAULT_PREVIEW)
@@ -226,10 +234,7 @@ class ResizeApp(tk.Tk):
             widget.bind("<ButtonPress-1>", lambda e, c=widget: c.scan_mark(e.x, e.y))
             widget.bind("<B1-Motion>",   lambda e, c=widget: c.scan_dragto(e.x, e.y, gain=1))
 
-        # Status bar
-        self.status_var = tk.StringVar()
-        status = tk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w")
-        status.pack(side=tk.BOTTOM, fill=tk.X)
+
 
         # Runtime vars
         self._imgtk_org: Optional[ImageTk.PhotoImage] = None
@@ -257,6 +262,41 @@ class ResizeApp(tk.Tk):
             entry.focus_set()
             return None
         return num
+
+    # ------------------------------------------------------------------
+    # Helper: summarize current resize settings for confirmation dialogs
+    # ------------------------------------------------------------------
+
+    def _get_settings_summary(self):
+        """Return (settings_text, fmt, target) for current UI selections.
+
+        settings_text: human-readable string such as "幅 800px".
+        fmt: default output format (PNG if alpha channel else JPEG).
+        target: tuple[int,int] desired size or None if invalid.
+        """
+        mode = self.mode_var.get()
+        if mode == "ratio":
+            pct = self.entry_pct.get().strip() or "---"
+            settings_text = f"倍率 {pct}%"
+        elif mode == "width":
+            w = self.entry_w_single.get().strip() or "---"
+            settings_text = f"幅 {w}px"
+        elif mode == "height":
+            h = self.entry_h_single.get().strip() or "---"
+            settings_text = f"高さ {h}px"
+        else:  # fixed
+            w = self.entry_w_fixed.get().strip() or "---"
+            h = self.entry_h_fixed.get().strip() or "---"
+            settings_text = f"固定 {w}×{h}px"
+
+        # decide default format and calculate target using first image if any
+        fmt = "JPEG"
+        target = None
+        if self.jobs:
+            first_img = self.jobs[0].image
+            fmt = "PNG" if ("A" in first_img.getbands() or first_img.mode in ("P", "1")) else "JPEG"
+            target = self._get_target(first_img.size)
+        return settings_text, fmt, target
 
     # -------------------- mode handling --------------------------------
     def _report_callback_exception(self, exc, val, tb):
@@ -324,18 +364,18 @@ class ResizeApp(tk.Tk):
                 return None
             return int(ow * pct / 100), int(oh * pct / 100)
         if mode == "width":
-            w = self._parse_positive(self.entry_w, "幅", 1, 10000)
+            w = self._parse_positive(self.entry_w_single, "幅", 1, 10000)
             if w is None:
                 return None
             return w, int(oh * w / ow)
         if mode == "height":
-            h = self._parse_positive(self.entry_h, "高さ", 1, 10000)
+            h = self._parse_positive(self.entry_h_single, "高さ", 1, 10000)
             if h is None:
                 return None
             return int(ow * h / oh), h
         # fixed
-        w = self._parse_positive(self.entry_w, "幅", 1, 10000)
-        h = self._parse_positive(self.entry_h, "高さ", 1, 10000)
+        w = self._parse_positive(self.entry_w_fixed, "幅", 1, 10000)
+        h = self._parse_positive(self.entry_h_fixed, "高さ", 1, 10000)
         if w is None or h is None:
             return None
         return w, h
@@ -368,8 +408,8 @@ class ResizeApp(tk.Tk):
         except ValueError:
             return  # validation error already shown
         self._draw_previews(job)
-        self._update_status(job.resized, fmt)
-        self._update_info(job.image, job.resized, fmt)
+        self._update_info_labels(job.image, job.resized, fmt)
+        self.status_var.set("プレビューを更新しました")
         self._set_step(3)
 
     def _save_current(self):
@@ -392,17 +432,8 @@ class ResizeApp(tk.Tk):
         file_size = self._encoded_size_bytes(job.resized, fmt)
         file_size_str = self._format_bytes(file_size)
 
-        # Get settings text
-        mode = self.mode_var.get()
-        settings_text = ""
-        if mode == "ratio":
-            settings_text = f"比率: {self.pct_var.get()}%"
-        elif mode == "width":
-            settings_text = f"幅: {self.w_var.get()}px"
-        elif mode == "height":
-            settings_text = f"高さ: {self.h_var.get()}px"
-        elif mode == "fixed":
-            settings_text = f"幅×高さ: {self.w_var.get()}px × {self.h_var.get()}px"
+        # Get settings text using helper for consistency
+        settings_text, _fmt_unused, _target_unused = self._get_settings_summary()
 
         # Show confirmation dialog
         confirm_msg = (
@@ -427,6 +458,7 @@ class ResizeApp(tk.Tk):
         if not fname:
             return
         self._save_image(job.resized, Path(fname), fmt)
+        self.status_var.set(f"「{Path(fname).name}」を保存しました")
         messagebox.showinfo("保存", "保存が完了しました")
         self._set_step(4)
 
@@ -526,9 +558,8 @@ class ResizeApp(tk.Tk):
         else:
             return f"{size_bytes / 1024**3:.1f} GB"
 
-    def _update_info(self, orig_img: Optional[Image.Image], new_img: Optional[Image.Image] = None, new_fmt: Optional[str] = None):
-        logging.debug(f'_update_info orig={orig_img is not None} new={new_img is not None}')
-        """Update the info labels. If new_img is None, clear the resized info."""
+    def _update_info_labels(self, orig_img: Optional[Image.Image], new_img: Optional[Image.Image] = None, new_fmt: Optional[str] = None):
+        """Update the info labels below the preview images."""
         if orig_img:
             orig_size_str = f"{orig_img.width}x{orig_img.height}"
             orig_fmt_str = orig_img.format or 'N/A'
@@ -544,18 +575,6 @@ class ResizeApp(tk.Tk):
                 self.info_resz_var.set("エラー: 保存形式を確認")
         else:
             self.info_resz_var.set("--- x ---  ---  (---)")
-
-    def _update_status(self, new_img: Optional[Image.Image], fmt: Optional[str] = None):
-        logging.debug('_update_status called')
-        """Update the status bar with summary of the resized image."""
-        if new_img is not None and fmt:
-            try:
-                size_str = self._format_bytes(self._encoded_size_bytes(new_img, fmt))
-                self.status_var.set(f"変換後: {new_img.width}x{new_img.height}  {fmt}  ({size_str})")
-            except Exception:
-                self.status_var.set("変換後情報の取得に失敗しました")
-        else:
-            self.status_var.set("")
 
     # -------------------- preview drawing & zoom helpers --------------------
     def _draw_previews(self, job: ImageJob):
@@ -600,7 +619,7 @@ class ResizeApp(tk.Tk):
                 zoom = min(canvas_w / img.width, canvas_h / img.height)
             else:
                 zoom = 1.0  # Fallback for zero-sized images
-            label = f"Fit ({int(zoom * 100)}%)"
+            label = f"Fit ({int(zoom*100)}%)"
 
         disp = img.copy()
         new_size = (int(disp.width * zoom), int(disp.height * zoom))
@@ -610,7 +629,9 @@ class ResizeApp(tk.Tk):
         disp = disp.resize(new_size, Resampling.LANCZOS)
         imgtk = ImageTk.PhotoImage(disp)
 
-        canvas.create_image(0, 0, anchor="nw", image=imgtk)
+        canvas_w = canvas.winfo_width()
+        canvas_h = canvas.winfo_height()
+        canvas.create_image(canvas_w // 2, canvas_h // 2, image=imgtk, anchor='center')
         canvas.config(scrollregion=(0, 0, disp.width, disp.height))
 
         # semi-transparent zoom bar (28px) at top
@@ -697,7 +718,7 @@ class ResizeApp(tk.Tk):
         sel = self.listbox.curselection()
         if not sel:
             self.lf_resized.config(text="変換後プレビュー")
-            self._update_info(None)
+            self._update_info_labels(None, None)
             if hasattr(self, '_imgtk_resz'):
                 self.canvas_resz.delete("all")
                 self._imgtk_resz = None
@@ -717,7 +738,8 @@ class ResizeApp(tk.Tk):
         job.resized = None
         self._reset_zoom()
         self._draw_previews(job)
-        self._update_info(job.image)
+        self._update_info_labels(job.image)
+        self.status_var.set(f"「{job.path.name}」を選択中")
         self._set_step(2)
 
     def _open_full_preview(self, is_resized: bool, zoom_factor: float):
