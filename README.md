@@ -45,8 +45,8 @@ pip install -e .
 # インストール後
 karukuresize-gui
 
-# または直接実行
-python resize_images_gui.py
+# モジュールとして実行したい場合 (開発中など)
+python -m karuku_resizer.gui_app
 ```
 
 ### コマンドラインモード
@@ -55,8 +55,8 @@ python resize_images_gui.py
 # インストール後
 karukuresize-cli -s 入力フォルダ -d 出力フォルダ -w 1280 -q 85
 
-# または直接実行
-python resize_images.py -s 入力フォルダ -d 出力フォルダ -w 1280 -q 85
+# モジュールとして実行したい場合 (開発中など)
+python -m karuku_resizer.resize_core -s 入力フォルダ -d 出力フォルダ -w 1280 -q 85
 ```
 
 ### 主なオプション
