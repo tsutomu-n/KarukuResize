@@ -1644,5 +1644,80 @@ def load_progress(input_file="progress.json"):
         return [], []
 
 
+# ----------------------------------------------------------------------
+# CLI Entry Point
+# ----------------------------------------------------------------------
+import argparse
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Create argument parser for CLI use."""
+    p = argparse.ArgumentParser(
+        prog="karukuresize-cli",
+        description="画像を一括リサイズ / 圧縮するコマンドラインツール",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    p.add_argument("-s", "--source", required=True, help="入力フォルダー (画像を含む)")
+    p.add_argument("-d", "--dest", required=True, help="出力フォルダー")
+    p.add_argument("-w", "--width", type=int, default=1280, help="リサイズ後の最大幅(px)")
+    p.add_argument("-q", "--quality", type=int, default=85, help="JPEG/WebP 品質 (1-100)")
+    p.add_argument("-f", "--format", choices=["jpeg", "png", "webp"], default="jpeg", help="出力形式")
+    p.add_argument("--dry-run", action="store_true", help="ファイルを出力せずに処理をシミュレート")
+    p.add_argument("--verbose", "-v", action="count", default=0, help="詳細ログを増やす (重ね掛け可)")
+    return p
+
+
+def main() -> None:  # noqa: D401
+    """CLI を実行列に登録されています"""
+
+    parser = _build_arg_parser()
+    args = parser.parse_args()
+
+    console_level = "INFO"
+    if args.verbose == 1:
+        console_level = "DEBUG"
+    elif args.verbose >= 2:
+        console_level = "TRACE"
+
+    setup_logging(console_level=console_level)
+
+    src_dir = Path(args.source)
+    dst_dir = Path(args.dest)
+
+    if not src_dir.exists() or not src_dir.is_dir():
+        logger.error(f"入力ディレクトリが存在しません: {src_dir}")
+        sys.exit(1)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    image_paths = find_image_files(src_dir)
+    if not image_paths:
+        logger.warning("画像が見つかりませんでした")
+        sys.exit(0)
+
+    processed, remaining = [], []
+    for img_path in image_paths:
+        dst_path = get_destination_path(img_path, src_dir, dst_dir)
+        try:
+            resize_and_compress_image(
+                source_path=img_path,
+                dest_path=dst_path,
+                target_width=args.width,
+                quality=args.quality,
+                format=args.format,
+                dry_run=args.dry_run,
+            )
+            processed.append(img_path)
+            logger.info(f"✔ {img_path.name} → {dst_path.name}")
+        except Exception as e:
+            logger.error(f"❌ {img_path.name}: {get_japanese_error_message(e)}")
+            remaining.append(img_path)
+
+    if remaining:
+        logger.warning(f"{len(remaining)} 件の画像が失敗しました")
+    else:
+        logger.success("すべての画像を処理しました！")
+
+
+# ----------------------------------------------------------------------
 # 初期ロギング設定
 # setup_logging()
