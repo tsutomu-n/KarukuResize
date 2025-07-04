@@ -14,7 +14,14 @@ import json
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Union, Tuple
+from typing import Literal, Optional, Union, Tuple
+
+try:
+    import pillow_avif  # noqa: F401
+
+    AVIF_ENABLED = True
+except ImportError:
+    AVIF_ENABLED = False
 from PIL import Image, UnidentifiedImageError
 from loguru import logger
 
@@ -332,636 +339,86 @@ def normalize_long_path(path, add_prefix=True, remove_prefix=False, normalize=Tr
         return str(path)  # 元のパスを返す
 
 
-def get_japanese_error_message(error):
-    """
-    エラーから日本語のエラーメッセージを取得します
-
-    Args:
-        error: Exception オブジェクト
-
-    Returns:
-        str: 日本語のエラーメッセージ
-    """
-    if isinstance(error, OSError):
-        return analyze_os_error(error)
-    elif isinstance(error, ValueError):
-        return f"値エラー: {str(error)}"
-    elif isinstance(error, FileNotFoundError):
-        return f"ファイルが見つかりません: {str(error)}"
-    elif isinstance(error, PermissionError):
-        return f"権限エラー: {str(error)}"
-    elif isinstance(error, UnidentifiedImageError):
-        return "未対応または破損した画像形式です"
-    else:
-        return f"エラー: {str(error)}"
-
-
 def analyze_os_error(e):
     """
     OSエラーを詳細に分析し、具体的な情報を返します
 
     Args:
         e: OSError例外オブジェクト
-
-    Returns:
-        str: 詳細なエラー情報
-    """
-    error_msg = str(e)
-
-    # WindowsのOSエラーで、winerrnoがある場合
-    if os.name == "nt" and hasattr(e, "winerror"):
-        win_code = e.winerror
-        win_msg = get_windows_error_message(win_code)
-
-        if win_code == 206:  # Path too long
-            return f"{error_msg}。パスが長すぎます。長いパス有効化の設定を確認するか、短いパスを使用してください。"
-        elif win_code == 80:  # Invalid filename
-            return f"{error_msg}。ファイル名に使用できない文字が含まれています。"
-        elif win_code == 5:  # Access denied
-            return f"{error_msg}。アクセスが拒否されました。管理者権限で実行するか、ファイルの権限を確認してください。"
-        else:
-            return f"{error_msg}。{win_msg}"
-
-    # 一般的なファイル/ディレクトリエラー
-    if "No such file or directory" in error_msg:
-        return f"{error_msg}。指定されたパスが存在しません。"
-    elif "Permission denied" in error_msg:
-        return f"{error_msg}。ファイルへのアクセス権限がありません。"
-    elif "File exists" in error_msg:
-        return f"{error_msg}。ファイルが既に存在します。"
-    else:
-        return error_msg
-
-
-def create_directory_with_permissions(directory_path):
-    """
-    ディレクトリを安全に作成し、権限エラーの場合は回避策を試みます
-
-    Args:
-        directory_path: 作成するディレクトリパス（Path オブジェクトまたは文字列）
-
-    Returns:
-        tuple: (成功したかどうか, 作成されたディレクトリパス)
-    """
-    try:
-        # Pathオブジェクトに変換
-        directory = Path(directory_path)
-
-        # 既に存在する場合は成功とみなす
-        if directory.exists():
-            return True, directory
-
-        # Windows環境で長いパス対応
-        if os.name == "nt":
-            # normalize_long_pathは文字列を返すので、文字列として明示的に扱う
-            directory_str = normalize_long_path(directory)
-            os.makedirs(directory_str, exist_ok=True)
-            # 成功した場合、directory変数を更新して返却値に反映させる
-            directory = Path(directory_str)
-        else:
-            # 通常の処理
-            directory.mkdir(parents=True, exist_ok=True)
-
-        logger.debug(f"ディレクトリを作成しました: {directory}")
-        return True, directory
-
-    except PermissionError:
-        # 権限エラーの場合、ユーザーホームディレクトリに作成を試みる
-        logger.warning(f"権限エラー: {directory_path} を作成できません")
-        try:
-            home_dir = Path.home() / "resize_images_output"
-            home_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"代替ディレクトリを作成しました: {home_dir}")
-            return True, home_dir
-        except Exception as e:
-            logger.error(f"代替ディレクトリの作成にも失敗しました: {e}")
-            return False, None
-
-    except OSError as e:
-        # その他のOSエラー
-        error_msg = analyze_os_error(e)
-        logger.error(f"ディレクトリ作成エラー: {error_msg}")
-        return False, None
-
-    except Exception as e:
-        # その他の予期せぬエラー
-        logger.error(f"ディレクトリ作成中の予期せぬエラー: {e}")
-        return False, None
-
-
-def sanitize_filename(filename):
-    """
-    ファイル名をWindows互換に変換します。絵文字などの特殊文字も処理します。
-
-    Args:
-        filename: 元のファイル名
-
-    Returns:
-        str: 安全なファイル名
-    """
-    try:
-        # emojiパッケージのインポート（必要な場合のみ実行）
-        try:
-            import emoji
-
-            has_emoji_lib = True
-        except ImportError:
-            has_emoji_lib = False
-            logger.warning(
-                "emojiパッケージがインストールされていません。通常の絵文字処理を使用します。"
-            )
-
-        # 文字列に変換
-        safe_name = str(filename)
-        original_name = safe_name
-
-        # 絵文字を処理する
-        if has_emoji_lib:
-            # emojiパッケージを使用して絵文字をテキスト表現に変換
-            try:
-                # 絵文字が含まれているかチェック
-                if emoji.emoji_count(safe_name) > 0:
-                    # 絵文字をテキスト表現に変換 (:smile: などに変換)
-                    demojized = emoji.demojize(safe_name)
-
-                    # コロンをアンダースコアに変換し、ファイル名に適した形式にする
-                    import re
-
-                    safe_name = re.sub(r":(\w+):", r"_\1_", demojized)
-                    logger.debug(f"絵文字を変換: '{original_name}' -> '{safe_name}'")
-            except Exception as emoji_err:
-                logger.warning(f"絵文字処理中にエラーが発生しました: {emoji_err}")
-
-        # Windows禁止文字をアンダースコアに置換
-        unsafe_chars = '<>:"/\\|?*\0'
-        for char in unsafe_chars:
-            safe_name = safe_name.replace(char, "_")
-
-        # コントロール文字をアンダースコアに置換
-        safe_name = "".join(c if ord(c) >= 32 else "_" for c in safe_name)
-
-        # 絵文字パッケージが使えない場合のバックアップ処理
-        if not has_emoji_lib and emoji.emoji_count(original_name) > 0:
-            # unicodedataを使用した代替絵文字処理
-            import unicodedata
-            import re
-
-            # ASCII文字と一部の一般的な非ASCII文字を許可
-            # 日本語は正規表現でマッチしないようにし、そのまま残す
-            ascii_and_safe = re.compile(
-                r"[a-zA-Z0-9\-_. \[\]()\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+"
-            )
-
-            def replace_unsafe_char(c):
-                # 日本語など一般的な文字はそのまま使用
-                if ascii_and_safe.fullmatch(c):
-                    return c
-                # 絵文字やアクセント記号などは名前に変換
-                try:
-                    emoji_name = unicodedata.name(c).lower()
-                    # 絵文字などは短い説明的な名前に変換
-                    if "emoji" in emoji_name:
-                        return f"_{emoji_name.split()[-1][:8]}_"
-                    # その他の特殊文字は単純なアンダースコアに
-                    return "_"
-                except Exception:
-                    return "_"
-
-            # 安全でないUnicode文字を処理
-            safe_name = "".join(replace_unsafe_char(c) for c in safe_name)
-
-        # Windowsの予約語をチェック
-        reserved_names = [
-            "CON",
-            "PRN",
-            "AUX",
-            "NUL",
-            "COM1",
-            "COM2",
-            "COM3",
-            "COM4",
-            "COM5",
-            "COM6",
-            "COM7",
-            "COM8",
-            "COM9",
-            "LPT1",
-            "LPT2",
-            "LPT3",
-            "LPT4",
-            "LPT5",
-            "LPT6",
-            "LPT7",
-            "LPT8",
-            "LPT9",
-        ]
-
-        # ファイル名と拡張子を分ける
-        name_parts = os.path.splitext(safe_name)
-        base_name = name_parts[0]
-        extension = name_parts[1] if len(name_parts) > 1 else ""
-
-        # 予約語対策
-        if base_name.upper() in reserved_names:
-            base_name = base_name + "_file"
-
-        # 先頭や末尾のスペースとピリオドを削除
-        base_name = base_name.strip(" .")
-
-        # 空の場合はデフォルト名
-        if not base_name:
-            base_name = "unnamed_file"
-
-        # ダブルアンダースコアをシングルに置換して可読性を高める
-        import re
-
-        base_name = re.sub(r"_+", "_", base_name)
-
-        # ファイル名が長すぎる場合は切り詰め
-        if len(base_name) > 200:  # Windowsの制限より少なく
-            base_name = base_name[:197] + "..."
-
-        # 拡張子も簡素化
-        if len(extension) > 10:  # 正常な拡張子はそれより短い
-            extension = extension[:10]
-
-        # ファイル名を元に戻す
-        safe_name = base_name + extension
-
-        logger.debug(f"ファイル名を正規化: '{filename}' -> '{safe_name}'")
-        return safe_name
-
-    except Exception as e:
-        # 例外発生時はログに記録し、デフォルト名を使用
-        logger.error(f"ファイル名の正規化中にエラーが発生しました: {e}")
-        import uuid
-
-        return f"unnamed_file_{uuid.uuid4().hex[:8]}"
-
-
-def get_system_encoding():
-    """システムに適したエンコーディングを返します"""
-    return "cp932" if os.name == "nt" else "utf-8"
-
-
-def get_destination_path(source_path, source_dir, dest_dir):
-    """
-    元のパスから新しい出力先パスを生成します（Windows対応強化版）
-
-    Args:
-        source_path: 元のファイルパス (Path)
-        source_dir: 入力ディレクトリ (Path)
-        dest_dir: 出力ディレクトリ (Path)
-
-    Returns:
-        Path: 出力先のパス
-    """
-    # 出力先のパスを保持する変数を初期化
-    # どのケースでもデフォルト値を持つようにする
-    result_path = None
-
-    # dest_dirを安全に取得
-    dest_dir_str = ""
-    if dest_dir is not None:
-        try:
-            dest_dir_str = str(dest_dir)
-            # 万が一で空文字列ならデフォルト値を使用
-            if not dest_dir_str:
-                dest_dir_str = "./output"
-        except Exception:
-            dest_dir_str = "./output"
-    else:
-        dest_dir_str = "./output"
-
-    # source_pathを安全に取得
-    source_path_str = ""
-    filename = "output_file.jpg"  # デフォルトファイル名
-    if source_path is not None:
-        try:
-            source_path_str = str(source_path)
-            filename = os.path.basename(source_path_str)
-        except Exception:
-            pass
-
-    # source_dirを安全に取得
-    source_dir_str = ""
-    if source_dir is not None:
-        try:
-            source_dir_str = str(source_dir)
-        except Exception:
-            pass
-
-    # メイン処理ブロック
-    try:
-        # Windowsの長いパス処理
-        is_long_path = False
-        if os.name == "nt" and source_path_str.startswith("\\\\?\\"):
-            is_long_path = True
-            source_path_str = source_path_str[4:]
-            source_dir_str = (
-                source_dir_str[4:]
-                if source_dir_str.startswith("\\\\?\\")
-                else source_dir_str
-            )
-
-        # 相対パスの計算
-        rel_path_str = ""
-        if source_path_str and source_dir_str:
-            if not source_path_str.startswith(source_dir_str):
-                # 絶対パスで試行
-                try:
-                    abs_source = os.path.abspath(source_path_str)
-                    abs_source_dir = os.path.abspath(source_dir_str)
-
-                    if abs_source.startswith(abs_source_dir):
-                        rel_path_str = abs_source[len(abs_source_dir) :].lstrip(os.sep)
-                except Exception:
-                    # 失敗した場合は相対パスなし
-                    rel_path_str = ""
-            else:
-                # 直接相対パス計算
-                rel_path_str = source_path_str[len(source_dir_str) :].lstrip(os.sep)
-
-        # 相対パスが存在する場合
-        if rel_path_str:
-            # パス部分の分割
-            path_parts = rel_path_str.split(os.sep)
-
-            # 出力先パスの構築
-            result_path = Path(dest_dir_str)
-
-            # ディレクトリ部分の処理
-            if len(path_parts) > 1:
-                for part in path_parts[:-1]:
-                    try:
-                        part_safe = sanitize_filename(part)
-                        result_path = result_path / part_safe
-                    except Exception:
-                        # 失敗した場合はスキップして次のディレクトリ部分へ
-                        continue
-
-                # ディレクトリ作成
-                try:
-                    create_directory_with_permissions(result_path)
-                except Exception as dir_err:
-                    logger.debug(f"ディレクトリ作成エラーは無視します: {dir_err}")
-
-            # ファイル名部分の処理
-            if path_parts:
-                try:
-                    filename = sanitize_filename(path_parts[-1])
-                    result_path = result_path / filename
-                except Exception:
-                    # ファイル名部分の処理に失敗した場合は元のファイル名を使用
-                    result_path = result_path / filename
-        else:
-            # 相対パスが存在しない場合、ファイル名のみ使用
-            try:
-                safe_name = sanitize_filename(filename)
-                result_path = Path(dest_dir_str) / safe_name
-            except Exception:
-                # 安全なファイル名の生成に失敗した場合はデフォルト名を使用
-                result_path = Path(dest_dir_str) / "output_file.jpg"
-
-        # Windowsの長いパス処理
-        if os.name == "nt" and is_long_path and result_path:
-            try:
-                dest_path_str = normalize_long_path(str(result_path))
-                result_path = Path(dest_path_str)
-            except Exception:
-                # 長いパスの正規化に失敗した場合は元のパスを使用
-                pass
-
-    except Exception as e:
-        # メイン処理でエラーが発生した場合
-        logger.error(f"出力先パス生成エラー: {e}")
-
-    # 最終的なチェックと結果返却
-    if result_path is None:
-        # メイン処理に失敗した場合の最終手段
-        try:
-            # 安全なファイル名を生成
-            safe_name = sanitize_filename(filename)
-            result_path = Path(dest_dir_str) / safe_name
-        except Exception:
-            # 本当に最後の手段として、デフォルトから生成
-            result_path = Path("./output/output_file.jpg")
-
-    # 結果返却
-    return result_path
-
-
-def find_image_files(source_dir) -> list[Path]:
-    """
-    指定されたディレクトリから全ての.jpgと.pngファイルを検索します
-
-    Args:
-        source_dir: 検索対象のディレクトリパス（str または Path オブジェクト）
-
-    Returns:
-        list[Path]: 画像ファイルパスのリスト（Path）
-
-    Raises:
-        ValueError: source_dir が None、空文字列、または無効な形式の場合
-        FileNotFoundError: 指定されたディレクトリが存在しない場合
-        NotADirectoryError: 指定されたパスがディレクトリでない場合
-        PermissionError: 権限不足でアクセスできない場合
-    """
-    # 入力バリデーション
-    if source_dir is None:
-        error_msg = "ディレクトリパスがNoneです"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-    if isinstance(source_dir, str) and not source_dir.strip():
-        error_msg = "ディレクトリパスが空です"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-    # Pathオブジェクトに変換
-    try:
-        source_path = Path(source_dir)
-    except TypeError as e:
-        error_msg = f"無効なディレクトリパス形式です: {e}"
-        logger.error(error_msg)
-        raise ValueError(error_msg) from e
-
-    # 存在確認
-    if not source_path.exists():
-        error_msg = f"指定されたディレクトリが存在しません: {source_dir}"
-        logger.error(error_msg)
-        raise FileNotFoundError(error_msg)
-
-    # ディレクトリであることを確認
-    if not source_path.is_dir():
-        error_msg = f"指定されたパスはディレクトリではありません: {source_dir}"
-        logger.error(error_msg)
-        raise NotADirectoryError(error_msg)
-
-    # 読み取り権限があることを確認
-    try:
-        os.access(source_path, os.R_OK)
-    except Exception as e:
-        error_msg = f"ディレクトリの読み取り権限を確認できません: {e}"
-        logger.error(error_msg)
-        # 権限チェックでエラーがあれば後続の処理で捕捉する
-        pass
-
-    image_files = []
-    extensions = [".jpg", ".jpeg", ".png"]
-
-    try:
-        # Windows環境の場合は長いパス対応
-        if os.name == "nt":
-            try:
-                # normalize_long_path は文字列を返すので、再度 Path オブジェクトに変換する
-                norm_path_str = normalize_long_path(source_path)
-                norm_path = Path(norm_path_str)
-            except Exception as e:
-                logger.warning(
-                    f"パス正規化中にエラーが発生しました（通常パスを使用します）: {e}"
-                )
-                norm_path = source_path
-        else:
-            norm_path = source_path
-
-        # 一度に複数の拡張子をチェック
-        for ext in extensions:
-            try:
-                # rglob を使用して再帰的に検索 (glob の代わりにより堅牢なパターン)
-                pattern = f"*{ext}"
-                found_files = list(norm_path.rglob(pattern))
-                logger.debug(
-                    f"{ext} 拡張子のファイルを {len(found_files)} 個見つけました"
-                )
-                image_files.extend(found_files)
-            except PermissionError as e:
-                # 権限エラーの場合（一部のサブディレクトリにはアクセスできない可能性がある）
-                logger.warning(
-                    f"一部のディレクトリにアクセスできませんでした（権限エラー）: {e}"
-                )
-                continue
-            except OSError as e:
-                # ファイルシステム関連のエラー
-                logger.warning(f"ファイルシステムエラー（パターン '{pattern}'）: {e}")
-                continue
-            except Exception as e:
-                # その他の予期せぬエラー
-                logger.warning(
-                    f"画像検索中にエラーが発生しました（パターン '{pattern}'）: {e}"
-                )
-                continue
-
-        # 重複の削除（念のため）と並べ替え
-        unique_files = list(set(image_files))
-        sorted_files = sorted(unique_files)
-
-        total_found = len(sorted_files)
-        if total_found > 0:
-            logger.info(f"{total_found}個の画像ファイルが見つかりました")
-        else:
-            logger.warning(f"画像ファイルが見つかりませんでした: {source_dir}")
-
-        return sorted_files
-    except PermissionError as e:
-        error_msg = f"ディレクトリにアクセスする権限がありません: {e}"
-        logger.error(error_msg)
-        raise PermissionError(error_msg) from e
-    except Exception as e:
-        error_msg = f"画像ファイル検索中に予期せぬエラーが発生しました: {e}"
-        logger.error(error_msg)
-        # 重大なエラーはログを出して、呼び出し元に例外を伝播させる
-        raise RuntimeError(error_msg) from e
-
-
-def resize_and_compress_image(
-    source_path: Optional[Union[str, Path]] = None,
-    dest_path: Optional[Union[str, Path]] = None,
-    target_width: Optional[int] = None,
-    quality: Optional[int] = None,
-    format: str = "original",
-    exif_handling: str = "keep",
-    balance: int = 5,
-    webp_lossless: bool = False,
-    dry_run: bool = False,
-    # メモリベース処理用の新しいパラメータ
-    source_image=None,
-    output_buffer=None,
-    resize_mode: str = "width",
-    resize_value: Optional[int] = None,
-    lanczos_filter: bool = True,
-    progressive: bool = False,
-    optimize: bool = False,
-    output_format: Optional[str] = None,
-) -> Union[Tuple[bool, bool, Optional[int]], Tuple[bool, Optional[str]]]:
-    """
-    画像をリサイズして圧縮します（ファイルベースとメモリベースの両方をサポート）
-
-    Args:
-        source_path: 元の画像ファイルパス (str または Path)
-        dest_path: 出力先ファイルパス (str または Path)
-        target_width: 目標の幅 (ピクセル、1以上の整数)
-        quality: 圧縮品質 (1-100の整数)
-        format: 出力形式 ('original', 'jpeg', 'png', 'webp')
-        exif_handling: EXIFメタデータの取り扱い ('keep': 維持, 'remove': 削除)
-        balance: 圧縮と品質のバランス (1-10, 1=最高圧縮率, 10=最高品質)
-        webp_lossless: WebPをロスレスで保存するかどうか
-        dry_run: 実際の処理を行わずサイズ見積もりのみ実施
-        
-        # メモリベース処理用の新しいパラメータ
-        source_image: PIL.Imageオブジェクト（メモリベース処理用）
-        output_buffer: io.BytesIOオブジェクト（メモリベース処理用）
-        resize_mode: リサイズモード ('width', 'height', 'longest_side', 'percentage', 'none')
-        resize_value: リサイズ値（resize_modeに応じたピクセル数またはパーセンテージ）
-        lanczos_filter: Lanczosフィルタを使用するか
-        progressive: プログレッシブJPEGを使用するか
-        optimize: PNG/JPEG最適化を使用するか
-        output_format: 出力フォーマット（formatパラメータより優先）
-
-    Returns:
-        tuple[bool, bool, int | None]: (成功したか, 元のサイズを維持したか, 見積もりサイズ)
-        メモリベース処理の場合は、(成功したか, エラーメッセージ or None) を返す
-
-    Raises:
-        ValueError: パラメータが無効な場合
-        FileNotFoundError: ソースファイルが存在しない場合
-        PermissionError: ファイルアクセス権限がない場合
-        OSError: ファイルシステム関連のエラー
-        PIL.UnidentifiedImageError: サポートされていない画像形式または破損している場合
-    """
-    
-    # メモリベース処理の場合
-    if source_image is not None and output_buffer is not None:
-        # resize_valueが設定されていない場合はtarget_widthを使用
-        if resize_value is None and target_width is not None:
-            resize_value = target_width
-        
-        # output_formatが設定されていない場合はformatを使用
-        if output_format is None:
-            output_format = format if format != "original" else "jpeg"
-        
-        # メモリベース処理を実行
-        success, error_msg = resize_and_compress_image_memory(
-            source_image=source_image,
-            output_buffer=output_buffer,
-            resize_mode=resize_mode,
-            resize_value=resize_value,
-            quality=quality or 85,
-            output_format=output_format,
-            exif_handling=exif_handling,
-            lanczos_filter=lanczos_filter,
-            progressive=progressive,
+{{ ... }}
             optimize=optimize,
             webp_lossless=webp_lossless,
         )
         
         # メモリベース処理の戻り値を調整
-        return (success, error_msg)
+    return (success, error_msg)
+
+    # -------------------------------------------------------------------
+    # ここからファイルベースの処理
+    # -------------------------------------------------------------------
+
+    # 出力フォーマットの決定
+    final_output_format = output_format or format
+    if final_output_format == "original":
+        try:
+            with Image.open(source_path) as img:
+                final_output_format = img.format.lower()
+        except Exception:
+            final_output_format = Path(source_path).suffix.lstrip(".").lower()
+
+    # 保存オプションの構築
+    save_options = {"quality": quality or 85}
+    if final_output_format == "png":
+        save_options = {"optimize": optimize, "compress_level": 6}
+    elif final_output_format == "webp":
+        save_options["method"] = 6
+        save_options["lossless"] = webp_lossless
+    elif final_output_format == "avif" and AVIF_ENABLED:
+        save_options["speed"] = 4  # 0(slow)-10(fast)
+
+    if exif_handling == "keep":
+        try:
+            with Image.open(source_path) as img:
+                if "exif" in img.info:
+                    save_options["exif"] = img.info["exif"]
+        except Exception:
+            pass  # EXIF読み取り失敗は無視
+
+    # リサイズと圧縮の実行
+    try:
+        with Image.open(source_path) as img:
+            original_size = img.size
+            # リサイズ処理
+            if resize_mode != "none":
+                if resize_mode == "width" and target_width:
+                    ratio = target_width / img.width
+                    new_height = int(img.height * ratio)
+                    resized_img = img.resize((target_width, new_height), Image.Resampling.LANCZOS)
+                else:
+                    # 他のリサイズモードもここに追加可能
+                    resized_img = img
+            else:
+                resized_img = img
+
+            # dry_runでない場合は保存
+            if not dry_run:
+                # RGBA->RGB for JPEG/AVIF
+                if final_output_format in ["jpeg", "avif"] and resized_img.mode == "RGBA":
+                    resized_img = resized_img.convert("RGB")
+                resized_img.save(dest_path, **save_options)
+
+            # (成功, 元サイズ維持, 見積もりサイズ) - 見積もりは未実装のためNone
+            return (True, original_size == resized_img.size, None)
+
+    except Exception as e:
+        logger.error(f"画像処理中にエラーが発生しました: {e}")
+        return (False, None, str(e))
     
     # ファイルベース処理の場合
     # resize_modeとresize_valueからtarget_widthを設定
     if resize_mode == "none":
         # リサイズなしの場合、target_widthは不要（ダミー値を設定してバリデーションを通す）
+{{ ... }}
         target_width = 1  # ダミー値（実際には使用されない）
     elif resize_value is not None:
         target_width = resize_value
@@ -985,7 +442,7 @@ def resize_and_compress_image(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    if format not in ["original", "jpeg", "jpg", "png", "webp"]:
+    if format not in ["original", "jpeg", "jpg", "png", "webp", "avif"]:
         logger.warning(
             f"推奨されない出力形式: {format}. 'original', 'jpeg', 'jpg', 'png', 'webp' のいずれかを使用することをお勧めします"
         )
@@ -1371,16 +828,20 @@ def resize_and_compress_image(
         return False, False, None
 
 
-def update_extension(file_path, new_ext):
-    """
-    ファイルパスの拡張子を更新します
+def update_extension(file_path: Union[str, Path], new_ext: str) -> str:
+    """ファイルパスの拡張子を更新します。
 
-    Args:
-        file_path: 元のファイルパス
-        new_ext: 新しい拡張子 (ドット付き、例: '.jpg')
+    Parameters
+    ----------
+    file_path : Union[str, Path]
+        元のファイルパス
+    new_ext : str
+        新しい拡張子 (ドット付き, 例: '.jpg')
 
-    Returns:
-        str: 拡張子を更新したパス
+    Returns
+    -------
+    str
+        拡張子を更新したパス
     """
     path_obj = Path(file_path)
     stem = path_obj.stem
@@ -1392,17 +853,22 @@ def update_extension(file_path, new_ext):
     return str(new_path)
 
 
-def adjust_quality_by_balance(quality, balance, format):
-    """
-    圧縮と品質のバランスに基づいて品質パラメータを調整します
+def adjust_quality_by_balance(quality: int, balance: int, format: str) -> int:
+    """圧縮と品質のバランスに基づいて品質パラメータを調整します。
 
-    Args:
-        quality: 元の品質値 (1-100)
-        balance: 圧縮と品質のバランス (1-10, 1=最高圧縮率, 10=最高品質) - 現在は主に品質調整に使用
-        format: 出力形式 ('jpeg', 'png', 'webp')
+    Parameters
+    ----------
+    quality : int
+        元の品質値 (1-100)
+    balance : int
+        圧縮と品質のバランス (1-10, 1=最高圧縮率, 10=最高品質)
+    format : str
+        出力形式 ('jpeg', 'png', 'webp')
 
-    Returns:
-        int: 調整後の品質値
+    Returns
+    -------
+    int
+        調整後の品質値
     """
     # バランス値を正規化 (1-10 → 0.0-1.0)
     balance_factor = (balance - 1) / 9.0
@@ -1661,7 +1127,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("-d", "--dest", required=True, help="出力フォルダー")
     p.add_argument("-w", "--width", type=int, default=1280, help="リサイズ後の最大幅(px)")
     p.add_argument("-q", "--quality", type=int, default=85, help="JPEG/WebP 品質 (1-100)")
-    p.add_argument("-f", "--format", choices=["jpeg", "png", "webp"], default="jpeg", help="出力形式")
+    supported_formats = ["jpeg", "png", "webp"]
+    if AVIF_ENABLED:
+        supported_formats.append("avif")
+    p.add_argument(
+        "-f", "--format", choices=supported_formats, default="jpeg", help="出力形式"
+    )
     p.add_argument("--dry-run", action="store_true", help="ファイルを出力せずに処理をシミュレート")
     p.add_argument("--verbose", "-v", action="count", default=0, help="詳細ログを増やす (重ね掛け可)")
     return p
@@ -1696,14 +1167,16 @@ def main() -> None:  # noqa: D401
 
     processed, remaining = [], []
     for img_path in image_paths:
-        dst_path = get_destination_path(img_path, src_dir, dst_dir)
+        dst_path = get_destination_path(
+            img_path, src_dir, dst_dir, output_format=args.format
+        )
         try:
             resize_and_compress_image(
                 source_path=img_path,
                 dest_path=dst_path,
                 target_width=args.width,
                 quality=args.quality,
-                format=args.format,
+                output_format=args.format,
                 dry_run=args.dry_run,
             )
             processed.append(img_path)

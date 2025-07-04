@@ -11,14 +11,11 @@ dependencies = [
     "TkEasyGUI>=0.2.20,<0.3.0",
     "emoji>=2.0.0,<3.0.0",
     "customtkinter>=5.2.2",
-
-
-
-
     "tkinterdnd2>=0.3.0",
     "matplotlib>=3.8.0",
     "python-dateutil>=2.8.2",
     "darkdetect>=0.7.1",
+    "pillow-avif-plugin>=1.4.0",
 ]
 
 [project.scripts]
