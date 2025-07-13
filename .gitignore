@@ -62,3 +62,9 @@ Thumbs.db
 *.dmg
 *.AppImage
 
+# PyInstaller build dirs and executables
+dist/
+build/
+*.spec
+KarukuResize.exe
+
