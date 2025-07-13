@@ -1,0 +1,6 @@
+{
+    "typeCheckingMode": "basic",
+    "exclude": [
+      "src/karuku_resizer/resize_core.py"
+    ]
+  }

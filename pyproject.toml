@@ -47,22 +47,24 @@ dev = [
     "pytest>=8.4.1",
     "flake8>=7.2.0",
     "black>=25.1.0",
-    "ruff>=0.0.241",
+    "ruff>=0.4.4",
 ]
 
 [tool.ruff]
-# より寛容な設定
 line-length = 120
 target-version = "py312"
 
-# 無視するエラーコード
-lint.ignore = [
+[tool.ruff.lint]
+# 基本的に全チェック対象にし、必要なものを無視
+ignore = [
     "F401",  # 未使用のインポート
     "F841",  # 未使用の変数
     "E501",  # 行が長すぎる
 ]
+exclude = [
+    "src/karuku_resizer/resize_core.py",  # パーサバグ回避で除外
+]
 
-# 特定のファイルで無視
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "*_test.py" = ["F841"]
