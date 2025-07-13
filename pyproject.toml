@@ -23,6 +23,7 @@ dependencies = [
 karukuresize-gui = "karuku_resizer.gui_app:main"
 karukuresize-cli = "karuku_resizer.resize_core:main"
 karuku-resizer = "karuku_resizer.gui_app:main"
+karukuresize-build-exe = "karuku_resizer.build_exe:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
