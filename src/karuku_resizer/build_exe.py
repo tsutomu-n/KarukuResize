@@ -49,8 +49,9 @@ PYINSTALLER_ARGS: list[str] = [
 if ICON_PATH.is_file():
     PYINSTALLER_ARGS.extend(["--icon", str(ICON_PATH)])
 
-# Entry point (module)
-PYINSTALLER_ARGS.extend(["-m", MODULE])
+# Entry point script path
+SCRIPT_PATH = PROJECT_ROOT / "src" / "karuku_resizer" / "gui_app.py"
+PYINSTALLER_ARGS.append(str(SCRIPT_PATH))
 
 
 def main() -> None:  # noqa: D401
