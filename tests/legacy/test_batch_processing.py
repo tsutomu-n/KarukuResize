@@ -105,11 +105,11 @@ def test_batch_processing():
                 
                 print(f"      ✅ 成功: {original_size:,} → {output_size:,} bytes ({reduction:.1f}% 削減)")
             else:
-                print(f"      ❌ 失敗")
+                print("      ❌ 失敗")
         
         processing_time = time.time() - start_time
         
-        print(f"\n4. バッチ処理結果サマリー...")
+        print("\n4. バッチ処理結果サマリー...")
         print(f"   処理時間: {processing_time:.2f}秒")
         print(f"   成功ファイル: {success_count}/{len(found_files)}")
         print(f"   総元サイズ: {total_original_size:,} bytes")
@@ -122,10 +122,10 @@ def test_batch_processing():
         if success_count == len(found_files):
             print("   ✅ 全ファイルの処理が成功しました")
         else:
-            print(f"   ⚠️  一部のファイルで処理が失敗しました")
+            print("   ⚠️  一部のファイルで処理が失敗しました")
         
         # 5. 出力ファイルの検証
-        print(f"\n5. 出力ファイルの検証...")
+        print("\n5. 出力ファイルの検証...")
         
         output_files = list(output_dir.glob("*.jpg"))
         print(f"   出力ファイル数: {len(output_files)}")
@@ -139,7 +139,7 @@ def test_batch_processing():
                 print(f"      ❌ {output_file.name}: 読み込みエラー - {str(e)}")
         
         # 6. 異なる設定でのバッチ処理テスト
-        print(f"\n6. 異なる設定でのバッチ処理テスト...")
+        print("\n6. 異なる設定でのバッチ処理テスト...")
         
         webp_output_dir = temp_path / "webp_output"
         webp_output_dir.mkdir()
@@ -164,15 +164,15 @@ def test_batch_processing():
                 webp_success_count += 1
                 print(f"      ✅ WebP変換成功: {output_path.stat().st_size:,} bytes")
             else:
-                print(f"      ❌ WebP変換失敗")
+                print("      ❌ WebP変換失敗")
         
         if webp_success_count > 0:
             print(f"   ✅ WebP形式での変換が動作しています ({webp_success_count}/2)")
         else:
-            print(f"   ❌ WebP形式での変換に問題があります")
+            print("   ❌ WebP形式での変換に問題があります")
         
         # 7. パフォーマンス評価
-        print(f"\n7. パフォーマンス評価...")
+        print("\n7. パフォーマンス評価...")
         
         if processing_time < 5.0:
             print(f"   📈 処理速度: 優秀 ({processing_time:.2f}秒)")

@@ -42,7 +42,7 @@ def test_error_case_handling():
             if not success:
                 print(f"   ✅ 正常にエラー処理: {error_msg}")
             else:
-                print(f"   ❌ 予期しない成功")
+                print("   ❌ 予期しない成功")
         else:
             print(f"   ❌ 予期しない戻り値: {result}")
             
@@ -75,7 +75,7 @@ def test_error_case_handling():
                 if not success:
                     print(f"      ✅ 正常にエラー処理: {error_msg}")
                 else:
-                    print(f"      ❌ 予期しない成功")
+                    print("      ❌ 予期しない成功")
             else:
                 print(f"      ❌ 予期しない戻り値: {result}")
                 
@@ -105,7 +105,7 @@ def test_error_case_handling():
                 success, error_msg = result
                 if success:
                     # 品質値は自動的に補正される場合もある
-                    print(f"      ℹ️  成功（品質値が補正された可能性）")
+                    print("      ℹ️  成功（品質値が補正された可能性）")
                 else:
                     print(f"      ✅ 正常にエラー処理: {error_msg}")
             else:
@@ -138,7 +138,7 @@ def test_error_case_handling():
                 if not success:
                     print(f"      ✅ 正常にエラー処理: {error_msg}")
                 else:
-                    print(f"      ❌ 予期しない成功")
+                    print("      ❌ 予期しない成功")
             else:
                 print(f"      ❌ 予期しない戻り値: {result}")
                 
@@ -169,7 +169,7 @@ def test_error_case_handling():
                 if not success:
                     print(f"      ✅ 正常にエラー処理: {error_msg}")
                 else:
-                    print(f"      ❌ 予期しない成功")
+                    print("      ❌ 予期しない成功")
             else:
                 print(f"      ❌ 予期しない戻り値: {result}")
                 
@@ -198,7 +198,7 @@ def test_error_case_handling():
             if not success:
                 print(f"   ✅ 正常にエラー処理: {error_msg}")
             else:
-                print(f"   ❌ 予期しない成功")
+                print("   ❌ 予期しない成功")
         else:
             print(f"   ❌ 予期しない戻り値: {result}")
             
@@ -223,9 +223,9 @@ def test_error_case_handling():
         if len(result) >= 1:
             success = result[0]
             if not success:
-                print(f"   ✅ 正常にエラー処理")
+                print("   ✅ 正常にエラー処理")
             else:
-                print(f"   ❌ 予期しない成功")
+                print("   ❌ 予期しない成功")
         else:
             print(f"   ❌ 予期しない戻り値: {result}")
             

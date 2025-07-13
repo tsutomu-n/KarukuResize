@@ -129,11 +129,11 @@ def test_preview_memory_processing():
             
             # メモリ効率性の評価
             if processing_time < 2.0:
-                print(f"   📈 大画像レスポンス: 優秀")
+                print("   📈 大画像レスポンス: 優秀")
             elif processing_time < 5.0:
-                print(f"   📊 大画像レスポンス: 良好")
+                print("   📊 大画像レスポンス: 良好")
             else:
-                print(f"   ⚠️  大画像レスポンス: 要改善")
+                print("   ⚠️  大画像レスポンス: 要改善")
                 
         else:
             print(f"   ❌ 大画像処理失敗: {error_msg}")
@@ -193,7 +193,7 @@ def test_preview_memory_processing():
             else:
                 print(f"      ⚠️  サイズ予測誤差: 予測={calculated_width}×{calculated_height}, 実際={actual_size[0]}×{actual_size[1]}")
         else:
-            print(f"      ❌ 処理失敗")
+            print("      ❌ 処理失敗")
     
     print("\n✅ プレビュー機能のレスポンシブテスト完了")
 

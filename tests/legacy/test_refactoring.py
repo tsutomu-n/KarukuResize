@@ -25,13 +25,13 @@ def analyze_code_metrics():
     
     if original_file.exists():
         original_lines = len(original_file.read_text(encoding='utf-8').splitlines())
-        print(f"\n📊 オリジナル版:")
+        print("\n📊 オリジナル版:")
         print(f"  - ファイル: {original_file.name}")
         print(f"  - 行数: {original_lines}行")
     
     if refactored_file.exists():
         refactored_lines = len(refactored_file.read_text(encoding='utf-8').splitlines())
-        print(f"\n📊 リファクタリング版:")
+        print("\n📊 リファクタリング版:")
         print(f"  - メインファイル: {refactored_file.name}")
         print(f"  - 行数: {refactored_lines}行")
     
@@ -43,7 +43,7 @@ def analyze_code_metrics():
     ]
     
     total_new_lines = 0
-    print(f"\n📦 新規モジュール:")
+    print("\n📦 新規モジュール:")
     for module in new_modules:
         module_path = Path(module)
         if module_path.exists():
@@ -52,7 +52,7 @@ def analyze_code_metrics():
             print(f"  - {module}: {lines}行")
     
     if original_file.exists() and refactored_file.exists():
-        print(f"\n📈 比較結果:")
+        print("\n📈 比較結果:")
         print(f"  - オリジナル: {original_lines}行")
         print(f"  - リファクタリング版合計: {refactored_lines + total_new_lines}行")
         print(f"  - メインファイル削減: {original_lines - refactored_lines}行 ({(1 - refactored_lines/original_lines)*100:.1f}%削減)")
@@ -107,28 +107,28 @@ def test_module_functionality():
         config = ImageProcessingConfig()
         print(f"  ✅ デフォルト品質: {config.DEFAULT_QUALITY}")
         print(f"  ✅ デフォルト幅: {config.DEFAULT_WIDTH}")
-        print(f"  ✅ 設定検証機能: あり")
-        print(f"  ✅ ファイル保存/読み込み: あり")
+        print("  ✅ 設定検証機能: あり")
+        print("  ✅ ファイル保存/読み込み: あり")
         
         # パラメータ抽出モジュール
         print("\n📋 UIParameterExtractor:")
         from ui_parameter_extractor import UIParameterExtractor
         
         extractor = UIParameterExtractor(config)
-        print(f"  ✅ リサイズ値取得: 統一メソッド")
-        print(f"  ✅ 品質値取得: 範囲チェック付き")
-        print(f"  ✅ フォーマット変換: マッピング機能")
-        print(f"  ✅ パス検証: エラーチェック付き")
+        print("  ✅ リサイズ値取得: 統一メソッド")
+        print("  ✅ 品質値取得: 範囲チェック付き")
+        print("  ✅ フォーマット変換: マッピング機能")
+        print("  ✅ パス検証: エラーチェック付き")
         
         # 画像処理コントローラー
         print("\n📋 ImageProcessorController:")
         from image_processor_controller import ImageProcessorController, ProcessingResult
         
         controller = ImageProcessorController(config, extractor)
-        print(f"  ✅ プレビュー処理: 統一インターフェース")
-        print(f"  ✅ 圧縮処理: 統一インターフェース")
-        print(f"  ✅ バッチ処理: 進捗通知付き")
-        print(f"  ✅ エラーハンドリング: ProcessingResult")
+        print("  ✅ プレビュー処理: 統一インターフェース")
+        print("  ✅ 圧縮処理: 統一インターフェース")
+        print("  ✅ バッチ処理: 進捗通知付き")
+        print("  ✅ エラーハンドリング: ProcessingResult")
         
         print("\n✅ 全モジュールが正常にインポートできました")
         

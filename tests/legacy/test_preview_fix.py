@@ -109,7 +109,7 @@ def test_file_based_fix():
                         else:
                             print("   ❌ 出力ファイルが作成されませんでした")
                     else:
-                        print(f"   ❌ ファイルベース失敗")
+                        print("   ❌ ファイルベース失敗")
                 finally:
                     # 一時ファイルを削除
                     for temp_path in [input_path, output_path]:
