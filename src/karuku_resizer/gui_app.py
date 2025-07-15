@@ -24,6 +24,10 @@ from typing import List, Optional, Tuple
 from PIL import Image, ImageTk
 import tkinter.font as tkfont
 
+# ヘルプコンテンツとダイアログをインポート
+from karuku_resizer.help_content import HELP_CONTENT, STEP_DESCRIPTIONS
+from karuku_resizer.help_dialog import HelpDialog
+
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
     from PIL.Image import Resampling
@@ -56,7 +60,7 @@ class ImageJob:
     resized: Optional[Image.Image] = None  # cache of last processed result
 
 
-DEBUG = True
+DEBUG = False
 # ログディレクトリを確実に作成
 _LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,6 +103,7 @@ class ResizeApp(tk.Tk):
         top.pack(side=tk.TOP, fill=tk.X, padx=4, pady=4)
 
         tk.Button(top, text="📂 画像を選択", command=self._select_files).pack(side=tk.LEFT)
+        tk.Button(top, text="❓ 使い方", command=self._show_help).pack(side=tk.LEFT, padx=4)
 
         # Mode radio buttons
         self.mode_var = tk.StringVar(value="ratio")
@@ -742,7 +747,7 @@ class ResizeApp(tk.Tk):
         self.status_var.set(f"「{job.path.name}」を選択中")
         self._set_step(2)
 
-    def _open_full_preview(self, is_resized: bool, zoom_factor: float):
+    def _open_full_preview(self, is_resized: bool):
         if self.current_index is None:
             return
 
@@ -751,91 +756,27 @@ class ResizeApp(tk.Tk):
 
         if is_resized and base_img is job.image:
             self._preview_current()
-            base_img = job.resized
-
-        if base_img is None:
-            if is_resized:
-                messagebox.showinfo("情報", "変換後プレビューを先に生成してください。")
-            return
-
-        try:
-            new_size = (int(base_img.width * zoom_factor), int(base_img.height * zoom_factor))
-            if new_size[0] <= 0 or new_size[1] <= 0:
-                return
-            resample_mode = Image.Resampling.NEAREST if zoom_factor >= 1.0 and zoom_factor.is_integer() else Image.Resampling.LANCZOS
-            img = base_img.resize(new_size, resample_mode)
-        except ValueError:
-            return
-
-        title = f"フルプレビュー ({'変換後' if is_resized else 'オリジナル'} @ {int(zoom_factor*100)}%)"
-        win = tk.Toplevel(self)
-        win.title(title)
-
-        frame = tk.Frame(win)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        canvas = tk.Canvas(frame, bg="gray")
-        x_scrollbar = tk.Scrollbar(frame, orient=tk.HORIZONTAL, command=canvas.xview)
-        y_scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=canvas.yview)
-        canvas.config(xscrollcommand=x_scrollbar.set, yscrollcommand=y_scrollbar.set)
-
-        y_scrollbar.grid(row=0, column=1, sticky='ns')
-        x_scrollbar.grid(row=1, column=0, sticky='ew')
-        canvas.grid(row=0, column=0, sticky='nsew')
-        frame.grid_rowconfigure(0, weight=1)
-        frame.grid_columnconfigure(0, weight=1)
-
-        photo = ImageTk.PhotoImage(img)
-        canvas.create_image(0, 0, anchor=tk.NW, image=photo)
-        canvas.config(scrollregion=canvas.bbox(tk.ALL))
-        canvas.image = photo # Keep a reference!
-
-        win_w = min(img.width + 40, self.winfo_screenwidth() - 50)
-        win_h = min(img.height + 40, self.winfo_screenheight() - 100)
-        win.geometry(f"{win_w}x{win_h}")
-
-        win.transient(self)
-        win.grab_set()
-        win.focus_set()
-
-    # -------------------- step indicator helpers ------------------
-
+    
     def _create_step_indicator(self):
-        frame = tk.Frame(self, bg="#f8f9fa")
-        frame.pack(side=tk.TOP, fill="x", pady=(4, 0))
-        steps = ["画像を選ぶ", "サイズを決める", "確認する", "保存する"]
-        for i, text in enumerate(steps, 1):
-            cont = tk.Frame(frame, bg="white", relief="solid", borderwidth=1)
-            cont.pack(side="left", expand=True, fill="x", padx=6, pady=4)
-            num = tk.Label(cont, text=str(i), font=("Arial", 11, "bold"), bg="white", width=2)
-            num.pack(side="left", padx=(6, 4), pady=4)
-            lbl = tk.Label(cont, text=text, font=("Arial", 10), bg="white")
-            lbl.pack(side="left", padx=(0, 6), pady=4)
-            self._step_labels.append({"container": cont, "num": num, "text": lbl})
-        self._set_step(0)
+        """ステップインジケーターを作成（プレースホルダー）"""
+        pass
+        
+    def _set_step(self, step: int):
+        """ステップを設定（プレースホルダー）"""
+        pass
 
-    def _set_step(self, done: int):
-        """Update indicator. `done` = number of steps already完了 (0-4)."""
-        for idx, s in enumerate(self._step_labels, 1):
-            cont, num, lbl = s["container"], s["num"], s["text"]
-            if idx <= done:  # completed
-                cont.config(bg=UI_COLORS["primary"], relief="raised")
-                num.config(bg=UI_COLORS["primary"], fg="white")
-                lbl.config(bg=UI_COLORS["primary"], fg="white")
-            elif idx == done + 1:  # current task
-                cont.config(bg=UI_COLORS["active"], relief="solid")
-                num.config(bg=UI_COLORS["active"], fg=UI_COLORS["primary"])
-                lbl.config(bg=UI_COLORS["active"], fg=UI_COLORS["primary"])
-            else:  # not reached
-                cont.config(bg=UI_COLORS["inactive"], relief="solid")
-                num.config(bg=UI_COLORS["inactive"], fg=UI_COLORS["text_inactive"])
-                lbl.config(bg=UI_COLORS["inactive"], fg=UI_COLORS["text_inactive"])
+    def _show_help(self):
+        """使い方ヘルプを表示する"""
+        help_dialog = HelpDialog(self, HELP_CONTENT)
+        help_dialog.show()
+
 
 # ----------------------------------------------------------------------
 
 def main() -> None:
     """Package entry point (CLI script)."""
     ResizeApp().mainloop()
+
 
 if __name__ == "__main__":
     main()
