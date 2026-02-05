@@ -96,37 +96,38 @@ class SettingsManager:
     """設定ファイル管理クラス"""
     def __init__(self, settings_file: str = "karuku_settings.json"):
         self.settings_file = Path(settings_file)
-        self.default_settings = {
+
+    def load_settings(self) -> dict:
+        """設定ファイルを読み込む"""
+        if self.settings_file.exists():
+            try:
+                with open(self.settings_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logging.error(f"Failed to load settings: {e}")
+        return self._default_settings()
+
+    def save_settings(self, settings: dict) -> None:
+        """設定ファイルを保存する"""
+        try:
+            with open(self.settings_file, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logging.error(f"Failed to save settings: {e}")
+
+    @staticmethod
+    def _default_settings() -> dict:
+        """デフォルト設定を返す"""
+        return {
             "mode": "ratio",
             "ratio_value": "100",
             "width_value": "",
             "height_value": "",
+            "window_geometry": "1200x800",
+            "zoom_preference": "画面に合わせる",
             "last_input_dir": "",
             "last_output_dir": "",
-            "window_geometry": "1200x800",
-            "zoom_preference": "画面に合わせる"
         }
-    
-    def load_settings(self) -> dict:
-        if not self.settings_file.exists():
-            return self.default_settings.copy()
-        
-        try:
-            with open(self.settings_file, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-                # デフォルト値とマージ
-                merged = self.default_settings.copy()
-                merged.update(settings)
-                return merged
-        except Exception:
-            return self.default_settings.copy()
-    
-    def save_settings(self, settings: dict):
-        try:
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logging.error(f"設定保存エラー: {e}")
 
 
 class ResizeApp(customtkinter.CTk):
@@ -367,413 +368,6 @@ class ResizeApp(customtkinter.CTk):
 
     def _restore_settings(self):
         """保存された設定を復元"""
-        try:
-            geometry = self.settings.get("window_geometry", "1200x800")
-            if geometry: 
-                self.geometry(geometry)
-            self.mode_var.set(self.settings.get("mode", "ratio"))
-            self.pct_var.set(self.settings.get("ratio_value", "100"))
-            self.w_var.set(self.settings.get("width_value", ""))
-            self.h_var.set(self.settings.get("height_value", ""))
-            self.zoom_var.set(self.settings.get("zoom_preference", "画面に合わせる"))
-            self._update_mode()
-        except Exception as e:
-            logging.error(f"Failed to restore settings: {e}")
-            # In case of corrupt settings, proceed with defaults
-            pass
-
-    def _save_current_settings(self):
-        """現在の設定を保存"""
-        self.settings.update({
-            "mode": self.mode_var.get(),
-            "ratio_value": self.pct_var.get(),
-            "width_value": self.w_var.get(),
-            "height_value": self.h_var.get(),
-            "window_geometry": self.geometry(),
-            "zoom_preference": self.zoom_var.get(),
-            "last_input_dir": self.settings.get("last_input_dir"),
-            "last_output_dir": self.settings.get("last_output_dir"),
-        })
-        self.settings_manager.save_settings(self.settings)
-
-    def _on_closing(self):
-        """アプリ終了時の処理"""
-        self._save_current_settings()
-        self.destroy()
-
-    @staticmethod
-    def _validate_int(text: str) -> bool:
-        """Return True if text is empty or all digits."""
-        return text == "" or text.isdigit()
-
-    def _get_settings_summary(self):
-        """Return (settings_text, fmt, target) for current UI selections."""
-        mode = self.mode_var.get()
-        settings_text = ""
-        if mode == "ratio":
-            pct = self.pct_var.get().strip() or "---"
-            settings_text = f"倍率 {pct}%"
-        elif mode == "width":
-            w = self.w_var.get().strip() or "---"
-            settings_text = f"幅 {w}px"
-        elif mode == "height":
-            h = self.h_var.get().strip() or "---"
-            settings_text = f"高さ {h}px"
-        elif mode == "fixed":
-            w = self.w_var.get().strip() or "---"
-            h = self.h_var.get().strip() or "---"
-            settings_text = f"固定 {w}×{h}px"
-
-        fmt = "JPEG"
-        target = None
-        if self.current_index is not None:
-            job = self.jobs[self.current_index]
-            if job.image.mode in ("RGBA", "LA") or "transparency" in job.image.info:
-                fmt = "PNG"
-            target = self._get_target(job.image.size)
-        return settings_text, fmt, target
-
-    def _report_callback_exception(self, exc, val, tb):
-        messagebox.showerror("エラー", "".join(traceback.format_exception(exc, val, tb)))
-
-    def _update_mode(self, _e=None):
-        """UI state when the mode radio buttons are changed."""
-        mode = self.mode_var.get()
-        if self.active_mode_frame:
-            self.active_mode_frame.pack_forget()
-        self.active_mode_frame = self.mode_frames[mode]
-        self.active_mode_frame.pack(side="left")
-        if self.current_index is not None:
-            self._preview_current()
-
-    def _select_files(self):
-        initial_dir = self.settings.get("last_input_dir") or Path.home()
-        filepaths = filedialog.askopenfilenames(
-            title="画像ファイルを選択",
-            initialdir=str(initial_dir),
-            filetypes=[
-                ("Image files", "*.jpg *.jpeg *.png *.bmp *.gif *.tiff"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not filepaths:
-            return
-        
-        self.settings["last_input_dir"] = str(Path(filepaths[0]).parent)
-        new_jobs = []
-        for p in filepaths:
-            try:
-                new_jobs.append(ImageJob(path=Path(p), image=Image.open(p)))
-            except Exception as e:
-                logging.error(f"Failed to load image {p}: {e}")
-                messagebox.showerror("画像読み込みエラー", f"{Path(p).name} を読み込めませんでした。\n{e}")
-        
-        self.jobs = new_jobs
-        self._populate_listbox()
-        if self.jobs:
-            self._on_select_change(0)
-
-    def _populate_listbox(self):
-        for w in self.file_buttons:
-            w.destroy()
-        self.file_buttons.clear()
-        for i, job in enumerate(self.jobs):
-            btn = customtkinter.CTkButton(
-                self.file_list_frame,
-                text=job.path.name,
-                command=lambda idx=i: self._on_select_change(idx),
-                fg_color="transparent",
-                text_color_disabled="gray",
-                anchor="w",
-                font=self.font_small
-            )
-            btn.pack(fill="x", expand=True)
-            self.file_buttons.append(btn)
-
-    def _on_select_change(self, idx: Optional[int] = None):
-        """Handle file selection change."""
-        if idx is None or not (0 <= idx < len(self.jobs)):
-            self.current_index = None
-            self.canvas_org.delete("all")
-            self.canvas_resz.delete("all")
-            self.info_orig_var.set("--- x ---  ---")
-            self.info_resized_var.set("--- x ---  ---  (---)")
-            return
-
-        if self.current_index is not None:
-            self.file_buttons[self.current_index].configure(font=self.font_small)
-        
-        self.current_index = idx
-        job = self.jobs[idx]
-        self.file_buttons[idx].configure(font=customtkinter.CTkFont(family="Yu Gothic UI", size=12, weight="bold"))
-        
-        self._reset_zoom()
-        self._draw_previews(job)
-
-    def _get_target(self, orig: Tuple[int, int]) -> Optional[Tuple[int, int]]:
-        """Get target (w,h) from UI, returns None if invalid."""
-        mode = self.mode_var.get()
-        w_orig, h_orig = orig
-        try:
-            if mode == "ratio":
-                pct = int(self.pct_var.get())
-                if pct <= 0: return None
-                return int(w_orig * pct / 100), int(h_orig * pct / 100)
-            elif mode == "width":
-                w = int(self.w_var.get())
-                if w <= 0: return None
-                return w, int(h_orig * w / w_orig)
-            elif mode == "height":
-                h = int(self.h_var.get())
-                if h <= 0: return None
-                return int(w_orig * h / h_orig), h
-            elif mode == "fixed":
-                w = int(self.w_var.get())
-                h = int(self.h_var.get())
-                if w <= 0 or h <= 0: return None
-                return w, h
-        except ValueError:
-            return None 
-        return None
-
-    def _process_image(self, img: Image.Image) -> Optional[Image.Image]:
-        """Resize image according to current settings."""
-        target_size = self._get_target(img.size)
-        if not target_size:
-            self.status_var.set("リサイズ設定が無効です")
-            return None
-        if any(d <= 0 for d in target_size):
-            self.status_var.set("リサイズ後のサイズが0以下になります")
-            return None
-        return img.resize(target_size, Resampling.LANCZOS)
-
-    def _preview_current(self):
-        if self.current_index is None:
-            messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
-            return
-        job = self.jobs[self.current_index]
-        self._draw_previews(job)
-
-    def _save_current(self):
-        if self.current_index is None:
-            messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
-            return
-        
-        job = self.jobs[self.current_index]
-        if not job.resized:
-            job.resized = self._process_image(job.image)
-        if not job.resized:
-            return
-
-        _, fmt, _ = self._get_settings_summary()
-        initial_dir = self.settings.get("last_output_dir") or Path.home()
-        initial_file = f"{job.path.stem}_resized.{fmt.lower()}"
-        
-        save_path_str = filedialog.asksaveasfilename(
-            title="名前を付けて保存",
-            initialdir=str(initial_dir),
-            initialfile=initial_file,
-            filetypes=[
-                ("JPEG", "*.jpg"),
-                ("PNG", "*.png"),
-                ("All files", "*.*"),
-            ],
-            defaultextension=f".{fmt.lower()}"
-        )
-        if not save_path_str:
-            return
-
-        save_path = Path(save_path_str)
-        self.settings["last_output_dir"] = str(save_path.parent)
-        
-        try:
-            job.resized.save(save_path, quality=95, optimize=True)
-            self.status_var.set(f"{save_path.name} を保存しました")
-        except Exception as e:
-            messagebox.showerror("保存エラー", f"ファイルの保存に失敗しました:\n{e}")
-
-    def _batch_save(self):
-        if not self.jobs:
-            messagebox.showwarning("ファイル未選択", "ファイルが選択されていません")
-            return
-        
-        _, fmt, target = self._get_settings_summary()
-        if not target:
-            messagebox.showwarning("設定エラー", "リサイズ設定が無効です")
-            return
-
-        initial_dir = self.settings.get("last_output_dir") or self.settings.get("last_input_dir") or Path.home()
-        output_dir_str = filedialog.askdirectory(title="保存先フォルダを選択", initialdir=str(initial_dir))
-        if not output_dir_str:
-            return
-
-        output_dir = Path(output_dir_str)
-        self.settings["last_output_dir"] = str(output_dir)
-
-        # Show progress bar and cancel button
-        progress_frame = customtkinter.CTkFrame(self)
-        progress_frame.place(relx=0.5, rely=0.5, anchor="center")
-        self.progress_bar = customtkinter.CTkProgressBar(progress_frame, width=400, height=20)
-        self.progress_bar.pack(pady=10)
-        self.cancel_button = customtkinter.CTkButton(progress_frame, text="キャンセル", width=100, command=self._cancel_batch_save)
-        self.cancel_button.pack(pady=5)
-        self.progress_bar.set(0)
-        self._cancel_batch = False
-
-        processed_count = 0
-        total_files = len(self.jobs)
-        
-        for i, job in enumerate(self.jobs):
-            if self._cancel_batch:
-                break
-            
-            self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
-            self.progress_bar.set((i + 1) / total_files)
-            self.update_idletasks()
-            
-            try:
-                resized_img = self._process_image(job.image)
-                if resized_img:
-                    out_name = f"{job.path.stem}_resized.{fmt.lower()}"
-                    out_path = output_dir / out_name
-                    resized_img.save(out_path, quality=95, optimize=True)
-                    processed_count += 1
-            except Exception as e:
-                logging.error(f"Failed to save {job.path.name}: {e}")
-
-        progress_frame.destroy()
-        
-        if self._cancel_batch:
-            msg = f"一括処理がキャンセルされました。({processed_count}/{total_files}件完了)"
-        else:
-            msg = f"一括処理完了。{processed_count}/{total_files}件の画像を保存しました。"
-        
-        self.status_var.set(msg)
-        messagebox.showinfo("完了", msg)
-
-    def _cancel_batch_save(self):
-        self._cancel_batch = True
-
-    def _draw_previews(self, job: ImageJob):
-        """Draw original and resized previews on canvases."""
-        # Original
-        self._imgtk_org = self._draw_image_on_canvas(self.canvas_org, job.image, is_resized=False)
-        size = job.image.size
-        self.info_orig_var.set(f"{size[0]} x {size[1]}  {Path(job.path).stat().st_size/1024:.1f}KB")
-
-        # Resized
-        job.resized = self._process_image(job.image)
-        if job.resized:
-            self._imgtk_resz = self._draw_image_on_canvas(self.canvas_resz, job.resized, is_resized=True)
-            size = job.resized.size
-            with io.BytesIO() as bio:
-                job.resized.save(bio, format="JPEG", quality=95)
-                kb = len(bio.getvalue()) / 1024
-            orig_w, orig_h = job.image.size
-            pct = (size[0] * size[1]) / (orig_w * orig_h) * 100 if (orig_w * orig_h) > 0 else 0
-            self.info_resized_var.set(f"{size[0]} x {size[1]}  {kb:.1f}KB ({pct:.1f}%)")
-            self.resized_title_label.configure(text=f"リサイズ後 ({self._get_settings_summary()[0]})")
-        else:
-            self.canvas_resz.delete("all")
-            self.info_resized_var.set("--- x ---  ---  (---)")
-            self.resized_title_label.configure(text="リサイズ後")
-
-    def _draw_image_on_canvas(self, canvas: customtkinter.CTkCanvas, img: Image.Image, is_resized: bool) -> Optional[ImageTk.PhotoImage]:
-        canvas.delete("all")
-        canvas_w, canvas_h = canvas.winfo_width(), canvas.winfo_height()
-        if canvas_w <= 1 or canvas_h <= 1:
-            return None
-
-        zoom_attr = "_zoom_resz" if is_resized else "_zoom_org"
-        zoom = getattr(self, zoom_attr)
-        label = f"{int(zoom*100)}%" if zoom is not None else "画面に合わせる"
-
-        if zoom is None:
-            if img.width > 0 and img.height > 0:
-                zoom = min(canvas_w / img.width, canvas_h / img.height)
-            else:
-                zoom = 1.0
-            label = f"Fit ({int(zoom*100)}%)"
-
-        disp = img.copy()
-        new_size = (int(disp.width * zoom), int(disp.height * zoom))
-        if new_size[0] <= 0 or new_size[1] <= 0:
-            return None
-
-        disp = disp.resize(new_size, Resampling.LANCZOS)
-        imgtk = ImageTk.PhotoImage(disp)
-
-        x = (canvas_w - new_size[0]) // 2
-        y = (canvas_h - new_size[1]) // 2
-        canvas.create_image(x, y, anchor="nw", image=imgtk)
-        canvas.create_text(10, 10, text=label, anchor="nw", fill="white", font=self.font_small)
-        return imgtk
-
-    def _reset_zoom(self):
-        """Resets the zoom level to 'Fit to Screen' in both state and UI."""
-        self._zoom_org = None
-        self._zoom_resz = None
-        self.zoom_var.set("画面に合わせる")
-
-    def _apply_zoom_selection(self, choice: str):
-        """Applies the zoom level selected in the combobox."""
-        if choice == "画面に合わせる":
-            self._zoom_org = None
-            self._zoom_resz = None
-        else:
-            # e.g. "100%" -> 1.0
-            zoom_val = float(choice.replace("%", "")) / 100.0
-            self._zoom_org = zoom_val
-            self._zoom_resz = zoom_val
-        
-        if self.current_index is not None:
-            self._draw_previews(self.jobs[self.current_index])
-
-    def _get_fit_zoom_ratio(self, canvas: customtkinter.CTkCanvas, is_resized: bool) -> float:
-        """Calculates the zoom ratio to fit the image to the canvas."""
-        if self.current_index is None:
-            return 1.0
-        job = self.jobs[self.current_index]
-        img = job.resized if is_resized and job.resized else job.image
-        canvas_w, canvas_h = canvas.winfo_width(), canvas.winfo_height()
-        if img and img.width > 0 and img.height > 0:
-            return min(canvas_w / img.width, canvas_h / img.height)
-        return 1.0
-
-    def _on_zoom(self, event, is_resized: bool):
-        if self.current_index is None:
-            return
-        
-        if platform.system() == "Darwin":  # macOS
-            delta = event.delta
-        else:  # Windows, Linux
-            delta = event.delta // 120
-
-        canvas = self.canvas_resz if is_resized else self.canvas_org
-        zoom_attr = "_zoom_resz" if is_resized else "_zoom_org"
-        current_zoom = getattr(self, zoom_attr)
-        
-        if current_zoom is None:
-            current_zoom = self._get_fit_zoom_ratio(canvas, is_resized)
-
-        if delta > 0:
-            new_zoom = min(current_zoom * ZOOM_STEP, MAX_ZOOM)
-        else:
-            new_zoom = max(current_zoom / ZOOM_STEP, MIN_ZOOM)
-
-        setattr(self, zoom_attr, new_zoom)
-        self.zoom_var.set(f"{int(new_zoom*100)}%")
-        self._draw_previews(self.jobs[self.current_index])
-
-    def _on_root_resize(self, _e):
-        # redraw previews if zoom is 'Fit'
-        if self._zoom_org is None or self._zoom_resz is None:
-            if self.current_index is not None:
-                self._draw_previews(self.jobs[self.current_index])
-
-    def _show_help(self):
-        """使い方ヘルプを表示する"""
-        HelpDialog(self, title="使い方ガイド", help_content=HELP_CONTENT, step_descriptions=STEP_DESCRIPTIONS)
         # モード復元
         self.mode_var.set(self.settings["mode"])
         
@@ -957,406 +551,6 @@ class ResizeApp(customtkinter.CTk):
 
         self._reset_zoom()
         self._draw_previews(job)
-        self._update_info_labels(job.image, job.resized)    # --
-    # ------------------ size calculation -----------------------------
-    def _get_target(self, orig: Tuple[int, int]) -> Optional[Tuple[int, int]]:
-        mode = self.mode_var.get()
-        ow, oh = orig
-        if mode == "ratio":
-            pct = self._parse_positive(self.ratio_entry)
-            if pct is None:
-                return None
-            return int(ow * pct / 100), int(oh * pct / 100)
-        if mode == "width":
-            w = self._parse_positive(self.entry_w_single)
-            if w is None:
-                return None
-            return w, int(oh * w / ow)
-        if mode == "height":
-            h = self._parse_positive(self.entry_h_single)
-            if h is None:
-                return None
-            return int(ow * h / oh), h
-        # fixed
-        w = self._parse_positive(self.entry_w_fixed)
-        h = self._parse_positive(self.entry_h_fixed)
-        if w is None or h is None:
-            return None
-        return w, h
-
-    # -------------------- processing core ------------------------------
-    def _process_image(self, img: Image.Image) -> Tuple[Image.Image, str]:
-        target = self._get_target(img.size)
-        # if no size specified yet, keep original dimensions
-        if target is None:
-            tw, th = img.size
-        else:
-            tw, th = target
-        if (tw, th) != img.size:
-            img = img.resize((tw, th), Resampling.LANCZOS)
-        # choose PNG if image has alpha or is palette/bitmap
-        fmt = "PNG" if ("A" in img.getbands() or img.mode in ("P", "1")) else "JPEG"
-        return img, fmt
-
-    # -------------------- preview / save -------------------------------
-    def _preview_current(self):
-        logging.debug('_preview_current called')
-        if self.current_index is None:
-            return
-        job = self.jobs[self.current_index]
-
-        try:
-            job.resized, fmt = self._process_image(job.image)
-        except ValueError:
-            return  # validation error already shown
-        self._draw_previews(job)
-        self._update_info_labels(job.image, job.resized, fmt)
-        self.status_var.set("プレビューを更新しました")
-
-    def _save_current(self):
-        if self.current_index is None:
-            messagebox.showwarning("警告", "画像が選択されていません。")
-            return
-        job = self.jobs[self.current_index]
-
-        # Process image if not already done
-        if job.resized is None:
-            try:
-                job.resized, fmt = self._process_image(job.image)
-            except ValueError as e:
-                messagebox.showerror("設定エラー", f"画像の処理中にエラーが発生しました:\n{e}")
-                return
-        else:
-            fmt = "PNG" if "A" in job.resized.getbands() else "JPEG"
-
-        # Get details for confirmation
-        new_dims = job.resized.size
-        file_size = self._encoded_size_bytes(job.resized, fmt)
-        file_size_str = self._format_bytes(file_size)
-
-        # Get settings text using helper for consistency
-        settings_text, _fmt_unused, _target_unused = self._get_settings_summary()
-
-        # Show confirmation dialog
-        confirm_msg = (
-            f"以下の内容で画像を保存します。\n\n"
-            f"設定: {settings_text}\n"
-            f"出力サイズ: {new_dims[0]} × {new_dims[1]} px\n"
-            f"形式: {fmt}\n"
-            f"ファイルサイズ (推定): {file_size_str}\n\n"
-            f"よろしいですか？"
-        )
-        if not messagebox.askyesno("保存の確認", confirm_msg):
-            return
-
-        # 前回の出力ディレクトリから開始
-        initial_dir = self.settings.get("last_output_dir", "")
-
-        # Get filename and save
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        initial_name = f"{now}_{job.path.name}"
-        fname = filedialog.asksaveasfilename(
-            title="画像を保存",
-            initialdir=initial_dir,
-            initialfile=initial_name,
-            defaultextension="." + fmt.lower(),
-            filetypes=[(fmt, "*.*")])
-        if not fname:
-            return
-            
-        # ディレクトリを記憶
-        self.settings["last_output_dir"] = str(Path(fname).parent)
-        
-        self._save_image(job.resized, Path(fname), fmt)
-        self.status_var.set(f"「{Path(fname).name}」を保存しました")
-        messagebox.showinfo("保存", "保存が完了しました")
-
-    def _batch_save(self):
-        if not self.jobs:
-            messagebox.showwarning("警告", "画像が選択されていません。")
-            return
-
-        num_files = len(self.jobs)
-        settings_text, fmt, target = self._get_settings_summary()
-        if target is None:
-            messagebox.showerror("エラー", "リサイズ設定が無効です。数値を確認してください。")
-            return
-
-        # Use the first image for preview in confirmation
-        first_job = self.jobs[0]
-        new_dims = self._get_target(first_job.image.size)
-        if not new_dims:
-            messagebox.showerror("エラー", "最初画像のサイズ計算に失敗しました。")
-            return
-
-        try:
-            # Create a temporary resized image for file size estimation
-            temp_resized_img = first_job.image.copy()
-            temp_resized_img.thumbnail(new_dims, Image.Resampling.LANCZOS)
-            file_size_str = self._format_bytes(self._encoded_size_bytes(temp_resized_img, fmt))
-        except Exception as e:
-            messagebox.showerror("プレビューエラー", f"ファイルサイズ推定中にエラー: {e}")
-            return
-
-        # Show confirmation dialog
-        confirm_msg = (
-            f"{num_files}個の画像を一括保存します。\n\n"
-            f"適用する設定: {settings_text}\n\n"
-            f"--- 最初の画像の変換結果 (参考) ---\n"
-            f"出力サイズ: {new_dims[0]} × {new_dims[1]} px\n"
-            f"形式: {fmt}\n"
-            f"ファイルサイズ (推定): {file_size_str}\n"
-            f"-------------------------------------\n\n"
-            f"よろしいですか？"
-        )
-        if not messagebox.askyesno("一括保存の確認", confirm_msg):
-            return
-
-        # Ask for output directory
-        initial_dir = self.settings.get("last_output_dir", "")
-        out_dir_name = filedialog.askdirectory(title="出力フォルダーを選択", initialdir=initial_dir)
-        if not out_dir_name:
-            return
-
-        # ディレクトリを記憶
-        self.settings["last_output_dir"] = out_dir_name
-
-        out_dir = Path(out_dir_name)
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        errors = []
-
-        # プログレスバーとキャンセルボタンを表示
-        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-        self.cancel_button.pack(side="bottom", pady=5)
-        self.progress_bar.set(0)
-        self._cancel_batch = False
-
-        total_files = len(self.jobs)
-        
-        for i, job in enumerate(self.jobs):
-            if self._cancel_batch:
-                self.status_var.set("一括保存がキャンセルされました")
-                break
-                
-            try:
-                new_img = job.image.copy()
-                new_img.thumbnail(target, Resampling.LANCZOS)
-                new_name = f"{now}_{job.path.name}"
-                out_path = out_dir / new_name
-                self._save_image(new_img, out_path, fmt)
-                
-                # プログレス更新
-                progress = (i + 1) / total_files
-                self.progress_bar.set(progress)
-                self.status_var.set(f"処理中... {i+1}/{total_files} ({int(progress*100)}%)")
-                self.update()  # UI更新を強制
-                
-            except Exception as e:
-                errors.append(f"{job.path.name}: {e}")
-
-        # プログレスバーとキャンセルボタンを非表示
-        self.progress_bar.pack_forget()
-        self.cancel_button.pack_forget()
-
-        if not self._cancel_batch:
-            if errors:
-                error_details = "\n".join(errors)
-                messagebox.showwarning("一括保存エラー", f"{len(errors)}件の画像処理に失敗しました:\n\n{error_details[:1000]}")
-            else:
-                messagebox.showinfo("成功", f"{num_files}個の画像を正常に保存しました。")
-                self.status_var.set(f"{num_files}個の画像を保存完了")
-
-    def _cancel_batch_save(self):
-        """一括保存をキャンセル"""
-        self._cancel_batch = True
-    # -
-    # ------------------- Settings Management ---------------------------
-    def _restore_settings(self):
-        """保存された設定を復元"""
-        # モード復元
-        self.mode_var.set(self.settings["mode"])
-        
-        # 値復元
-        self.pct_var.set(self.settings["ratio_value"])
-        self.w_var.set(self.settings["width_value"])
-        self.h_var.set(self.settings["height_value"])
-        
-        # ウィンドウサイズ復元
-        try:
-            self.geometry(self.settings["window_geometry"])
-        except:
-            self.geometry("1200x800")  # フォールバック
-        
-        # ズーム設定復元
-        self.zoom_var.set(self.settings["zoom_preference"])
-    
-    def _save_current_settings(self):
-        """現在の設定を保存"""
-        self.settings.update({
-            "mode": self.mode_var.get(),
-            "ratio_value": self.pct_var.get(),
-            "width_value": self.w_var.get(),
-            "height_value": self.h_var.get(),
-            "window_geometry": self.geometry(),
-            "zoom_preference": self.zoom_var.get()
-        })
-        self.settings_manager.save_settings(self.settings)
-    
-    def _on_closing(self):
-        """アプリ終了時の処理"""
-        self._save_current_settings()
-        self.destroy()
-
-    # -------------------- validation helpers ---------------------------
-    @staticmethod
-    def _validate_int(text: str) -> bool:
-        """Return True if text is empty or all digits."""
-        return text == "" or text.isdigit()
-
-    def _parse_positive(self, widget: customtkinter.CTkEntry, min_val: int = 1) -> Optional[int]:
-        if widget == self.ratio_entry:
-            s = self.pct_var.get() # pct_var is already validated
-        else:
-            s = widget.get()
-        if not s:
-            return None
-        num = int(s)
-        if not (min_val <= num):
-            messagebox.showwarning("入力エラー", f"{min_val} 以上の整数で入力してください")
-            widget.focus_set()
-            return None
-        return num
-
-    # ------------------------------------------------------------------
-    # Helper: summarize current resize settings for confirmation dialogs
-    # ------------------------------------------------------------------
-
-    def _get_settings_summary(self):
-        """Return (settings_text, fmt, target) for current UI selections.
-
-        settings_text: human-readable string such as "幅 800px".
-        fmt: default output format (PNG if alpha channel else JPEG).
-        target: tuple[int,int] desired size or None if invalid.
-        """
-        mode = self.mode_var.get()
-        if mode == "ratio":
-            pct = self.ratio_entry.get().strip() or "---"
-            settings_text = f"倍率 {pct}%"
-        elif mode == "width":
-            w = self.entry_w_single.get().strip() or "---"
-            settings_text = f"幅 {w}px"
-        elif mode == "height":
-            h = self.entry_h_single.get().strip() or "---"
-            settings_text = f"高さ {h}px"
-        else:  # fixed
-            w = self.entry_w_fixed.get().strip() or "---"
-            h = self.entry_h_fixed.get().strip() or "---"
-            settings_text = f"固定 {w}×{h}px"
-
-        # decide default format and calculate target using first image if any
-        fmt = "JPEG"
-        target = None
-        if self.jobs:
-            first_img = self.jobs[0].image
-            fmt = "PNG" if ("A" in first_img.getbands() or first_img.mode in ("P", "1")) else "JPEG"
-            target = self._get_target(first_img.size)
-        return settings_text, fmt, target
-
-    #     # -------------------- mode handling --------------------------------
-    def _report_callback_exception(self, exc, val, tb):
-        # Custom exception handler to log full traceback
-        logging.error("Tkinter callback exception", exc_info=(exc, val, tb))
-        messagebox.showerror("例外", f"{exc.__name__}: {val}")
-
-    def _update_mode(self, _e=None):
-        mode = self.mode_var.get()
-
-        # --- Hide previous frame and show the new one ---
-        if self.active_mode_frame is not None:
-            self.active_mode_frame.pack_forget()
-
-        self.active_mode_frame = self.mode_frames[mode]
-        self.active_mode_frame.pack(side="left")
-
-        # --- Enable/disable entries based on mode ---
-        actives = self._entry_widgets.get(mode, [])
-        for entry in self._all_entries:
-            if entry in actives:
-                entry.configure(state="normal")
-            else:
-                entry.configure(state="disabled")
-
-        # set focus to first active entry
-        actives = self._entry_widgets.get(mode, [])
-        if actives:
-            actives[0].focus_set()
-
-    # -------------------- file selection -------------------------------
-    def _select_files(self):
-        # 前回のディレクトリから開始
-        initial_dir = self.settings.get("last_input_dir", "")
-        
-        paths = filedialog.askopenfilenames(
-            title="画像を選択", 
-            initialdir=initial_dir,
-            filetypes=[("画像", "*.png *.jpg *.jpeg *.webp"), ("すべて", "*.*")]
-        )
-        if not paths:
-            return
-            
-        # ディレクトリを記憶
-        self.settings["last_input_dir"] = str(Path(paths[0]).parent)
-        
-        self.jobs.clear()
-        for p in paths:
-            try:
-                img = Image.open(p)
-            except Exception as e:  # pragma: no cover
-                messagebox.showerror("エラー", f"{p} の読み込みに失敗しました: {e}")
-                continue
-            self.jobs.append(ImageJob(Path(p), img))
-        self._populate_listbox()
-        if self.jobs:
-            self._on_select_change()
-
-    def _populate_listbox(self):
-        for button in self.file_buttons:
-            button.destroy()
-        self.file_buttons = []
-        for i, job in enumerate(self.jobs):
-            button = customtkinter.CTkButton(
-                self.file_list_frame, 
-                text=job.path.name, 
-                command=lambda idx=i: self._on_select_change(idx)
-            )
-            button.pack(fill="x", padx=10, pady=5)
-            self.file_buttons.append(button)
-        if self.jobs:
-            self._on_select_change(0)
-
-    def _on_select_change(self, idx: Optional[int] = None) -> None:
-        """Handle file selection change."""
-        if idx is None:
-            idx = 0
-        if self.current_index == idx or idx >= len(self.jobs):
-            return
-
-        # Update button highlights
-        if self.current_index is not None and self.current_index < len(self.file_buttons):
-            self.file_buttons[self.current_index].configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["fg_color"])
-        
-        self.current_index = idx
-        self.file_buttons[idx].configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
-
-        # Update previews and info
-        job = self.jobs[idx]
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.status_var.set(f"[{now}] {job.path.name} を選択しました")
-        logger.info(f"Selected: {job.path.name}")
-
-        self._reset_zoom()
-        self._draw_previews(job)
-        self._update_info_labels(job.image, job.resized)    # 
 
     # -------------------- size calculation -----------------------------
     # サイズ計算に関する関数
@@ -1380,34 +574,12 @@ class ResizeApp(customtkinter.CTk):
             return int(ow * h / oh), h
         # fixed
         w = self._parse_positive(self.entry_w_fixed)
-
-        active_entries = self._entry_widgets[mode]
-
-        try:
-            if mode == "ratio":
-                pct = int(self.pct_var.get())
-                if pct <= 0: return None
-                return int(w_orig * pct / 100), int(h_orig * pct / 100)
-
-            elif mode == "width":
-                w = int(self.w_var.get())
-                if w <= 0: return None
-                return w, int(h_orig * w / w_orig)
-
-            elif mode == "height":
-                h = int(self.h_var.get())
-                if h <= 0: return None
-                return int(w_orig * h / h_orig), h
-
-            elif mode == "fixed":
-                w = int(self.w_var.get())
-                h = int(self.h_var.get())
-                if w <= 0 or h <= 0: return None
-                return w, h
-        except ValueError:
-            return None # Entry is not a valid int
-
-        return None
+        if w is None:
+            return None
+        h = self._parse_positive(self.entry_h_fixed)
+        if h is None:
+            return None
+        return w, h
 
     def _process_image(self, img: Image.Image) -> Optional[Image.Image]:
         """Resize image according to current settings."""
@@ -1431,20 +603,20 @@ class ResizeApp(customtkinter.CTk):
 
     def _save_current(self):
         if self.current_index is None:
-            customtkinter.messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
+            messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
             return
 
         job = self.jobs[self.current_index]
         if not job.resized:
             job.resized = self._process_image(job.image)
         if not job.resized:
-            return  # processing failed
+            return
 
         _, fmt, _ = self._get_settings_summary()
         initial_dir = self.settings.get("last_output_dir") or Path.home()
         initial_file = f"{job.path.stem}_resized.jpg"
 
-        save_path_str = customtkinter.filedialog.asksaveasfilename(
+        save_path_str = filedialog.asksaveasfilename(
             title="名前を付けて保存",
             initialdir=str(initial_dir),
             initialfile=initial_file,
@@ -1465,27 +637,26 @@ class ResizeApp(customtkinter.CTk):
             job.resized.save(save_path, quality=95, optimize=True)
             self.status_var.set(f"{save_path.name} を保存しました")
         except Exception as e:
-            customtkinter.messagebox.showerror("保存エラー", f"ファイルの保存に失敗しました:\n{e}")
+            messagebox.showerror("保存エラー", f"ファイルの保存に失敗しました:\n{e}")
 
     def _batch_save(self):
         if not self.jobs:
-            customtkinter.messagebox.showwarning("ファイル未選択", "ファイルが選択されていません")
+            messagebox.showwarning("ファイル未選択", "ファイルが選択されていません")
             return
 
         _, fmt, target = self._get_settings_summary()
         if not target:
-            customtkinter.messagebox.showwarning("設定エラー", "リサイズ設定が無効です")
+            messagebox.showwarning("設定エラー", "リサイズ設定が無効です")
             return
 
         initial_dir = self.settings.get("last_output_dir") or self.settings.get("last_input_dir") or Path.home()
-        output_dir_str = customtkinter.filedialog.askdirectory(title="保存先フォルダを選択", initialdir=str(initial_dir))
+        output_dir_str = filedialog.askdirectory(title="保存先フォルダを選択", initialdir=str(initial_dir))
         if not output_dir_str:
             return
 
         output_dir = Path(output_dir_str)
         self.settings["last_output_dir"] = str(output_dir)
 
-        # --- Show progress bar and cancel button ---
         self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
         self.cancel_button.pack(side="bottom", pady=(0, 10))
         self.progress_bar.set(0)
@@ -1500,7 +671,7 @@ class ResizeApp(customtkinter.CTk):
 
             self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
             self.progress_bar.set((i + 1) / total_files)
-            self.update_idletasks() # Force UI update
+            self.update_idletasks()
 
             resized_img = self._process_image(job.image)
             if resized_img:
@@ -1512,7 +683,6 @@ class ResizeApp(customtkinter.CTk):
                 except Exception as e:
                     logging.error(f"Failed to save {out_path}: {e}")
 
-        # --- Hide progress bar and show result ---
         self.progress_bar.pack_forget()
         self.cancel_button.pack_forget()
 
@@ -1521,12 +691,10 @@ class ResizeApp(customtkinter.CTk):
         else:
             msg = f"一括処理完了。{processed_count}/{total_files}件の画像を保存しました。"
         self.status_var.set(msg)
-        customtkinter.messagebox.showinfo("完了", msg)
+        messagebox.showinfo("完了", msg)
 
     def _cancel_batch_save(self):
         self._cancel_batch = True
-
-    # -------------------- Preview drawing ----------------------------
 
     def _draw_previews(self, job: ImageJob):
         """Draw original and resized previews on canvases."""
@@ -1590,8 +758,72 @@ class ResizeApp(customtkinter.CTk):
 
     def _show_help(self):
         """使い方ヘルプを表示する"""
-        HelpDialog(self, title="使い方ガイド", help_content=HELP_CONTENT, step_descriptions=STEP_DESCRIPTIONS)
+        HelpDialog(self, HELP_CONTENT).show()
 
+    # -------------------- Zoom controls --------------------------------
+    def _reset_zoom(self):
+        """Reset zoom to 'Fit to screen' mode."""
+        self._zoom_org = None
+        self._zoom_resz = None
+        self.zoom_var.set("画面に合わせる")
+
+    def _apply_zoom_selection(self, _choice=None):
+        """Apply the zoom selection from the combobox."""
+        choice = self.zoom_var.get()
+        if choice == "画面に合わせる":
+            self._zoom_org = None
+            self._zoom_resz = None
+        else:
+            try:
+                pct = int(choice.rstrip("%"))
+            except ValueError:
+                return
+            self._zoom_org = pct / 100.0
+            self._zoom_resz = pct / 100.0
+        if self.current_index is not None:
+            self._draw_previews(self.jobs[self.current_index])
+
+    def _get_fit_zoom_ratio(self, canvas: customtkinter.CTkCanvas, is_resized: bool) -> float:
+        """Calculates the zoom ratio to fit the image to the canvas."""
+        if self.current_index is None:
+            return 1.0
+        job = self.jobs[self.current_index]
+        img = job.resized if is_resized and job.resized else job.image
+        canvas_w, canvas_h = canvas.winfo_width(), canvas.winfo_height()
+        if img and img.width > 0 and img.height > 0:
+            return min(canvas_w / img.width, canvas_h / img.height)
+        return 1.0
+
+    def _on_zoom(self, event, is_resized: bool):
+        if self.current_index is None:
+            return
+        
+        if platform.system() == "Darwin":  # macOS
+            delta = event.delta
+        else:  # Windows, Linux
+            delta = event.delta // 120
+
+        canvas = self.canvas_resz if is_resized else self.canvas_org
+        zoom_attr = "_zoom_resz" if is_resized else "_zoom_org"
+        current_zoom = getattr(self, zoom_attr)
+        
+        if current_zoom is None:
+            current_zoom = self._get_fit_zoom_ratio(canvas, is_resized)
+
+        if delta > 0:
+            new_zoom = min(current_zoom * ZOOM_STEP, MAX_ZOOM)
+        else:
+            new_zoom = max(current_zoom / ZOOM_STEP, MIN_ZOOM)
+
+        setattr(self, zoom_attr, new_zoom)
+        self.zoom_var.set(f"{int(new_zoom*100)}%")
+        self._draw_previews(self.jobs[self.current_index])
+
+    def _on_root_resize(self, _e):
+        # redraw previews if zoom is 'Fit'
+        if self._zoom_org is None or self._zoom_resz is None:
+            if self.current_index is not None:
+                self._draw_previews(self.jobs[self.current_index])
 
 # ----------------------------------------------------------------------
 
