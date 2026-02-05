@@ -99,13 +99,16 @@ class SettingsManager:
 
     def load_settings(self) -> dict:
         """設定ファイルを読み込む"""
+        defaults = self._default_settings()
         if self.settings_file.exists():
             try:
                 with open(self.settings_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        defaults.update(loaded)
             except Exception as e:
                 logging.error(f"Failed to load settings: {e}")
-        return self._default_settings()
+        return defaults
 
     def save_settings(self, settings: dict) -> None:
         """設定ファイルを保存する"""
