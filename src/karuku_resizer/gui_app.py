@@ -382,7 +382,7 @@ class ResizeApp(customtkinter.CTk):
         # ウィンドウサイズ復元
         try:
             self.geometry(self.settings["window_geometry"])
-        except:
+        except Exception:
             self.geometry("1200x800")  # フォールバック
         
         # ズーム設定復元
