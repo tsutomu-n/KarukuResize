@@ -2,10 +2,11 @@
 
 ## 日時
 2025年6月29日
+2026年2月9日（更新）
 
 ## 完了した作業
 
-### Phase 3.5: GUI統合 ✅
+### Phase 3.5: GUI統合 
 1. **バックアップとインポート追加** - 完了
 2. **メニューバー追加** - 完了
 3. **プリセット機能統合** - 完了
@@ -20,6 +21,21 @@
 - 3つの新規タブの追加と統合
 - タブ切り替え時の自動読み込み機能
 - 履歴からの再処理機能
+
+### 2026年2月9日: GUIアプリエラー修正 
+1. **bare except修正** - 完了
+   - `gui_app.py` の385行目付近の `except:` を `except Exception:` に変更
+   - PEP 760準拠（KeyboardInterrupt/SystemExitを捕捉しないように）
+2. **孤立コード削除** - 完了
+   - メソッド外にあった `customtkinter.CTkButton` 作成コードを削除
+   - `_restore_settings` メソッドを完成（値復元処理を追加）
+3. **設定読み込み堅牢化** - 完了
+   - `SettingsManager.load_settings` に `isinstance(loaded, dict)` チェックを追加
+   - malformed JSON対策
+4. **ヘルプダイアログ修正** - 完了
+   - `HelpDialog(self, HELP_CONTENT).show()` 形式に修正
+5. **構文チェック** - 完了
+   - `uv run python -m py_compile` で確認済み
 
 ## 現在の問題点
 
