@@ -32,8 +32,11 @@ from karuku_resizer.image_save_pipeline import (
     SaveOptions,
     ExifPreview,
     SaveResult,
+    build_encoder_save_kwargs,
     destination_with_extension,
+    normalize_avif_speed,
     normalize_quality,
+    normalize_webp_method,
     preview_exif_plan,
     resolve_output_format,
     save_image,
@@ -82,6 +85,8 @@ ZOOM_STEP = 1.1
 MIN_ZOOM = 0.2
 MAX_ZOOM = 10.0
 QUALITY_VALUES = [str(v) for v in range(5, 101, 5)]
+WEBP_METHOD_VALUES = [str(v) for v in range(0, 7)]
+AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
 
 FORMAT_LABEL_TO_ID = {
     "自動": "auto",
@@ -158,6 +163,9 @@ class SettingsManager:
             "height_value": "",
             "quality": "85",
             "output_format": "auto",
+            "webp_method": "6",
+            "webp_lossless": False,
+            "avif_speed": "6",
             "dry_run": False,
             "verbose_logging": False,
             "exif_mode": "keep",
@@ -275,6 +283,9 @@ class ResizeApp(customtkinter.CTk):
         for var in (
             self.output_format_var,
             self.quality_var,
+            self.webp_method_var,
+            self.webp_lossless_var,
+            self.avif_speed_var,
             self.exif_mode_var,
             self.remove_gps_var,
             self.dry_run_var,
@@ -285,10 +296,20 @@ class ResizeApp(customtkinter.CTk):
         self._update_settings_summary()
 
     def _update_settings_summary(self):
+        format_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
+        codec_summary = ""
+        if format_id == "webp":
+            codec_summary = (
+                f" / WEBP method {self.webp_method_var.get()} "
+                f"(lossless {'ON' if self.webp_lossless_var.get() else 'OFF'})"
+            )
+        elif format_id == "avif":
+            codec_summary = f" / AVIF speed {self.avif_speed_var.get()}"
+
         summary = (
             f"現在設定: 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
             f"EXIF {self.exif_mode_var.get()} / GPS削除 {'ON' if self.remove_gps_var.get() else 'OFF'} / "
-            f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}"
+            f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
         )
         self.settings_summary_var.set(summary)
 
@@ -401,6 +422,9 @@ class ResizeApp(customtkinter.CTk):
 
         self.output_format_var = customtkinter.StringVar(value="自動")
         self.quality_var = customtkinter.StringVar(value="85")
+        self.webp_method_var = customtkinter.StringVar(value="6")
+        self.webp_lossless_var = customtkinter.BooleanVar(value=False)
+        self.avif_speed_var = customtkinter.StringVar(value="6")
         self.dry_run_var = customtkinter.BooleanVar(value=False)
         self.verbose_log_var = customtkinter.BooleanVar(value=False)
         self.exif_mode_var = customtkinter.StringVar(value="保持")
@@ -471,6 +495,47 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self.exif_preview_button.pack(side="left", padx=(10, 0))
+
+        codec_controls = customtkinter.CTkFrame(parent, fg_color="transparent")
+        codec_controls.pack(side="top", fill="x", padx=10, pady=(0, 6))
+
+        customtkinter.CTkLabel(codec_controls, text="WEBP method", font=self.font_small).pack(side="left", padx=(0, 4))
+        self.webp_method_menu = customtkinter.CTkOptionMenu(
+            codec_controls,
+            variable=self.webp_method_var,
+            values=WEBP_METHOD_VALUES,
+            width=80,
+            command=self._on_webp_method_changed,
+            font=self.font_small,
+        )
+        self.webp_method_menu.pack(side="left", padx=(0, 8))
+
+        self.webp_lossless_check = customtkinter.CTkCheckBox(
+            codec_controls,
+            text="WEBP lossless",
+            variable=self.webp_lossless_var,
+            command=self._on_codec_setting_changed,
+            font=self.font_small,
+        )
+        self.webp_lossless_check.pack(side="left", padx=(0, 14))
+
+        customtkinter.CTkLabel(codec_controls, text="AVIF speed", font=self.font_small).pack(side="left", padx=(0, 4))
+        self.avif_speed_menu = customtkinter.CTkOptionMenu(
+            codec_controls,
+            variable=self.avif_speed_var,
+            values=AVIF_SPEED_VALUES,
+            width=80,
+            command=self._on_avif_speed_changed,
+            font=self.font_small,
+        )
+        self.avif_speed_menu.pack(side="left", padx=(0, 8))
+        customtkinter.CTkLabel(
+            codec_controls,
+            text="(低速=高品質)",
+            font=self.font_small,
+        ).pack(side="left")
+
+        self._update_codec_controls_state()
         self._setup_exif_edit_fields(parent)
 
     def _setup_exif_edit_fields(self, parent):
@@ -533,11 +598,44 @@ class ResizeApp(customtkinter.CTk):
             self._draw_previews(self.jobs[self.current_index])
 
     def _on_output_format_changed(self, _value: str):
+        self._update_codec_controls_state()
         if self.current_index is not None:
             self._draw_previews(self.jobs[self.current_index])
 
     def _on_exif_mode_changed(self, _value: str):
         self._toggle_exif_edit_fields()
+
+    def _on_webp_method_changed(self, value: str):
+        try:
+            raw = int(value)
+        except ValueError:
+            raw = 6
+        normalized = str(normalize_webp_method(raw))
+        if normalized != value:
+            self.webp_method_var.set(normalized)
+        self._on_codec_setting_changed()
+
+    def _on_avif_speed_changed(self, value: str):
+        try:
+            raw = int(value)
+        except ValueError:
+            raw = 6
+        normalized = str(normalize_avif_speed(raw))
+        if normalized != value:
+            self.avif_speed_var.set(normalized)
+        self._on_codec_setting_changed()
+
+    def _on_codec_setting_changed(self):
+        if self.current_index is not None:
+            self._draw_previews(self.jobs[self.current_index])
+
+    def _update_codec_controls_state(self):
+        selected_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
+        webp_state = "normal" if selected_id == "webp" else "disabled"
+        avif_state = "normal" if selected_id == "avif" else "disabled"
+        self.webp_method_menu.configure(state=webp_state)
+        self.webp_lossless_check.configure(state=webp_state)
+        self.avif_speed_menu.configure(state=avif_state)
 
     def _toggle_exif_edit_fields(self):
         is_edit_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep") == "edit"
@@ -670,6 +768,22 @@ class ResizeApp(customtkinter.CTk):
         except (TypeError, ValueError):
             saved_quality = 85
         self.quality_var.set(str(normalize_quality(saved_quality)))
+        try:
+            saved_webp_method = int(self.settings.get("webp_method", "6"))
+        except (TypeError, ValueError):
+            saved_webp_method = 6
+        self.webp_method_var.set(str(normalize_webp_method(saved_webp_method)))
+        try:
+            saved_avif_speed = int(self.settings.get("avif_speed", "6"))
+        except (TypeError, ValueError):
+            saved_avif_speed = 6
+        self.avif_speed_var.set(str(normalize_avif_speed(saved_avif_speed)))
+        webp_lossless_raw = self.settings.get("webp_lossless", False)
+        if isinstance(webp_lossless_raw, bool):
+            webp_lossless = webp_lossless_raw
+        else:
+            webp_lossless = str(webp_lossless_raw).lower() in {"1", "true", "yes", "on"}
+        self.webp_lossless_var.set(webp_lossless)
         output_label = FORMAT_ID_TO_LABEL.get(
             self.settings.get("output_format", "auto"),
             "自動",
@@ -704,6 +818,7 @@ class ResizeApp(customtkinter.CTk):
         self.zoom_var.set(self.settings["zoom_preference"])
         self._apply_log_level()
         self._toggle_exif_edit_fields()
+        self._update_codec_controls_state()
         self._set_details_panel_visibility(details_expanded)
         self._update_settings_summary()
     
@@ -716,6 +831,9 @@ class ResizeApp(customtkinter.CTk):
             "height_value": self.h_var.get(),
             "quality": self.quality_var.get(),
             "output_format": FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto"),
+            "webp_method": self.webp_method_var.get(),
+            "webp_lossless": self.webp_lossless_var.get(),
+            "avif_speed": self.avif_speed_var.get(),
             "exif_mode": EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep"),
             "remove_gps": self.remove_gps_var.get(),
             "exif_artist": self.exif_artist_var.get(),
@@ -803,6 +921,24 @@ class ResizeApp(customtkinter.CTk):
             value = 85
         normalized = normalize_quality(value)
         self.quality_var.set(str(normalized))
+        return normalized
+
+    def _current_webp_method(self) -> int:
+        try:
+            value = int(self.webp_method_var.get())
+        except ValueError:
+            value = 6
+        normalized = normalize_webp_method(value)
+        self.webp_method_var.set(str(normalized))
+        return normalized
+
+    def _current_avif_speed(self) -> int:
+        try:
+            value = int(self.avif_speed_var.get())
+        except ValueError:
+            value = 6
+        normalized = normalize_avif_speed(value)
+        self.avif_speed_var.set(str(normalized))
         return normalized
 
     def _current_exif_edit_values(self, show_warning: bool = True) -> ExifEditValues:
@@ -919,6 +1055,9 @@ class ResizeApp(customtkinter.CTk):
             remove_gps=self.remove_gps_var.get(),
             exif_edit=edit_values if exif_mode == "edit" else None,
             verbose=self.verbose_log_var.get(),
+            webp_method=self._current_webp_method(),
+            webp_lossless=self.webp_lossless_var.get(),
+            avif_speed=self._current_avif_speed(),
         )
 
     def _build_single_save_filetypes(self):
@@ -1282,24 +1421,17 @@ class ResizeApp(customtkinter.CTk):
             
             # 出力設定に基づいたサイズ見積もり
             output_format = self._resolve_output_format_for_image(job.image)
-            quality = self._current_quality()
             with io.BytesIO() as bio:
-                preview_kwargs: dict[str, object] = {}
                 save_img = job.resized
                 if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
                     save_img = save_img.convert("RGB")
-                if output_format == "jpeg":
-                    preview_kwargs = {"format": "JPEG", "quality": min(quality, 95), "optimize": True}
-                elif output_format == "png":
-                    preview_kwargs = {
-                        "format": "PNG",
-                        "optimize": True,
-                        "compress_level": int(round((100 - quality) / 100 * 9)),
-                    }
-                elif output_format == "webp":
-                    preview_kwargs = {"format": "WEBP", "quality": quality, "method": 6}
-                else:
-                    preview_kwargs = {"format": "AVIF", "quality": quality}
+                preview_kwargs = build_encoder_save_kwargs(
+                    output_format=output_format,  # type: ignore[arg-type]
+                    quality=self._current_quality(),
+                    webp_method=self._current_webp_method(),
+                    webp_lossless=self.webp_lossless_var.get(),
+                    avif_speed=self._current_avif_speed(),
+                )
                 try:
                     save_img.save(bio, **preview_kwargs)
                     kb = len(bio.getvalue()) / 1024

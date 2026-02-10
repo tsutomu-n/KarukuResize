@@ -32,6 +32,9 @@ class SaveOptions:
     remove_gps: bool = False
     exif_edit: Optional["ExifEditValues"] = None
     verbose: bool = False
+    webp_method: int = 6
+    webp_lossless: bool = False
+    avif_speed: int = 6
 
 
 @dataclass(frozen=True)
@@ -101,6 +104,16 @@ def normalize_quality(value: int) -> int:
     clamped = max(5, min(100, int(value)))
     rounded = int(round(clamped / 5) * 5)
     return max(5, min(100, rounded))
+
+
+def normalize_webp_method(value: int) -> int:
+    """WEBP method を 0-6 に丸める。"""
+    return max(0, min(6, int(value)))
+
+
+def normalize_avif_speed(value: int) -> int:
+    """AVIF speed を 0-10 に丸める。低速ほど高品質。"""
+    return max(0, min(10, int(value)))
 
 
 def resolve_output_format(
@@ -218,7 +231,13 @@ def save_image(
         )
 
     save_img = resized_image
-    save_kwargs = _build_save_kwargs(options.output_format, options.quality)
+    save_kwargs = build_encoder_save_kwargs(
+        output_format=options.output_format,
+        quality=options.quality,
+        webp_method=options.webp_method,
+        webp_lossless=options.webp_lossless,
+        avif_speed=options.avif_speed,
+    )
 
     if options.output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
         # 透過を持つ画像は白背景へ合成して保存する
@@ -286,7 +305,14 @@ def save_image(
         )
 
 
-def _build_save_kwargs(output_format: SaveFormat, quality: int) -> Dict[str, object]:
+def build_encoder_save_kwargs(
+    output_format: SaveFormat,
+    quality: int,
+    webp_method: int = 6,
+    webp_lossless: bool = False,
+    avif_speed: int = 6,
+) -> Dict[str, object]:
+    """出力形式に応じたエンコーダ設定を返す。"""
     normalized_quality = normalize_quality(quality)
 
     if output_format == "jpeg":
@@ -308,12 +334,14 @@ def _build_save_kwargs(output_format: SaveFormat, quality: int) -> Dict[str, obj
         return {
             "format": "WEBP",
             "quality": normalized_quality,
-            "method": 6,
+            "method": normalize_webp_method(webp_method),
+            "lossless": bool(webp_lossless),
         }
     # avif
     return {
         "format": "AVIF",
         "quality": normalized_quality,
+        "speed": normalize_avif_speed(avif_speed),
     }
 
 

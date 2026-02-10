@@ -5,8 +5,11 @@ from PIL import ExifTags, Image
 from karuku_resizer.image_save_pipeline import (
     ExifEditValues,
     SaveOptions,
+    build_encoder_save_kwargs,
     destination_with_extension,
+    normalize_avif_speed,
     normalize_quality,
+    normalize_webp_method,
     preview_exif_plan,
     resolve_output_format,
     save_image,
@@ -41,6 +44,44 @@ def test_normalize_quality_rounds_and_clamps():
     assert normalize_quality(8) == 10
     assert normalize_quality(99) == 100
     assert normalize_quality(150) == 100
+
+
+def test_normalize_webp_method_clamps():
+    assert normalize_webp_method(-1) == 0
+    assert normalize_webp_method(0) == 0
+    assert normalize_webp_method(3) == 3
+    assert normalize_webp_method(10) == 6
+
+
+def test_normalize_avif_speed_clamps():
+    assert normalize_avif_speed(-5) == 0
+    assert normalize_avif_speed(2) == 2
+    assert normalize_avif_speed(99) == 10
+
+
+def test_build_encoder_save_kwargs_webp_and_avif_options():
+    webp_kwargs = build_encoder_save_kwargs(
+        output_format="webp",
+        quality=83,
+        webp_method=2,
+        webp_lossless=True,
+        avif_speed=6,
+    )
+    assert webp_kwargs["format"] == "WEBP"
+    assert webp_kwargs["quality"] == 85
+    assert webp_kwargs["method"] == 2
+    assert webp_kwargs["lossless"] is True
+
+    avif_kwargs = build_encoder_save_kwargs(
+        output_format="avif",
+        quality=95,
+        webp_method=6,
+        webp_lossless=False,
+        avif_speed=2,
+    )
+    assert avif_kwargs["format"] == "AVIF"
+    assert avif_kwargs["quality"] == 95
+    assert avif_kwargs["speed"] == 2
 
 
 def test_resolve_output_format_auto_and_fallback():
