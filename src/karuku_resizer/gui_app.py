@@ -195,10 +195,9 @@ class ResizeApp(customtkinter.CTk):
         self.font_bold = customtkinter.CTkFont(family=system_font, size=14, weight="bold")
 
         self.title("画像リサイズツール (DEBUG)" if DEBUG else "画像リサイズツール")
-        
-        # catch Tkinter callback exceptions in debug mode
-        if DEBUG:
-            self.report_callback_exception = self._report_callback_exception
+
+        # 例外を握りつぶさず、GUI上で明示してログへ残す
+        self.report_callback_exception = self._report_callback_exception
         
         # ウィンドウ閉じる時のイベント
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -245,12 +244,12 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_settings_layers(self):
         """基本操作の下に設定サマリーと詳細設定（折りたたみ）を配置する。"""
-        header = customtkinter.CTkFrame(self, fg_color="transparent")
-        header.pack(side="top", fill="x", padx=10, pady=(0, 4))
+        self.settings_header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        self.settings_header_frame.pack(side="top", fill="x", padx=10, pady=(0, 4))
 
         self.settings_summary_var = customtkinter.StringVar(value="")
         self.settings_summary_label = customtkinter.CTkLabel(
-            header,
+            self.settings_header_frame,
             textvariable=self.settings_summary_var,
             anchor="w",
             font=self.font_small,
@@ -258,7 +257,7 @@ class ResizeApp(customtkinter.CTk):
         self.settings_summary_label.pack(side="left", fill="x", expand=True)
 
         self.details_toggle_button = customtkinter.CTkButton(
-            header,
+            self.settings_header_frame,
             text="詳細設定を表示",
             width=140,
             command=self._toggle_details_panel,
@@ -299,7 +298,11 @@ class ResizeApp(customtkinter.CTk):
     def _set_details_panel_visibility(self, expanded: bool):
         self.details_expanded = expanded
         if expanded:
-            self.detail_settings_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+            pack_kwargs = {"side": "top", "fill": "x", "padx": 10, "pady": (0, 6)}
+            if hasattr(self, "settings_header_frame") and self.settings_header_frame.winfo_exists():
+                self.detail_settings_frame.pack(after=self.settings_header_frame, **pack_kwargs)
+            else:
+                self.detail_settings_frame.pack(**pack_kwargs)
             self.details_toggle_button.configure(text="詳細設定を隠す")
         else:
             self.detail_settings_frame.pack_forget()
@@ -995,8 +998,10 @@ class ResizeApp(customtkinter.CTk):
             
         # ディレクトリを記憶
         self.settings["last_input_dir"] = str(Path(paths[0]).parent)
-        
+
+        # 新規選択として状態を初期化する
         self.jobs.clear()
+        self.current_index = None
         for p in paths:
             try:
                 with Image.open(p) as opened:
@@ -1008,13 +1013,16 @@ class ResizeApp(customtkinter.CTk):
                 continue
             self.jobs.append(ImageJob(Path(p), img))
         self._populate_listbox()
-        if self.jobs:
-            self._on_select_change()
 
     def _populate_listbox(self):
         for button in self.file_buttons:
             button.destroy()
         self.file_buttons = []
+        if not self.jobs:
+            self._clear_preview_panels()
+            self.status_var.set("有効な画像を読み込めませんでした")
+            return
+
         for i, job in enumerate(self.jobs):
             button = customtkinter.CTkButton(
                 self.file_list_frame, 
@@ -1025,6 +1033,16 @@ class ResizeApp(customtkinter.CTk):
             self.file_buttons.append(button)
         if self.jobs:
             self._on_select_change(0)
+
+    def _clear_preview_panels(self):
+        self.current_index = None
+        self._imgtk_org = None
+        self._imgtk_resz = None
+        self.canvas_org.delete("all")
+        self.canvas_resz.delete("all")
+        self.info_orig_var.set("--- x ---  ---")
+        self.info_resized_var.set("--- x ---  ---  (---)")
+        self.resized_title_label.configure(text="リサイズ後")
 
     def _on_select_change(self, idx: Optional[int] = None) -> None:
         """Handle file selection change."""
@@ -1104,8 +1122,8 @@ class ResizeApp(customtkinter.CTk):
             return
 
         job = self.jobs[self.current_index]
-        if not job.resized:
-            job.resized = self._process_image(job.image)
+        # 直前に設定変更されていても、保存時は必ず最新設定で再計算する
+        job.resized = self._process_image(job.image)
         if not job.resized:
             return
 
