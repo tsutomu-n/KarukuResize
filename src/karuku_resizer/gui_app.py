@@ -54,32 +54,31 @@ except ImportError:  # Pillow<10 fallback
 
 DEFAULT_PREVIEW = 480
 
-# -------------------- Metallic Ultra Dark color constants --------------------
+# -------------------- UI color constants --------------------
 METALLIC_COLORS = {
-    # 主要カラー
-    "primary": "#A8A8A8",           # メインのシルバーグレー
-    "hover": "#C0C0C0",             # ホバー時の明るいシルバー
-    "light": "#1A1A1A",             # アクセント背景
-    "pressed": "#909090",           # プレス時の暗いシルバー
-    
-    # テキスト色
-    "text_primary": "#FFFFFF",      # メインテキスト - 白
-    "text_secondary": "#C0C0C0",    # セカンダリテキスト
-    "text_tertiary": "#808080",     # 第三テキスト
-    
-    # 背景カラー
-    "bg_primary": "#0A0A0A",        # 最も暗い背景
-    "bg_secondary": "#1D1D1D",      # セカンダリ背景
-    "bg_tertiary": "#262626",       # 第三背景
-    
-    # ボーダー・枠線
-    "border_light": "#333333",      # Light Border
-    "border_medium": "#404040",     # Medium Border
-    
-    # 状態色
-    "success": "#3C9F40",           # 緑系
-    "warning": "#EF8800",           # オレンジ系
-    "error": "#E43326",             # 赤系
+    # Accent
+    "primary": ("#208CFF", "#3BA7FF"),
+    "hover": ("#1279E6", "#2794E6"),
+    "accent_soft": ("#E8F3FF", "#1E2D40"),
+    "pressed": ("#0F67C4", "#1F7DCF"),
+    # Text
+    "text_primary": ("#1F2A37", "#E8EEF5"),
+    "text_secondary": ("#5B6878", "#A7B4C4"),
+    "text_tertiary": ("#7A8696", "#7E8A9A"),
+    # Background
+    "bg_primary": ("#F4F7FB", "#12161D"),
+    "bg_secondary": ("#FFFFFF", "#171C24"),
+    "bg_tertiary": ("#EFF4FA", "#202835"),
+    "input_bg": ("#FFFFFF", "#111723"),
+    # Border
+    "border_light": ("#D9E2EC", "#2A3340"),
+    "border_medium": ("#CBD5E1", "#334155"),
+    # Status
+    "success": ("#2E8B57", "#3CA66A"),
+    "warning": ("#C97A00", "#EF9A1A"),
+    "error": ("#CC3344", "#E25A68"),
+    # Canvas
+    "canvas_bg": ("#EEF3FA", "#111722"),
 }
 ZOOM_STEP = 1.1
 MIN_ZOOM = 0.2
@@ -105,6 +104,13 @@ EXIF_LABEL_TO_ID = {
 }
 
 EXIF_ID_TO_LABEL = {v: k for k, v in EXIF_LABEL_TO_ID.items()}
+
+UI_MODE_LABEL_TO_ID = {
+    "簡易": "simple",
+    "プロ": "pro",
+}
+
+UI_MODE_ID_TO_LABEL = {v: k for k, v in UI_MODE_LABEL_TO_ID.items()}
 
 
 @dataclass
@@ -158,6 +164,7 @@ class SettingsManager:
         """デフォルト設定を返す"""
         return {
             "mode": "ratio",
+            "ui_mode": "simple",
             "ratio_value": "100",
             "width_value": "",
             "height_value": "",
@@ -191,9 +198,10 @@ class ResizeApp(customtkinter.CTk):
         self.settings = self.settings_manager.load_settings()
         self.available_formats = supported_output_formats()
 
-        # --- Metallic Ultra Dark Theme --- 
-        customtkinter.set_appearance_mode("dark")
+        # --- Theme ---
+        customtkinter.set_appearance_mode("system")
         customtkinter.set_default_color_theme("blue")
+        self.configure(fg_color=METALLIC_COLORS["bg_primary"])
 
         # -------------------- フォント設定 --------------------
         # システムフォントを使用（Windows: Segoe UI, macOS: SF Pro Display）
@@ -221,14 +229,58 @@ class ResizeApp(customtkinter.CTk):
         self.after(0, self._update_mode)  # set initial enable states
         logging.debug('ResizeApp initialized')
 
+    def _style_primary_button(self, button: customtkinter.CTkButton) -> None:
+        button.configure(
+            fg_color=METALLIC_COLORS["primary"],
+            hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=10,
+            border_width=0,
+        )
+
+    def _style_secondary_button(self, button: customtkinter.CTkButton) -> None:
+        button.configure(
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            hover_color=METALLIC_COLORS["accent_soft"],
+            text_color=METALLIC_COLORS["text_primary"],
+            border_width=1,
+            border_color=METALLIC_COLORS["border_light"],
+            corner_radius=10,
+        )
+
+    def _style_card_frame(self, frame: customtkinter.CTkFrame, corner_radius: int = 12) -> None:
+        frame.configure(
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            border_width=1,
+            border_color=METALLIC_COLORS["border_light"],
+            corner_radius=corner_radius,
+        )
+
+    def _canvas_background_color(self) -> str:
+        appearance = customtkinter.get_appearance_mode()
+        return "#EEF3FA" if appearance == "Light" else "#111722"
+
+    def _canvas_label_color(self) -> str:
+        appearance = customtkinter.get_appearance_mode()
+        return "#1F2A37" if appearance == "Light" else "#E8EEF5"
+
     def _setup_ui(self):
         """UI要素をセットアップ"""
         # -------------------- UI top bar --------------------------------
-        top = customtkinter.CTkFrame(self, fg_color="transparent")
-        top.pack(side="top", fill="x", padx=10, pady=5)
+        top = customtkinter.CTkFrame(self)
+        self._style_card_frame(top)
+        top.pack(side="top", fill="x", padx=12, pady=(8, 6))
 
-        customtkinter.CTkButton(top, text="📂 画像を選択", width=120, command=self._select_files, font=self.font_default).pack(side="left")
-        customtkinter.CTkButton(top, text="❓ 使い方", width=100, command=self._show_help, font=self.font_default).pack(side="left", padx=10)
+        self.select_button = customtkinter.CTkButton(
+            top, text="📂 画像を選択", width=128, command=self._select_files, font=self.font_default
+        )
+        self._style_primary_button(self.select_button)
+        self.select_button.pack(side="left", padx=(8, 6), pady=8)
+        self.help_button = customtkinter.CTkButton(
+            top, text="❓ 使い方", width=108, command=self._show_help, font=self.font_default
+        )
+        self._style_secondary_button(self.help_button)
+        self.help_button.pack(side="left", padx=(0, 10), pady=8)
 
         # Spacer to push subsequent widgets to the right
         spacer = customtkinter.CTkFrame(top, fg_color="transparent")
@@ -243,7 +295,18 @@ class ResizeApp(customtkinter.CTk):
             ("幅×高", "fixed"),
         ]
         for text, val in modes:
-            customtkinter.CTkRadioButton(top, text=text, variable=self.mode_var, value=val, command=self._update_mode, font=self.font_default).pack(side="left")
+            customtkinter.CTkRadioButton(
+                top,
+                text=text,
+                variable=self.mode_var,
+                value=val,
+                command=self._update_mode,
+                font=self.font_default,
+                fg_color=METALLIC_COLORS["primary"],
+                hover_color=METALLIC_COLORS["hover"],
+                border_color=METALLIC_COLORS["border_medium"],
+                text_color=METALLIC_COLORS["text_primary"],
+            ).pack(side="left", padx=(0, 4))
 
         self._setup_entry_widgets(top)
         self._setup_action_buttons(top)
@@ -252,8 +315,9 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_settings_layers(self):
         """基本操作の下に設定サマリーと詳細設定（折りたたみ）を配置する。"""
-        self.settings_header_frame = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.settings_header_frame.pack(side="top", fill="x", padx=10, pady=(0, 4))
+        self.settings_header_frame = customtkinter.CTkFrame(self)
+        self._style_card_frame(self.settings_header_frame, corner_radius=12)
+        self.settings_header_frame.pack(side="top", fill="x", padx=12, pady=(0, 6))
 
         self.settings_summary_var = customtkinter.StringVar(value="")
         self.settings_summary_label = customtkinter.CTkLabel(
@@ -261,8 +325,25 @@ class ResizeApp(customtkinter.CTk):
             textvariable=self.settings_summary_var,
             anchor="w",
             font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
         )
-        self.settings_summary_label.pack(side="left", fill="x", expand=True)
+        self.settings_summary_label.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=8)
+
+        self.ui_mode_var = customtkinter.StringVar(value="簡易")
+        self.ui_mode_segment = customtkinter.CTkSegmentedButton(
+            self.settings_header_frame,
+            values=list(UI_MODE_LABEL_TO_ID.keys()),
+            variable=self.ui_mode_var,
+            command=self._on_ui_mode_changed,
+            width=120,
+            font=self.font_small,
+            selected_color=METALLIC_COLORS["primary"],
+            selected_hover_color=METALLIC_COLORS["hover"],
+            unselected_color=METALLIC_COLORS["bg_tertiary"],
+            unselected_hover_color=METALLIC_COLORS["accent_soft"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
+        self.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)
 
         self.details_toggle_button = customtkinter.CTkButton(
             self.settings_header_frame,
@@ -271,11 +352,14 @@ class ResizeApp(customtkinter.CTk):
             command=self._toggle_details_panel,
             font=self.font_small,
         )
-        self.details_toggle_button.pack(side="right")
+        self._style_secondary_button(self.details_toggle_button)
+        self.details_toggle_button.pack(side="right", padx=(0, 6), pady=8)
 
-        self.detail_settings_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        self.detail_settings_frame = customtkinter.CTkFrame(self)
+        self._style_card_frame(self.detail_settings_frame, corner_radius=12)
         self._setup_output_controls(self.detail_settings_frame)
         self._register_setting_watchers()
+        self._apply_ui_mode()
         self._update_settings_summary()
         self._set_details_panel_visibility(False)
 
@@ -295,19 +379,58 @@ class ResizeApp(customtkinter.CTk):
     def _on_setting_var_changed(self, *_args):
         self._update_settings_summary()
 
+    def _ui_mode_id(self) -> str:
+        return UI_MODE_LABEL_TO_ID.get(self.ui_mode_var.get(), "simple")
+
+    def _is_pro_mode(self) -> bool:
+        return self._ui_mode_id() == "pro"
+
+    def _on_ui_mode_changed(self, _value: str):
+        self._apply_ui_mode()
+        self._update_settings_summary()
+        if self.current_index is not None:
+            self._draw_previews(self.jobs[self.current_index])
+
+    def _update_exif_mode_options_for_ui_mode(self):
+        if self._is_pro_mode():
+            values = list(EXIF_LABEL_TO_ID.keys())
+        else:
+            values = ["保持", "削除"]
+        self.exif_mode_menu.configure(values=values)
+        if self.exif_mode_var.get() not in values:
+            self.exif_mode_var.set("保持")
+
+    def _apply_ui_mode(self):
+        pro_mode = self._is_pro_mode()
+        self._update_exif_mode_options_for_ui_mode()
+
+        if pro_mode:
+            if self.advanced_controls_frame.winfo_manager() != "pack":
+                self.advanced_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+            if self.codec_controls_frame.winfo_manager() != "pack":
+                self.codec_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        else:
+            self.advanced_controls_frame.pack_forget()
+            self.codec_controls_frame.pack_forget()
+
+        self._update_codec_controls_state()
+        self._toggle_exif_edit_fields()
+        self._apply_log_level()
+
     def _update_settings_summary(self):
+        mode_label = self.ui_mode_var.get()
         format_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
         codec_summary = ""
-        if format_id == "webp":
+        if self._is_pro_mode() and format_id == "webp":
             codec_summary = (
                 f" / WEBP method {self.webp_method_var.get()} "
                 f"(lossless {'ON' if self.webp_lossless_var.get() else 'OFF'})"
             )
-        elif format_id == "avif":
+        elif self._is_pro_mode() and format_id == "avif":
             codec_summary = f" / AVIF speed {self.avif_speed_var.get()}"
 
         summary = (
-            f"現在設定: 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
+            f"現在設定: {mode_label}モード / 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
             f"EXIF {self.exif_mode_var.get()} / GPS削除 {'ON' if self.remove_gps_var.get() else 'OFF'} / "
             f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
         )
@@ -319,7 +442,7 @@ class ResizeApp(customtkinter.CTk):
     def _set_details_panel_visibility(self, expanded: bool):
         self.details_expanded = expanded
         if expanded:
-            pack_kwargs = {"side": "top", "fill": "x", "padx": 10, "pady": (0, 6)}
+            pack_kwargs = {"side": "top", "fill": "x", "padx": 12, "pady": (0, 8)}
             if hasattr(self, "settings_header_frame") and self.settings_header_frame.winfo_exists():
                 self.detail_settings_frame.pack(after=self.settings_header_frame, **pack_kwargs)
             else:
@@ -333,7 +456,7 @@ class ResizeApp(customtkinter.CTk):
         """入力ウィジェットをセットアップ"""
         # Size entry fields
         self.entry_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
-        self.entry_frame.pack(side="left", padx=10)
+        self.entry_frame.pack(side="left", padx=(8, 10))
 
         vcmd = (self.register(self._validate_int), "%P")
 
@@ -343,31 +466,92 @@ class ResizeApp(customtkinter.CTk):
         self.h_var = customtkinter.StringVar()
 
         # Ratio Mode
-        frame_ratio = customtkinter.CTkFrame(self.entry_frame)
-        self.ratio_entry = customtkinter.CTkEntry(frame_ratio, textvariable=self.pct_var, width=50, validate="key", validatecommand=vcmd, font=self.font_default)
+        frame_ratio = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
+        self.ratio_entry = customtkinter.CTkEntry(
+            frame_ratio,
+            textvariable=self.pct_var,
+            width=54,
+            validate="key",
+            validatecommand=vcmd,
+            font=self.font_default,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
+        )
         self.ratio_entry.pack(side="left")
-        customtkinter.CTkLabel(frame_ratio, text="%", font=self.font_default).pack(side="left")
+        customtkinter.CTkLabel(
+            frame_ratio, text="%", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
+        ).pack(side="left")
 
         # Width Mode
-        frame_width = customtkinter.CTkFrame(self.entry_frame)
-        self.entry_w_single = customtkinter.CTkEntry(frame_width, textvariable=self.w_var, width=60, validate="key", validatecommand=vcmd)
+        frame_width = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
+        self.entry_w_single = customtkinter.CTkEntry(
+            frame_width,
+            textvariable=self.w_var,
+            width=64,
+            validate="key",
+            validatecommand=vcmd,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
+        )
         self.entry_w_single.pack(side="left")
-        customtkinter.CTkLabel(frame_width, text="px", font=self.font_default).pack(side="left")
+        customtkinter.CTkLabel(
+            frame_width, text="px", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
+        ).pack(side="left")
 
         # Height Mode
-        frame_height = customtkinter.CTkFrame(self.entry_frame)
-        self.entry_h_single = customtkinter.CTkEntry(frame_height, textvariable=self.h_var, width=60, validate="key", validatecommand=vcmd)
+        frame_height = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
+        self.entry_h_single = customtkinter.CTkEntry(
+            frame_height,
+            textvariable=self.h_var,
+            width=64,
+            validate="key",
+            validatecommand=vcmd,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
+        )
         self.entry_h_single.pack(side="left")
-        customtkinter.CTkLabel(frame_height, text="px", font=self.font_default).pack(side="left")
+        customtkinter.CTkLabel(
+            frame_height, text="px", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
+        ).pack(side="left")
 
         # Fixed Mode
-        frame_fixed = customtkinter.CTkFrame(self.entry_frame)
-        self.entry_w_fixed = customtkinter.CTkEntry(frame_fixed, textvariable=self.w_var, width=60, validate="key", validatecommand=vcmd)
+        frame_fixed = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
+        self.entry_w_fixed = customtkinter.CTkEntry(
+            frame_fixed,
+            textvariable=self.w_var,
+            width=64,
+            validate="key",
+            validatecommand=vcmd,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
+        )
         self.entry_w_fixed.pack(side="left")
-        customtkinter.CTkLabel(frame_fixed, text="×", font=self.font_default).pack(side="left")
-        self.entry_h_fixed = customtkinter.CTkEntry(frame_fixed, textvariable=self.h_var, width=60, validate="key", validatecommand=vcmd)
+        customtkinter.CTkLabel(
+            frame_fixed, text="×", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
+        ).pack(side="left")
+        self.entry_h_fixed = customtkinter.CTkEntry(
+            frame_fixed,
+            textvariable=self.h_var,
+            width=64,
+            validate="key",
+            validatecommand=vcmd,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
+        )
         self.entry_h_fixed.pack(side="left")
-        customtkinter.CTkLabel(frame_fixed, text="px", font=self.font_default).pack(side="left")
+        customtkinter.CTkLabel(
+            frame_fixed, text="px", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
+        ).pack(side="left")
 
         # --- Group frames and entries for easy management ---
         self.mode_frames = {
@@ -392,33 +576,52 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_action_buttons(self, parent):
         """アクションボタンをセットアップ"""
-        customtkinter.CTkButton(
+        self.preview_button = customtkinter.CTkButton(
             parent, text="🔄 プレビュー", width=110, command=self._preview_current,
-            fg_color=METALLIC_COLORS["primary"], hover_color=METALLIC_COLORS["hover"],
-            corner_radius=8, font=self.font_default
-        ).pack(side="left", padx=(0, 10))
+            font=self.font_default
+        )
+        self._style_primary_button(self.preview_button)
+        self.preview_button.pack(side="left", padx=(0, 8), pady=8)
         
-        customtkinter.CTkButton(
+        self.save_button = customtkinter.CTkButton(
             parent, text="💾 保存", width=90, command=self._save_current,
-            fg_color=METALLIC_COLORS["primary"], hover_color=METALLIC_COLORS["hover"],
-            corner_radius=8, font=self.font_default
-        ).pack(side="left")
+            font=self.font_default
+        )
+        self._style_primary_button(self.save_button)
+        self.save_button.pack(side="left", pady=8)
         
-        customtkinter.CTkButton(
+        self.batch_button = customtkinter.CTkButton(
             parent, text="📁 一括保存", width=100, command=self._batch_save,
-            fg_color=METALLIC_COLORS["primary"], hover_color=METALLIC_COLORS["hover"],
-            corner_radius=8, font=self.font_default
-        ).pack(side="left", padx=10)
+            font=self.font_default
+        )
+        self._style_primary_button(self.batch_button)
+        self.batch_button.pack(side="left", padx=8, pady=8)
 
         # Zoom combobox
         self.zoom_var = customtkinter.StringVar(value="画面に合わせる")
-        self.zoom_cb = customtkinter.CTkComboBox(parent, variable=self.zoom_var, values=["画面に合わせる", "100%", "200%", "300%"], width=140, state="readonly", command=self._apply_zoom_selection, font=self.font_default)
-        self.zoom_cb.pack(side="left", padx=4)
+        self.zoom_cb = customtkinter.CTkComboBox(
+            parent,
+            variable=self.zoom_var,
+            values=["画面に合わせる", "100%", "200%", "300%"],
+            width=140,
+            state="readonly",
+            command=self._apply_zoom_selection,
+            font=self.font_default,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            border_color=METALLIC_COLORS["border_light"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        )
+        self.zoom_cb.pack(side="left", padx=(4, 8), pady=8)
 
     def _setup_output_controls(self, parent):
         """保存関連の設定コントロールをセットアップ"""
-        controls = customtkinter.CTkFrame(parent, fg_color="transparent")
-        controls.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        self.basic_controls_frame = customtkinter.CTkFrame(parent)
+        self._style_card_frame(self.basic_controls_frame, corner_radius=10)
+        self.basic_controls_frame.pack(side="top", fill="x", padx=10, pady=(10, 6))
 
         self.output_format_var = customtkinter.StringVar(value="自動")
         self.quality_var = customtkinter.StringVar(value="85")
@@ -430,151 +633,274 @@ class ResizeApp(customtkinter.CTk):
         self.exif_mode_var = customtkinter.StringVar(value="保持")
         self.remove_gps_var = customtkinter.BooleanVar(value=False)
 
-        customtkinter.CTkLabel(controls, text="出力形式", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.basic_controls_frame,
+            text="出力形式",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(10, 4), pady=8)
         self.output_format_menu = customtkinter.CTkOptionMenu(
-            controls,
+            self.basic_controls_frame,
             variable=self.output_format_var,
             values=self._build_output_format_labels(),
             width=110,
             command=self._on_output_format_changed,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.output_format_menu.pack(side="left", padx=(0, 12))
+        self.output_format_menu.pack(side="left", padx=(0, 12), pady=8)
 
-        customtkinter.CTkLabel(controls, text="品質", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.basic_controls_frame,
+            text="品質",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
         self.quality_menu = customtkinter.CTkOptionMenu(
-            controls,
+            self.basic_controls_frame,
             variable=self.quality_var,
             values=QUALITY_VALUES,
             width=90,
             command=self._on_quality_changed,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.quality_menu.pack(side="left", padx=(0, 12))
+        self.quality_menu.pack(side="left", padx=(0, 12), pady=8)
 
-        customtkinter.CTkLabel(controls, text="EXIF", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.basic_controls_frame,
+            text="EXIF",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
         self.exif_mode_menu = customtkinter.CTkOptionMenu(
-            controls,
+            self.basic_controls_frame,
             variable=self.exif_mode_var,
             values=list(EXIF_LABEL_TO_ID.keys()),
             width=90,
             command=self._on_exif_mode_changed,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.exif_mode_menu.pack(side="left", padx=(0, 10))
+        self.exif_mode_menu.pack(side="left", padx=(0, 10), pady=8)
 
         self.remove_gps_check = customtkinter.CTkCheckBox(
-            controls,
+            self.basic_controls_frame,
             text="GPS削除",
             variable=self.remove_gps_var,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["primary"],
+            hover_color=METALLIC_COLORS["hover"],
+            border_color=METALLIC_COLORS["border_medium"],
+            text_color=METALLIC_COLORS["text_primary"],
         )
-        self.remove_gps_check.pack(side="left", padx=(0, 10))
+        self.remove_gps_check.pack(side="left", padx=(0, 10), pady=8)
 
         self.dry_run_check = customtkinter.CTkCheckBox(
-            controls,
+            self.basic_controls_frame,
             text="ドライラン",
             variable=self.dry_run_var,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["primary"],
+            hover_color=METALLIC_COLORS["hover"],
+            border_color=METALLIC_COLORS["border_medium"],
+            text_color=METALLIC_COLORS["text_primary"],
         )
-        self.dry_run_check.pack(side="left", padx=(0, 10))
+        self.dry_run_check.pack(side="left", padx=(0, 12), pady=8)
+
+        self.advanced_controls_frame = customtkinter.CTkFrame(parent)
+        self._style_card_frame(self.advanced_controls_frame, corner_radius=10)
+        self.advanced_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
 
         self.verbose_log_check = customtkinter.CTkCheckBox(
-            controls,
+            self.advanced_controls_frame,
             text="詳細ログ",
             variable=self.verbose_log_var,
             command=self._apply_log_level,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["primary"],
+            hover_color=METALLIC_COLORS["hover"],
+            border_color=METALLIC_COLORS["border_medium"],
+            text_color=METALLIC_COLORS["text_primary"],
         )
-        self.verbose_log_check.pack(side="left")
+        self.verbose_log_check.pack(side="left", padx=(10, 8), pady=8)
         self.exif_preview_button = customtkinter.CTkButton(
-            controls,
+            self.advanced_controls_frame,
             text="EXIF差分",
             width=95,
             command=self._show_exif_preview_dialog,
             font=self.font_small,
         )
-        self.exif_preview_button.pack(side="left", padx=(10, 0))
+        self._style_secondary_button(self.exif_preview_button)
+        self.exif_preview_button.pack(side="left", padx=(0, 10), pady=8)
 
-        codec_controls = customtkinter.CTkFrame(parent, fg_color="transparent")
-        codec_controls.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        self.codec_controls_frame = customtkinter.CTkFrame(parent)
+        self._style_card_frame(self.codec_controls_frame, corner_radius=10)
+        self.codec_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
 
-        customtkinter.CTkLabel(codec_controls, text="WEBP method", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.codec_controls_frame,
+            text="WEBP method",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(10, 4), pady=8)
         self.webp_method_menu = customtkinter.CTkOptionMenu(
-            codec_controls,
+            self.codec_controls_frame,
             variable=self.webp_method_var,
             values=WEBP_METHOD_VALUES,
             width=80,
             command=self._on_webp_method_changed,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.webp_method_menu.pack(side="left", padx=(0, 8))
+        self.webp_method_menu.pack(side="left", padx=(0, 8), pady=8)
 
         self.webp_lossless_check = customtkinter.CTkCheckBox(
-            codec_controls,
+            self.codec_controls_frame,
             text="WEBP lossless",
             variable=self.webp_lossless_var,
             command=self._on_codec_setting_changed,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["primary"],
+            hover_color=METALLIC_COLORS["hover"],
+            border_color=METALLIC_COLORS["border_medium"],
+            text_color=METALLIC_COLORS["text_primary"],
         )
-        self.webp_lossless_check.pack(side="left", padx=(0, 14))
+        self.webp_lossless_check.pack(side="left", padx=(0, 14), pady=8)
 
-        customtkinter.CTkLabel(codec_controls, text="AVIF speed", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.codec_controls_frame,
+            text="AVIF speed",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
         self.avif_speed_menu = customtkinter.CTkOptionMenu(
-            codec_controls,
+            self.codec_controls_frame,
             variable=self.avif_speed_var,
             values=AVIF_SPEED_VALUES,
             width=80,
             command=self._on_avif_speed_changed,
             font=self.font_small,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.avif_speed_menu.pack(side="left", padx=(0, 8))
+        self.avif_speed_menu.pack(side="left", padx=(0, 8), pady=8)
         customtkinter.CTkLabel(
-            codec_controls,
+            self.codec_controls_frame,
             text="(低速=高品質)",
             font=self.font_small,
-        ).pack(side="left")
+            text_color=METALLIC_COLORS["text_tertiary"],
+        ).pack(side="left", pady=8)
 
         self._update_codec_controls_state()
         self._setup_exif_edit_fields(parent)
 
     def _setup_exif_edit_fields(self, parent):
         """EXIF編集フィールドをセットアップ（edit時のみ表示）。"""
-        self.exif_edit_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
-        self.exif_edit_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        self.exif_edit_frame = customtkinter.CTkFrame(parent)
+        self._style_card_frame(self.exif_edit_frame, corner_radius=10)
 
         self.exif_artist_var = customtkinter.StringVar(value="")
         self.exif_copyright_var = customtkinter.StringVar(value="")
         self.exif_user_comment_var = customtkinter.StringVar(value="")
         self.exif_datetime_original_var = customtkinter.StringVar(value="")
 
-        customtkinter.CTkLabel(self.exif_edit_frame, text="撮影者", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.exif_edit_frame,
+            text="撮影者",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(10, 4), pady=8)
         self.exif_artist_entry = customtkinter.CTkEntry(
-            self.exif_edit_frame, textvariable=self.exif_artist_var, width=120, font=self.font_small
+            self.exif_edit_frame,
+            textvariable=self.exif_artist_var,
+            width=124,
+            font=self.font_small,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
         )
-        self.exif_artist_entry.pack(side="left", padx=(0, 8))
+        self.exif_artist_entry.pack(side="left", padx=(0, 8), pady=8)
 
-        customtkinter.CTkLabel(self.exif_edit_frame, text="著作権", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.exif_edit_frame,
+            text="著作権",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
         self.exif_copyright_entry = customtkinter.CTkEntry(
-            self.exif_edit_frame, textvariable=self.exif_copyright_var, width=140, font=self.font_small
+            self.exif_edit_frame,
+            textvariable=self.exif_copyright_var,
+            width=144,
+            font=self.font_small,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
         )
-        self.exif_copyright_entry.pack(side="left", padx=(0, 8))
+        self.exif_copyright_entry.pack(side="left", padx=(0, 8), pady=8)
 
-        customtkinter.CTkLabel(self.exif_edit_frame, text="コメント", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.exif_edit_frame,
+            text="コメント",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
         self.exif_comment_entry = customtkinter.CTkEntry(
-            self.exif_edit_frame, textvariable=self.exif_user_comment_var, width=180, font=self.font_small
+            self.exif_edit_frame,
+            textvariable=self.exif_user_comment_var,
+            width=184,
+            font=self.font_small,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
         )
-        self.exif_comment_entry.pack(side="left", padx=(0, 8))
+        self.exif_comment_entry.pack(side="left", padx=(0, 8), pady=8)
 
-        customtkinter.CTkLabel(self.exif_edit_frame, text="撮影日時", font=self.font_small).pack(side="left", padx=(0, 4))
+        customtkinter.CTkLabel(
+            self.exif_edit_frame,
+            text="撮影日時",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
         self.exif_datetime_entry = customtkinter.CTkEntry(
             self.exif_edit_frame,
             textvariable=self.exif_datetime_original_var,
             width=150,
             placeholder_text="YYYY:MM:DD HH:MM:SS",
             font=self.font_small,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+            corner_radius=8,
         )
-        self.exif_datetime_entry.pack(side="left")
+        self.exif_datetime_entry.pack(side="left", pady=8)
 
         self._toggle_exif_edit_fields()
 
@@ -604,6 +930,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _on_exif_mode_changed(self, _value: str):
         self._toggle_exif_edit_fields()
+        self._update_settings_summary()
 
     def _on_webp_method_changed(self, value: str):
         try:
@@ -653,8 +980,16 @@ class ResizeApp(customtkinter.CTk):
             self.remove_gps_var.set(False)
         self.remove_gps_check.configure(state=gps_state)
 
+        should_show_edit_fields = self._is_pro_mode() and is_edit_mode
+        if should_show_edit_fields:
+            if self.exif_edit_frame.winfo_manager() != "pack":
+                self.exif_edit_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        else:
+            if self.exif_edit_frame.winfo_manager():
+                self.exif_edit_frame.pack_forget()
+
     def _apply_log_level(self):
-        level = logging.DEBUG if self.verbose_log_var.get() else logging.INFO
+        level = logging.DEBUG if (self.verbose_log_var.get() and self._is_pro_mode()) else logging.INFO
         root_logger = logging.getLogger()
         root_logger.setLevel(level)
 
@@ -692,27 +1027,54 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_progress_bar_and_cancel(self):
         """プログレスバーとキャンセルボタンをセットアップ"""
-        self.progress_bar = customtkinter.CTkProgressBar(self, width=400, height=20)
+        self.progress_bar = customtkinter.CTkProgressBar(
+            self,
+            width=400,
+            height=20,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            progress_color=METALLIC_COLORS["primary"],
+        )
         self.progress_bar.set(0)
         self.progress_bar.pack_forget()  # 初期は非表示
 
         self.cancel_button = customtkinter.CTkButton(self, text="キャンセル", width=100, command=self._cancel_batch_save)
+        self._style_secondary_button(self.cancel_button)
         self.cancel_button.pack_forget()  # 初期は非表示
 
     def _setup_status_bar(self):
         """ステータスバーをセットアップ"""
         self.status_var = customtkinter.StringVar(value="準備完了")
-        self.status_label = customtkinter.CTkLabel(self, textvariable=self.status_var, anchor='w', font=self.font_default)
-        self.status_label.pack(side="bottom", fill="x", padx=10, pady=5)
+        self.status_label = customtkinter.CTkLabel(
+            self,
+            textvariable=self.status_var,
+            anchor='w',
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            corner_radius=10,
+            padx=10,
+        )
+        self.status_label.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
 
     def _setup_left_panel(self):
         """左側のパネル（ファイルリスト）をセットアップ"""
         # Create main content frame
         self.main_content = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.main_content.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_content.pack(fill="both", expand=True, padx=12, pady=8)
         
-        self.file_list_frame = customtkinter.CTkScrollableFrame(self.main_content, label_text="ファイルリスト", label_font=self.font_small, width=250)
-        self.file_list_frame.pack(side="left", fill="y", padx=(0, 5))
+        self.file_list_frame = customtkinter.CTkScrollableFrame(
+            self.main_content,
+            label_text="ファイルリスト",
+            label_font=self.font_small,
+            width=250,
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            border_width=1,
+            border_color=METALLIC_COLORS["border_light"],
+            label_fg_color=METALLIC_COLORS["bg_tertiary"],
+            label_text_color=METALLIC_COLORS["text_secondary"],
+            corner_radius=12,
+        )
+        self.file_list_frame.pack(side="left", fill="y", padx=(0, 6))
         self.file_buttons: List[customtkinter.CTkButton] = []
 
     def _setup_right_panel(self):
@@ -724,27 +1086,51 @@ class ResizeApp(customtkinter.CTk):
         preview_pane.grid_columnconfigure(0, weight=1)
 
         # Original Preview
-        frame_original = customtkinter.CTkFrame(preview_pane, corner_radius=10)
+        frame_original = customtkinter.CTkFrame(preview_pane, corner_radius=12)
+        self._style_card_frame(frame_original, corner_radius=12)
         frame_original.grid(row=0, column=0, sticky="nswe", pady=(0, 5))
         frame_original.grid_rowconfigure(1, weight=1)
         frame_original.grid_columnconfigure(0, weight=1)
-        customtkinter.CTkLabel(frame_original, text="オリジナル", font=self.font_default).grid(row=0, column=0, sticky="w", padx=10, pady=(5,0))
-        self.canvas_org = customtkinter.CTkCanvas(frame_original, bg="#2B2B2B", highlightthickness=0)
+        customtkinter.CTkLabel(
+            frame_original,
+            text="オリジナル",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
+        self.canvas_org = customtkinter.CTkCanvas(frame_original, bg=self._canvas_background_color(), highlightthickness=0)
         self.canvas_org.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.info_orig_var = customtkinter.StringVar(value="--- x ---  ---")
-        customtkinter.CTkLabel(frame_original, textvariable=self.info_orig_var, justify="left", font=self.font_small).grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        customtkinter.CTkLabel(
+            frame_original,
+            textvariable=self.info_orig_var,
+            justify="left",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+        ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
 
         # Resized Preview
-        self.lf_resized = customtkinter.CTkFrame(preview_pane, corner_radius=10)
+        self.lf_resized = customtkinter.CTkFrame(preview_pane, corner_radius=12)
+        self._style_card_frame(self.lf_resized, corner_radius=12)
         self.lf_resized.grid(row=1, column=0, sticky="nswe", pady=(5, 0))
         self.lf_resized.grid_rowconfigure(1, weight=1)
         self.lf_resized.grid_columnconfigure(0, weight=1)
-        self.resized_title_label = customtkinter.CTkLabel(self.lf_resized, text="リサイズ後", font=self.font_default)
-        self.resized_title_label.grid(row=0, column=0, sticky="w", padx=10, pady=(5,0))
-        self.canvas_resz = customtkinter.CTkCanvas(self.lf_resized, bg="#2B2B2B", highlightthickness=0)
+        self.resized_title_label = customtkinter.CTkLabel(
+            self.lf_resized,
+            text="リサイズ後",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        )
+        self.resized_title_label.grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
+        self.canvas_resz = customtkinter.CTkCanvas(self.lf_resized, bg=self._canvas_background_color(), highlightthickness=0)
         self.canvas_resz.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.info_resized_var = customtkinter.StringVar(value="--- x ---  ---  (---)")
-        customtkinter.CTkLabel(self.lf_resized, textvariable=self.info_resized_var, justify="left", font=self.font_small).grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        customtkinter.CTkLabel(
+            self.lf_resized,
+            textvariable=self.info_resized_var,
+            justify="left",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+        ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
 
         # Canvas Interactions
         self.canvas_org.bind("<MouseWheel>", lambda e: self._on_zoom(e, is_resized=False))
@@ -758,6 +1144,12 @@ class ResizeApp(customtkinter.CTk):
         """保存された設定を復元"""
         # モード復元
         self.mode_var.set(self.settings["mode"])
+        self.ui_mode_var.set(
+            UI_MODE_ID_TO_LABEL.get(
+                str(self.settings.get("ui_mode", "simple")),
+                "簡易",
+            )
+        )
         
         # 値復元
         self.pct_var.set(self.settings["ratio_value"])
@@ -816,9 +1208,7 @@ class ResizeApp(customtkinter.CTk):
         
         # ズーム設定復元
         self.zoom_var.set(self.settings["zoom_preference"])
-        self._apply_log_level()
-        self._toggle_exif_edit_fields()
-        self._update_codec_controls_state()
+        self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
         self._update_settings_summary()
     
@@ -826,6 +1216,7 @@ class ResizeApp(customtkinter.CTk):
         """現在の設定を保存"""
         self.settings.update({
             "mode": self.mode_var.get(),
+            "ui_mode": self._ui_mode_id(),
             "ratio_value": self.pct_var.get(),
             "width_value": self.w_var.get(),
             "height_value": self.h_var.get(),
@@ -1043,6 +1434,7 @@ class ResizeApp(customtkinter.CTk):
             return False
 
     def _build_save_options(self, output_format: str, exif_edit_values: Optional[ExifEditValues] = None) -> SaveOptions:
+        pro_mode = self._is_pro_mode()
         exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
         edit_values = exif_edit_values
         if exif_mode == "edit" and edit_values is None:
@@ -1054,10 +1446,10 @@ class ResizeApp(customtkinter.CTk):
             exif_mode=exif_mode,  # type: ignore[arg-type]
             remove_gps=self.remove_gps_var.get(),
             exif_edit=edit_values if exif_mode == "edit" else None,
-            verbose=self.verbose_log_var.get(),
-            webp_method=self._current_webp_method(),
-            webp_lossless=self.webp_lossless_var.get(),
-            avif_speed=self._current_avif_speed(),
+            verbose=self.verbose_log_var.get() if pro_mode else False,
+            webp_method=self._current_webp_method() if pro_mode else 6,
+            webp_lossless=self.webp_lossless_var.get() if pro_mode else False,
+            avif_speed=self._current_avif_speed() if pro_mode else 6,
         )
 
     def _build_single_save_filetypes(self):
@@ -1173,9 +1565,15 @@ class ResizeApp(customtkinter.CTk):
             button = customtkinter.CTkButton(
                 self.file_list_frame, 
                 text=job.path.name, 
-                command=lambda idx=i: self._on_select_change(idx)
+                command=lambda idx=i: self._on_select_change(idx),
+                fg_color=METALLIC_COLORS["bg_tertiary"],
+                hover_color=METALLIC_COLORS["accent_soft"],
+                text_color=METALLIC_COLORS["text_primary"],
+                border_width=1,
+                border_color=METALLIC_COLORS["border_light"],
+                corner_radius=8,
             )
-            button.pack(fill="x", padx=10, pady=5)
+            button.pack(fill="x", padx=8, pady=4)
             self.file_buttons.append(button)
         if self.jobs:
             self._on_select_change(0)
@@ -1199,10 +1597,18 @@ class ResizeApp(customtkinter.CTk):
 
         # Update button highlights
         if self.current_index is not None and self.current_index < len(self.file_buttons):
-            self.file_buttons[self.current_index].configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["fg_color"])
+            self.file_buttons[self.current_index].configure(
+                fg_color=METALLIC_COLORS["bg_tertiary"],
+                border_color=METALLIC_COLORS["border_light"],
+                text_color=METALLIC_COLORS["text_primary"],
+            )
         
         self.current_index = idx
-        self.file_buttons[idx].configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
+        self.file_buttons[idx].configure(
+            fg_color=METALLIC_COLORS["accent_soft"],
+            border_color=METALLIC_COLORS["primary"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
 
         # Update previews and info
         job = self.jobs[idx]
@@ -1479,7 +1885,9 @@ class ResizeApp(customtkinter.CTk):
         canvas.create_image(x, y, anchor="nw", image=imgtk)
 
         # Draw zoom label
-        canvas.create_text(10, 10, text=label, anchor="nw", fill="white", font=self.font_small)
+        canvas.create_text(
+            10, 10, text=label, anchor="nw", fill=self._canvas_label_color(), font=self.font_small
+        )
         return imgtk
 
     def _show_help(self):
