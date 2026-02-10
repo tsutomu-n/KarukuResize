@@ -59,6 +59,19 @@ class SaveResult:
     error: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ExifPreview:
+    exif_mode: ExifMode
+    had_source_exif: bool
+    source_tag_count: int
+    source_has_gps: bool
+    exif_will_be_attached: bool
+    exif_requested: bool
+    gps_removed: bool = False
+    edited_fields: Tuple[str, ...] = ()
+    skipped_reason: Optional[str] = None
+
+
 _FORMAT_EXTENSIONS: Dict[SaveFormat, str] = {
     "jpeg": ".jpg",
     "png": ".png",
@@ -120,6 +133,46 @@ def resolve_output_format(
 def destination_with_extension(base_path: Path, output_format: SaveFormat) -> Path:
     """出力形式に合わせて拡張子を更新する。"""
     return base_path.with_suffix(_FORMAT_EXTENSIONS[output_format])
+
+
+def preview_exif_plan(
+    source_image: Image.Image,
+    exif_mode: ExifMode,
+    remove_gps: bool,
+    edit_values: Optional[ExifEditValues] = None,
+) -> ExifPreview:
+    """保存前にEXIFの反映予定を計算する。"""
+    source_tag_count = 0
+    source_has_gps = False
+    had_source_exif = False
+
+    try:
+        source_exif = source_image.getexif()
+        source_tag_count = len(source_exif)
+        source_has_gps = _EXIF_TAG_GPS_INFO in source_exif
+        had_source_exif = bool(source_exif)
+    except Exception:
+        source_tag_count = 0
+        source_has_gps = False
+        had_source_exif = False
+
+    exif_bytes, exif_meta = _build_exif_bytes(
+        source_image=source_image,
+        exif_mode=exif_mode,
+        remove_gps=remove_gps,
+        edit_values=edit_values,
+    )
+    return ExifPreview(
+        exif_mode=exif_mode,
+        had_source_exif=had_source_exif,
+        source_tag_count=source_tag_count,
+        source_has_gps=source_has_gps,
+        exif_will_be_attached=exif_bytes is not None,
+        exif_requested=exif_meta.exif_requested,
+        gps_removed=exif_meta.gps_removed,
+        edited_fields=exif_meta.edited_fields,
+        skipped_reason=exif_meta.exif_skipped_reason,
+    )
 
 
 def save_image(

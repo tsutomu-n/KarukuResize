@@ -30,9 +30,11 @@ from karuku_resizer.help_dialog import HelpDialog
 from karuku_resizer.image_save_pipeline import (
     ExifEditValues,
     SaveOptions,
+    ExifPreview,
     SaveResult,
     destination_with_extension,
     normalize_quality,
+    preview_exif_plan,
     resolve_output_format,
     save_image,
     supported_output_formats,
@@ -458,6 +460,14 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self.verbose_log_check.pack(side="left")
+        self.exif_preview_button = customtkinter.CTkButton(
+            controls,
+            text="EXIF差分",
+            width=95,
+            command=self._show_exif_preview_dialog,
+            font=self.font_small,
+        )
+        self.exif_preview_button.pack(side="left", padx=(10, 0))
         self._setup_exif_edit_fields(parent)
 
     def _setup_exif_edit_fields(self, parent):
@@ -805,6 +815,81 @@ class ResizeApp(customtkinter.CTk):
             user_comment=self.exif_user_comment_var.get(),
             datetime_original=datetime_text,
         )
+
+    def _show_exif_preview_dialog(self):
+        if self.current_index is None or self.current_index >= len(self.jobs):
+            messagebox.showwarning("ファイル未選択", "EXIF差分を確認する画像を選択してください")
+            return
+
+        job = self.jobs[self.current_index]
+        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
+        edit_values = self._current_exif_edit_values() if exif_mode == "edit" else None
+        preview = preview_exif_plan(
+            source_image=job.image,
+            exif_mode=exif_mode,  # type: ignore[arg-type]
+            remove_gps=self.remove_gps_var.get(),
+            edit_values=edit_values,
+        )
+        messagebox.showinfo("EXIF差分プレビュー", self._format_exif_preview_message(job, preview, edit_values))
+
+    @staticmethod
+    def _trim_preview_text(value: Optional[str], max_len: int = 40) -> str:
+        if value is None:
+            return ""
+        text = value.strip()
+        if len(text) <= max_len:
+            return text
+        return f"{text[: max_len - 3]}..."
+
+    def _format_exif_preview_message(
+        self,
+        job: ImageJob,
+        preview: ExifPreview,
+        edit_values: Optional[ExifEditValues],
+    ) -> str:
+        lines = [
+            f"対象: {job.path.name}",
+            f"モード: {EXIF_ID_TO_LABEL.get(preview.exif_mode, '保持')}",
+            f"元EXIFタグ数: {preview.source_tag_count}",
+            f"元GPS情報: {'あり' if preview.source_has_gps else 'なし'}",
+        ]
+
+        if preview.exif_mode == "remove":
+            lines.append("保存時: EXIFを付与しません（全削除）")
+        elif preview.exif_will_be_attached:
+            lines.append("保存時: EXIFを付与します")
+        else:
+            lines.append("保存時: EXIFは付与されません")
+
+        if preview.exif_mode != "remove":
+            lines.append(f"GPS: {'削除予定' if preview.gps_removed else '保持予定'}")
+
+        if preview.edited_fields:
+            lines.append("編集予定項目:")
+            label_map = {
+                "Artist": "撮影者",
+                "Copyright": "著作権",
+                "DateTimeOriginal": "撮影日時",
+                "UserComment": "コメント",
+            }
+            value_map = {
+                "Artist": edit_values.artist if edit_values else "",
+                "Copyright": edit_values.copyright_text if edit_values else "",
+                "DateTimeOriginal": edit_values.datetime_original if edit_values else "",
+                "UserComment": edit_values.user_comment if edit_values else "",
+            }
+            for key in preview.edited_fields:
+                display = self._trim_preview_text(value_map.get(key))
+                lines.append(f"- {label_map.get(key, key)}: {display}")
+        elif preview.exif_mode == "edit":
+            lines.append("編集予定項目: なし（入力値が空）")
+
+        if preview.skipped_reason:
+            lines.append(f"備考: {preview.skipped_reason}")
+        if len(self.jobs) > 1:
+            lines.append("注記: 一括保存時は画像ごとに元EXIFが異なるため結果が変わる可能性があります。")
+
+        return "\n".join(lines)
 
     @staticmethod
     def _validate_exif_datetime(value: str) -> bool:

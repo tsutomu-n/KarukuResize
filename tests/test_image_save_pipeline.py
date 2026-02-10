@@ -7,6 +7,7 @@ from karuku_resizer.image_save_pipeline import (
     SaveOptions,
     destination_with_extension,
     normalize_quality,
+    preview_exif_plan,
     resolve_output_format,
     save_image,
 )
@@ -136,6 +137,44 @@ def test_save_image_remove_exif(temp_dir):
     output = Image.open(result.output_path)
     output_exif = output.getexif()
     assert output_exif.get(_tag_value("Artist", 0x013B)) is None
+
+
+def test_preview_exif_plan_reports_remove_mode(temp_dir):
+    source_path = temp_dir / "source_preview_remove.jpg"
+    source = _make_source_with_artist(source_path, "Preview Artist")
+
+    preview = preview_exif_plan(
+        source_image=source,
+        exif_mode="remove",
+        remove_gps=True,
+    )
+
+    assert preview.exif_mode == "remove"
+    assert preview.had_source_exif
+    assert preview.source_tag_count >= 1
+    assert not preview.exif_will_be_attached
+    assert not preview.exif_requested
+
+
+def test_preview_exif_plan_reports_edit_fields_without_source_exif():
+    source = Image.new("RGB", (80, 60), (50, 100, 150))
+    preview = preview_exif_plan(
+        source_image=source,
+        exif_mode="edit",
+        remove_gps=False,
+        edit_values=ExifEditValues(
+            artist="Edited Artist",
+            user_comment="memo",
+        ),
+    )
+
+    assert preview.exif_mode == "edit"
+    assert not preview.had_source_exif
+    assert preview.source_tag_count == 0
+    assert preview.exif_will_be_attached
+    assert preview.exif_requested
+    assert "Artist" in preview.edited_fields
+    assert "UserComment" in preview.edited_fields
 
 
 def test_save_image_dry_run_does_not_write_file(temp_dir):
