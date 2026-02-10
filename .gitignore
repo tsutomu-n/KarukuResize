@@ -62,9 +62,12 @@ Thumbs.db
 *.dmg
 *.AppImage
 
-# PyInstaller build dirs and executables
-dist/
-build/
+# PyInstaller artifacts
 *.spec
+*.spec.bak
+*.pkg
+*.pyz
+*.toc
+warn-*.txt
+xref-*.html
 KarukuResize.exe
-
