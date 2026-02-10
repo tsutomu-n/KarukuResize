@@ -164,6 +164,7 @@ class SettingsManager:
             "exif_copyright": "",
             "exif_user_comment": "",
             "exif_datetime_original": "",
+            "details_expanded": False,
             "window_geometry": "1200x800",
             "zoom_preference": "画面に合わせる",
             "last_input_dir": "",
@@ -237,8 +238,70 @@ class ResizeApp(customtkinter.CTk):
 
         self._setup_entry_widgets(top)
         self._setup_action_buttons(top)
-        self._setup_output_controls()
+        self._setup_settings_layers()
         self._setup_main_layout()
+
+    def _setup_settings_layers(self):
+        """基本操作の下に設定サマリーと詳細設定（折りたたみ）を配置する。"""
+        header = customtkinter.CTkFrame(self, fg_color="transparent")
+        header.pack(side="top", fill="x", padx=10, pady=(0, 4))
+
+        self.settings_summary_var = customtkinter.StringVar(value="")
+        self.settings_summary_label = customtkinter.CTkLabel(
+            header,
+            textvariable=self.settings_summary_var,
+            anchor="w",
+            font=self.font_small,
+        )
+        self.settings_summary_label.pack(side="left", fill="x", expand=True)
+
+        self.details_toggle_button = customtkinter.CTkButton(
+            header,
+            text="詳細設定を表示",
+            width=140,
+            command=self._toggle_details_panel,
+            font=self.font_small,
+        )
+        self.details_toggle_button.pack(side="right")
+
+        self.detail_settings_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        self._setup_output_controls(self.detail_settings_frame)
+        self._register_setting_watchers()
+        self._update_settings_summary()
+        self._set_details_panel_visibility(False)
+
+    def _register_setting_watchers(self):
+        for var in (
+            self.output_format_var,
+            self.quality_var,
+            self.exif_mode_var,
+            self.remove_gps_var,
+            self.dry_run_var,
+        ):
+            var.trace_add("write", self._on_setting_var_changed)
+
+    def _on_setting_var_changed(self, *_args):
+        self._update_settings_summary()
+
+    def _update_settings_summary(self):
+        summary = (
+            f"現在設定: 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
+            f"EXIF {self.exif_mode_var.get()} / GPS削除 {'ON' if self.remove_gps_var.get() else 'OFF'} / "
+            f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}"
+        )
+        self.settings_summary_var.set(summary)
+
+    def _toggle_details_panel(self):
+        self._set_details_panel_visibility(not self.details_expanded)
+
+    def _set_details_panel_visibility(self, expanded: bool):
+        self.details_expanded = expanded
+        if expanded:
+            self.detail_settings_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+            self.details_toggle_button.configure(text="詳細設定を隠す")
+        else:
+            self.detail_settings_frame.pack_forget()
+            self.details_toggle_button.configure(text="詳細設定を表示")
 
     def _setup_entry_widgets(self, parent):
         """入力ウィジェットをセットアップ"""
@@ -326,9 +389,9 @@ class ResizeApp(customtkinter.CTk):
         self.zoom_cb = customtkinter.CTkComboBox(parent, variable=self.zoom_var, values=["画面に合わせる", "100%", "200%", "300%"], width=140, state="readonly", command=self._apply_zoom_selection, font=self.font_default)
         self.zoom_cb.pack(side="left", padx=4)
 
-    def _setup_output_controls(self):
+    def _setup_output_controls(self, parent):
         """保存関連の設定コントロールをセットアップ"""
-        controls = customtkinter.CTkFrame(self, fg_color="transparent")
+        controls = customtkinter.CTkFrame(parent, fg_color="transparent")
         controls.pack(side="top", fill="x", padx=10, pady=(0, 6))
 
         self.output_format_var = customtkinter.StringVar(value="自動")
@@ -395,11 +458,11 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self.verbose_log_check.pack(side="left")
-        self._setup_exif_edit_fields()
+        self._setup_exif_edit_fields(parent)
 
-    def _setup_exif_edit_fields(self):
+    def _setup_exif_edit_fields(self, parent):
         """EXIF編集フィールドをセットアップ（edit時のみ表示）。"""
-        self.exif_edit_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        self.exif_edit_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
         self.exif_edit_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
 
         self.exif_artist_var = customtkinter.StringVar(value="")
@@ -453,6 +516,8 @@ class ResizeApp(customtkinter.CTk):
         normalized = str(normalize_quality(raw))
         if normalized != value:
             self.quality_var.set(normalized)
+        if self.current_index is not None:
+            self._draw_previews(self.jobs[self.current_index])
 
     def _on_output_format_changed(self, _value: str):
         if self.current_index is not None:
@@ -612,6 +677,9 @@ class ResizeApp(customtkinter.CTk):
         self.exif_datetime_original_var.set(str(self.settings.get("exif_datetime_original", "")))
         self.dry_run_var.set(bool(self.settings.get("dry_run", False)))
         self.verbose_log_var.set(bool(self.settings.get("verbose_logging", False)))
+        details_expanded = self.settings.get("details_expanded", False)
+        if not isinstance(details_expanded, bool):
+            details_expanded = str(details_expanded).lower() in {"1", "true", "yes", "on"}
 
         # ウィンドウサイズ復元
         try:
@@ -623,6 +691,8 @@ class ResizeApp(customtkinter.CTk):
         self.zoom_var.set(self.settings["zoom_preference"])
         self._apply_log_level()
         self._toggle_exif_edit_fields()
+        self._set_details_panel_visibility(details_expanded)
+        self._update_settings_summary()
     
     def _save_current_settings(self):
         """現在の設定を保存"""
@@ -641,6 +711,7 @@ class ResizeApp(customtkinter.CTk):
             "exif_datetime_original": self.exif_datetime_original_var.get(),
             "dry_run": self.dry_run_var.get(),
             "verbose_logging": self.verbose_log_var.get(),
+            "details_expanded": self.details_expanded,
             "window_geometry": self.geometry(),
             "zoom_preference": self.zoom_var.get()
         })
