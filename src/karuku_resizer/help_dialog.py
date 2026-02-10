@@ -7,7 +7,7 @@
 """
 
 import tkinter as tk
-from typing import Optional, Callable
+from typing import Optional
 
 class HelpDialog:
     """ヘルプダイアログクラス"""
@@ -59,7 +59,6 @@ class HelpDialog:
         
         # ヘルプコンテンツの解析と表示
         lines = self.help_content.strip().split("\n")
-        current_section = None
         
         for line in lines:
             if line.startswith("# "):
@@ -69,7 +68,6 @@ class HelpDialog:
             elif line.startswith("## "):
                 # セクションタイトル
                 section_text = line[3:].strip()
-                current_section = section_text
                 tk.Label(content_frame, text=section_text, font=heading_font, justify=tk.LEFT, anchor="w", fg="#0078d4").pack(fill=tk.X, pady=(15, 5))
             elif line.startswith("### "):
                 # サブセクションタイトル
@@ -90,22 +88,41 @@ class HelpDialog:
                 if line.strip():
                     tk.Label(content_frame, text=line.strip(), font=text_font, justify=tk.LEFT, anchor="w", wraplength=750).pack(fill=tk.X, pady=2)
         
+        # マウスホイールでスクロールできるようにする
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _on_mousewheel_up(_event):
+            canvas.yview_scroll(-1, "units")
+
+        def _on_mousewheel_down(_event):
+            canvas.yview_scroll(1, "units")
+
+        # toplevelへバインドすると、子ウィジェット上のホイールイベントも処理できる
+        self.window.bind("<MouseWheel>", _on_mousewheel)
+        self.window.bind("<Button-4>", _on_mousewheel_up)
+        self.window.bind("<Button-5>", _on_mousewheel_down)
+
+        # ウィンドウが閉じられたときにイベントバインディングを解除
+        def _on_closing():
+            if self.window is None:
+                return
+            try:
+                self.window.unbind("<MouseWheel>")
+                self.window.unbind("<Button-4>")
+                self.window.unbind("<Button-5>")
+            except Exception:
+                pass
+            self.window.destroy()
+            self.window = None
+
         # 閉じるボタン
-        tk.Button(content_frame, text="閉じる", font=("Yu Gothic UI", 14), command=self.window.destroy, width=20).pack(pady=20)
+        tk.Button(content_frame, text="閉じる", font=("Yu Gothic UI", 14), command=_on_closing, width=20).pack(pady=20)
         
         # キャンバスのスクロール領域を設定
         content_frame.update_idletasks()
         canvas.config(scrollregion=canvas.bbox("all"))
         
-        # マウスホイールでスクロールできるようにする
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        # ウィンドウが閉じられたときにイベントバインディングを解除
-        def _on_closing():
-            canvas.unbind_all("<MouseWheel>")
-            self.window.destroy()
         self.window.protocol("WM_DELETE_WINDOW", _on_closing)
         
         # ウィンドウをモーダルにする

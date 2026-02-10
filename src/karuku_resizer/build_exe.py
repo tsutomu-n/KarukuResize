@@ -51,7 +51,18 @@ if ICON_PATH.is_file():
 
 # Entry point script path
 SCRIPT_PATH = PROJECT_ROOT / "src" / "karuku_resizer" / "gui_app.py"
+HOOKS_DIR = PROJECT_ROOT / "src" / "karuku_resizer" / "tools"
+
+# AVIFプラグインは環境依存で取りこぼしが起きやすいため明示的に追加
+PYINSTALLER_ARGS.extend(["--hidden-import", "pillow_avif"])
+if HOOKS_DIR.is_dir():
+    PYINSTALLER_ARGS.extend(["--additional-hooks-dir", str(HOOKS_DIR)])
 PYINSTALLER_ARGS.append(str(SCRIPT_PATH))
+
+
+def _expected_binary_path() -> Path:
+    suffix = ".exe" if sys.platform.startswith("win") else ""
+    return DIST_DIR / f"{NAME}{suffix}"
 
 
 def main() -> None:  # noqa: D401
@@ -62,11 +73,14 @@ def main() -> None:  # noqa: D401
     try:
         os.chdir(PROJECT_ROOT)
         pyinstaller_run(PYINSTALLER_ARGS)
-        exe_path = DIST_DIR / f"{NAME}.exe"
+        exe_path = _expected_binary_path()
         if exe_path.exists():
             print(f"\nSuccess! Built executable at: {exe_path}")
         else:
-            print("PyInstaller finished but executable not found. Check output.")
+            print(
+                "PyInstaller finished but expected output was not found: "
+                f"{exe_path}. Check output."
+            )
     finally:
         os.chdir(old_cwd)
 

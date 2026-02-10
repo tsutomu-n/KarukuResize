@@ -759,22 +759,24 @@ class ResizeApp(customtkinter.CTk):
     # Helper: summarize current resize settings for confirmation dialogs
     # ------------------------------------------------------------------
 
-    def _get_settings_summary(self):
-        """Return (settings_text, fmt, target) for current UI selections."""
+    def _current_resize_settings_text(self) -> str:
         mode = self.mode_var.get()
         if mode == "ratio":
             pct = self.ratio_entry.get().strip() or "---"
-            settings_text = f"倍率 {pct}%"
-        elif mode == "width":
+            return f"倍率 {pct}%"
+        if mode == "width":
             w = self.entry_w_single.get().strip() or "---"
-            settings_text = f"幅 {w}px"
-        elif mode == "height":
+            return f"幅 {w}px"
+        if mode == "height":
             h = self.entry_h_single.get().strip() or "---"
-            settings_text = f"高さ {h}px"
-        else:  # fixed
-            w = self.entry_w_fixed.get().strip() or "---"
-            h = self.entry_h_fixed.get().strip() or "---"
-            settings_text = f"固定 {w}×{h}px"
+            return f"高さ {h}px"
+        w = self.entry_w_fixed.get().strip() or "---"
+        h = self.entry_h_fixed.get().strip() or "---"
+        return f"固定 {w}×{h}px"
+
+    def _get_settings_summary(self):
+        """Return (settings_text, fmt, target) for current UI selections."""
+        settings_text = self._current_resize_settings_text()
 
         # 既定の出力形式と目標サイズを算出
         fmt = self.output_format_var.get()
@@ -803,14 +805,16 @@ class ResizeApp(customtkinter.CTk):
         self.quality_var.set(str(normalized))
         return normalized
 
-    def _current_exif_edit_values(self) -> ExifEditValues:
+    def _current_exif_edit_values(self, show_warning: bool = True) -> ExifEditValues:
         datetime_text = self.exif_datetime_original_var.get().strip()
         if datetime_text and not self._validate_exif_datetime(datetime_text):
-            messagebox.showwarning(
-                "EXIF日時形式",
-                "撮影日時は YYYY:MM:DD HH:MM:SS 形式で入力してください",
-            )
+            if show_warning:
+                messagebox.showwarning(
+                    "EXIF日時形式",
+                    "撮影日時は YYYY:MM:DD HH:MM:SS 形式で入力してください",
+                )
             datetime_text = ""
+            self.exif_datetime_original_var.set("")
 
         return ExifEditValues(
             artist=self.exif_artist_var.get(),
@@ -826,7 +830,7 @@ class ResizeApp(customtkinter.CTk):
 
         job = self.jobs[self.current_index]
         exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
-        edit_values = self._current_exif_edit_values() if exif_mode == "edit" else None
+        edit_values = self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
         preview = preview_exif_plan(
             source_image=job.image,
             exif_mode=exif_mode,  # type: ignore[arg-type]
@@ -902,15 +906,18 @@ class ResizeApp(customtkinter.CTk):
         except ValueError:
             return False
 
-    def _build_save_options(self, output_format: str) -> SaveOptions:
+    def _build_save_options(self, output_format: str, exif_edit_values: Optional[ExifEditValues] = None) -> SaveOptions:
         exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
+        edit_values = exif_edit_values
+        if exif_mode == "edit" and edit_values is None:
+            edit_values = self._current_exif_edit_values(show_warning=True)
         return SaveOptions(
             output_format=output_format,  # type: ignore[arg-type]
             quality=self._current_quality(),
             dry_run=self.dry_run_var.get(),
             exif_mode=exif_mode,  # type: ignore[arg-type]
             remove_gps=self.remove_gps_var.get(),
-            exif_edit=self._current_exif_edit_values() if exif_mode == "edit" else None,
+            exif_edit=edit_values if exif_mode == "edit" else None,
             verbose=self.verbose_log_var.get(),
         )
 
@@ -1194,6 +1201,10 @@ class ResizeApp(customtkinter.CTk):
         exif_fallback_count = 0
         gps_removed_count = 0
         total_files = len(self.jobs)
+        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
+        batch_exif_edit_values = (
+            self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
+        )
 
         for i, job in enumerate(self.jobs):
             if self._cancel_batch:
@@ -1206,7 +1217,7 @@ class ResizeApp(customtkinter.CTk):
             resized_img = self._process_image(job.image)
             if resized_img:
                 output_format = self._resolve_output_format_for_image(job.image)
-                options = self._build_save_options(output_format)
+                options = self._build_save_options(output_format, exif_edit_values=batch_exif_edit_values)
                 out_base = self._build_unique_batch_base_path(
                     output_dir=output_dir,
                     stem=job.path.stem,
@@ -1299,7 +1310,7 @@ class ResizeApp(customtkinter.CTk):
             pct = (size[0] * size[1]) / (orig_w * orig_h) * 100
             fmt_label = FORMAT_ID_TO_LABEL.get(output_format, "JPEG")
             self.info_resized_var.set(f"{size[0]} x {size[1]}  {kb:.1f}KB ({pct:.1f}%) [{fmt_label}]")
-            self.resized_title_label.configure(text=f"リサイズ後 ({self._get_settings_summary()[0]})")
+            self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
         else:
             self.canvas_resz.delete("all")
             self.info_resized_var.set("--- x ---  ---  (---)")
