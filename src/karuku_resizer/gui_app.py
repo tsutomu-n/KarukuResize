@@ -112,12 +112,39 @@ UI_MODE_LABEL_TO_ID = {
 
 UI_MODE_ID_TO_LABEL = {v: k for k, v in UI_MODE_LABEL_TO_ID.items()}
 
+APPEARANCE_LABEL_TO_ID = {
+    "システム": "system",
+    "ライト": "light",
+    "ダーク": "dark",
+}
+
+APPEARANCE_ID_TO_LABEL = {v: k for k, v in APPEARANCE_LABEL_TO_ID.items()}
+
+EXIF_PREVIEW_TAGS = [
+    ("メーカー", 0x010F),
+    ("機種", 0x0110),
+    ("レンズ", 0xA434),
+    ("撮影日時", 0x9003),
+    ("ISO", 0x8827),
+    ("F値", 0x829D),
+    ("露出時間", 0x829A),
+    ("焦点距離", 0x920A),
+    ("撮影者", 0x013B),
+    ("著作権", 0x8298),
+    ("コメント", 0x9286),
+]
+
+EXIF_GPS_INFO_TAG = 0x8825
+
 
 @dataclass
 class ImageJob:
     path: Path
     image: Image.Image
     resized: Optional[Image.Image] = None  # cache of last processed result
+    metadata_loaded: bool = False
+    metadata_text: str = ""
+    metadata_error: Optional[str] = None
 
 
 DEBUG = False
@@ -165,6 +192,7 @@ class SettingsManager:
         return {
             "mode": "ratio",
             "ui_mode": "simple",
+            "appearance_mode": "system",
             "ratio_value": "100",
             "width_value": "",
             "height_value": "",
@@ -182,6 +210,7 @@ class SettingsManager:
             "exif_user_comment": "",
             "exif_datetime_original": "",
             "details_expanded": False,
+            "metadata_panel_expanded": False,
             "window_geometry": "1200x800",
             "zoom_preference": "画面に合わせる",
             "last_input_dir": "",
@@ -264,6 +293,13 @@ class ResizeApp(customtkinter.CTk):
         appearance = customtkinter.get_appearance_mode()
         return "#1F2A37" if appearance == "Light" else "#E8EEF5"
 
+    @staticmethod
+    def _normalize_appearance_mode(value: str) -> str:
+        normalized = str(value).strip().lower()
+        if normalized not in APPEARANCE_ID_TO_LABEL:
+            return "system"
+        return normalized
+
     def _setup_ui(self):
         """UI要素をセットアップ"""
         # -------------------- UI top bar --------------------------------
@@ -345,6 +381,22 @@ class ResizeApp(customtkinter.CTk):
         )
         self.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)
 
+        self.appearance_mode_var = customtkinter.StringVar(value="システム")
+        self.appearance_mode_segment = customtkinter.CTkSegmentedButton(
+            self.settings_header_frame,
+            values=list(APPEARANCE_LABEL_TO_ID.keys()),
+            variable=self.appearance_mode_var,
+            command=self._on_appearance_mode_changed,
+            width=180,
+            font=self.font_small,
+            selected_color=METALLIC_COLORS["primary"],
+            selected_hover_color=METALLIC_COLORS["hover"],
+            unselected_color=METALLIC_COLORS["bg_tertiary"],
+            unselected_hover_color=METALLIC_COLORS["accent_soft"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
+        self.appearance_mode_segment.pack(side="right", padx=(0, 8), pady=8)
+
         self.details_toggle_button = customtkinter.CTkButton(
             self.settings_header_frame,
             text="詳細設定を表示",
@@ -385,6 +437,26 @@ class ResizeApp(customtkinter.CTk):
     def _is_pro_mode(self) -> bool:
         return self._ui_mode_id() == "pro"
 
+    def _appearance_mode_id(self) -> str:
+        return APPEARANCE_LABEL_TO_ID.get(self.appearance_mode_var.get(), "system")
+
+    def _on_appearance_mode_changed(self, _value: str):
+        self._apply_appearance_mode(self._appearance_mode_id(), redraw=True)
+        self._update_settings_summary()
+
+    def _apply_appearance_mode(self, mode_id: str, redraw: bool):
+        normalized = self._normalize_appearance_mode(mode_id)
+        customtkinter.set_appearance_mode(normalized)
+        self.configure(fg_color=METALLIC_COLORS["bg_primary"])
+
+        if hasattr(self, "canvas_org") and self.canvas_org.winfo_exists():
+            self.canvas_org.configure(bg=self._canvas_background_color())
+        if hasattr(self, "canvas_resz") and self.canvas_resz.winfo_exists():
+            self.canvas_resz.configure(bg=self._canvas_background_color())
+
+        if redraw and self.current_index is not None and self.current_index < len(self.jobs):
+            self._draw_previews(self.jobs[self.current_index])
+
     def _on_ui_mode_changed(self, _value: str):
         self._apply_ui_mode()
         self._update_settings_summary()
@@ -416,9 +488,11 @@ class ResizeApp(customtkinter.CTk):
         self._update_codec_controls_state()
         self._toggle_exif_edit_fields()
         self._apply_log_level()
+        self._update_metadata_panel_state()
 
     def _update_settings_summary(self):
         mode_label = self.ui_mode_var.get()
+        appearance_label = self.appearance_mode_var.get()
         format_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
         codec_summary = ""
         if self._is_pro_mode() and format_id == "webp":
@@ -430,7 +504,7 @@ class ResizeApp(customtkinter.CTk):
             codec_summary = f" / AVIF speed {self.avif_speed_var.get()}"
 
         summary = (
-            f"現在設定: {mode_label}モード / 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
+            f"現在設定: {mode_label}モード / テーマ {appearance_label} / 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
             f"EXIF {self.exif_mode_var.get()} / GPS削除 {'ON' if self.remove_gps_var.get() else 'OFF'} / "
             f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
         )
@@ -1083,6 +1157,7 @@ class ResizeApp(customtkinter.CTk):
         preview_pane.pack(side="right", fill="both", expand=True, padx=(5, 0))
         preview_pane.grid_rowconfigure(0, weight=1)
         preview_pane.grid_rowconfigure(1, weight=1)
+        preview_pane.grid_rowconfigure(2, weight=0)
         preview_pane.grid_columnconfigure(0, weight=1)
 
         # Original Preview
@@ -1140,6 +1215,176 @@ class ResizeApp(customtkinter.CTk):
         self.canvas_resz.bind("<ButtonPress-1>", lambda e: self.canvas_resz.scan_mark(e.x, e.y))
         self.canvas_resz.bind("<B1-Motion>",   lambda e: self.canvas_resz.scan_dragto(e.x, e.y, gain=1))
 
+        # Metadata preview (pro mode only)
+        self.metadata_frame = customtkinter.CTkFrame(preview_pane, corner_radius=12)
+        self._style_card_frame(self.metadata_frame, corner_radius=12)
+        self.metadata_frame.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+
+        self.metadata_header_frame = customtkinter.CTkFrame(self.metadata_frame, fg_color="transparent")
+        self.metadata_header_frame.pack(side="top", fill="x", padx=8, pady=(8, 4))
+
+        self.metadata_title_label = customtkinter.CTkLabel(
+            self.metadata_header_frame,
+            text="メタデータ（プロ）",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        )
+        self.metadata_title_label.pack(side="left")
+
+        self.metadata_toggle_button = customtkinter.CTkButton(
+            self.metadata_header_frame,
+            text="表示",
+            width=80,
+            command=self._toggle_metadata_panel,
+            font=self.font_small,
+        )
+        self._style_secondary_button(self.metadata_toggle_button)
+        self.metadata_toggle_button.pack(side="right")
+
+        self.metadata_status_var = customtkinter.StringVar(value="画像を選択するとメタデータを表示できます")
+        self.metadata_status_label = customtkinter.CTkLabel(
+            self.metadata_frame,
+            textvariable=self.metadata_status_var,
+            anchor="w",
+            justify="left",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+        )
+        self.metadata_status_label.pack(side="top", fill="x", padx=10, pady=(0, 4))
+
+        self.metadata_textbox = customtkinter.CTkTextbox(
+            self.metadata_frame,
+            height=120,
+            corner_radius=8,
+            border_width=1,
+            border_color=METALLIC_COLORS["border_light"],
+            fg_color=METALLIC_COLORS["input_bg"],
+            text_color=METALLIC_COLORS["text_primary"],
+            font=self.font_small,
+            wrap="word",
+        )
+        self.metadata_expanded = False
+        self._set_metadata_panel_expanded(False)
+        self._set_metadata_text("（プロモードで表示可能）")
+
+    def _toggle_metadata_panel(self):
+        self._set_metadata_panel_expanded(not self.metadata_expanded)
+
+    def _set_metadata_panel_expanded(self, expanded: bool):
+        self.metadata_expanded = expanded
+        if expanded:
+            if self.metadata_textbox.winfo_manager() != "pack":
+                self.metadata_textbox.pack(side="top", fill="x", padx=10, pady=(0, 10))
+            self.metadata_toggle_button.configure(text="隠す")
+        else:
+            if self.metadata_textbox.winfo_manager():
+                self.metadata_textbox.pack_forget()
+            self.metadata_toggle_button.configure(text="表示")
+
+    def _set_metadata_text(self, text: str):
+        self.metadata_textbox.configure(state="normal")
+        self.metadata_textbox.delete("1.0", "end")
+        self.metadata_textbox.insert("1.0", text)
+        self.metadata_textbox.configure(state="disabled")
+
+    @staticmethod
+    def _decode_exif_value(value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            raw = value
+            if raw.startswith(b"ASCII\x00\x00\x00"):
+                raw = raw[8:]
+            text = raw.decode("utf-8", errors="ignore").strip("\x00 ").strip()
+            if not text:
+                text = raw.decode("latin-1", errors="ignore").strip("\x00 ").strip()
+            return text
+        if hasattr(value, "numerator") and hasattr(value, "denominator"):
+            denominator = getattr(value, "denominator", 1) or 1
+            numerator = getattr(value, "numerator", 0)
+            try:
+                ratio = float(numerator) / float(denominator)
+                if abs(ratio - round(ratio)) < 1e-9:
+                    return str(int(round(ratio)))
+                return f"{ratio:.4g}"
+            except Exception:
+                return str(value).strip()
+        if isinstance(value, tuple):
+            if len(value) == 2 and all(isinstance(v, (int, float)) for v in value):
+                denominator = value[1] if value[1] else 1
+                ratio = value[0] / denominator
+                if abs(ratio - round(ratio)) < 1e-9:
+                    return str(int(round(ratio)))
+                return f"{ratio:.4g}"
+            parts = [ResizeApp._decode_exif_value(v) for v in value]
+            return ", ".join(p for p in parts if p)
+        return str(value).strip()
+
+    def _extract_metadata_text(self, job: ImageJob) -> str:
+        if job.metadata_loaded:
+            return job.metadata_text
+
+        try:
+            with Image.open(job.path) as src:
+                exif = src.getexif()
+            has_exif = bool(exif)
+            tag_count = len(exif)
+            try:
+                gps_ifd = exif.get_ifd(EXIF_GPS_INFO_TAG)
+                has_gps = bool(gps_ifd)
+            except Exception:
+                has_gps = EXIF_GPS_INFO_TAG in exif
+
+            lines = [
+                f"EXIF: {'あり' if has_exif else 'なし'}",
+                f"タグ数: {tag_count}",
+                f"GPS: {'あり' if has_gps else 'なし'}",
+            ]
+            for label, tag_id in EXIF_PREVIEW_TAGS:
+                text = self._decode_exif_value(exif.get(tag_id))
+                if text:
+                    lines.append(f"{label}: {self._trim_preview_text(text, max_len=80)}")
+
+            if not has_exif:
+                lines.append("元画像にEXIFメタデータはありません。")
+            job.metadata_text = "\n".join(lines)
+            job.metadata_error = None
+        except Exception as exc:
+            job.metadata_error = str(exc)
+            job.metadata_text = "メタデータの取得に失敗しました。"
+
+        job.metadata_loaded = True
+        return job.metadata_text
+
+    def _update_metadata_preview(self, job: Optional[ImageJob]):
+        if not hasattr(self, "metadata_status_var"):
+            return
+        if job is None:
+            self.metadata_status_var.set("画像を選択するとメタデータを表示できます")
+            self._set_metadata_text("（画像未選択）")
+            return
+
+        metadata_text = self._extract_metadata_text(job)
+        if job.metadata_error:
+            self.metadata_status_var.set(f"メタデータ: 取得失敗 ({job.path.name})")
+        else:
+            self.metadata_status_var.set(f"メタデータ: {job.path.name}")
+        self._set_metadata_text(metadata_text)
+
+    def _update_metadata_panel_state(self):
+        if not hasattr(self, "metadata_frame"):
+            return
+        if self._is_pro_mode():
+            if self.metadata_frame.winfo_manager() != "grid":
+                self.metadata_frame.grid()
+            selected_job = None
+            if self.current_index is not None and self.current_index < len(self.jobs):
+                selected_job = self.jobs[self.current_index]
+            self._update_metadata_preview(selected_job)
+        else:
+            if self.metadata_frame.winfo_manager():
+                self.metadata_frame.grid_remove()
+
     def _restore_settings(self):
         """保存された設定を復元"""
         # モード復元
@@ -1150,6 +1395,8 @@ class ResizeApp(customtkinter.CTk):
                 "簡易",
             )
         )
+        saved_appearance = self._normalize_appearance_mode(self.settings.get("appearance_mode", "system"))
+        self.appearance_mode_var.set(APPEARANCE_ID_TO_LABEL.get(saved_appearance, "システム"))
         
         # 値復元
         self.pct_var.set(self.settings["ratio_value"])
@@ -1199,6 +1446,9 @@ class ResizeApp(customtkinter.CTk):
         details_expanded = self.settings.get("details_expanded", False)
         if not isinstance(details_expanded, bool):
             details_expanded = str(details_expanded).lower() in {"1", "true", "yes", "on"}
+        metadata_panel_expanded = self.settings.get("metadata_panel_expanded", False)
+        if not isinstance(metadata_panel_expanded, bool):
+            metadata_panel_expanded = str(metadata_panel_expanded).lower() in {"1", "true", "yes", "on"}
 
         # ウィンドウサイズ復元
         try:
@@ -1208,6 +1458,8 @@ class ResizeApp(customtkinter.CTk):
         
         # ズーム設定復元
         self.zoom_var.set(self.settings["zoom_preference"])
+        self._set_metadata_panel_expanded(metadata_panel_expanded)
+        self._apply_appearance_mode(saved_appearance, redraw=False)
         self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
         self._update_settings_summary()
@@ -1217,6 +1469,7 @@ class ResizeApp(customtkinter.CTk):
         self.settings.update({
             "mode": self.mode_var.get(),
             "ui_mode": self._ui_mode_id(),
+            "appearance_mode": self._appearance_mode_id(),
             "ratio_value": self.pct_var.get(),
             "width_value": self.w_var.get(),
             "height_value": self.h_var.get(),
@@ -1234,6 +1487,7 @@ class ResizeApp(customtkinter.CTk):
             "dry_run": self.dry_run_var.get(),
             "verbose_logging": self.verbose_log_var.get(),
             "details_expanded": self.details_expanded,
+            "metadata_panel_expanded": self.metadata_expanded,
             "window_geometry": self.geometry(),
             "zoom_preference": self.zoom_var.get()
         })
@@ -1587,6 +1841,7 @@ class ResizeApp(customtkinter.CTk):
         self.info_orig_var.set("--- x ---  ---")
         self.info_resized_var.set("--- x ---  ---  (---)")
         self.resized_title_label.configure(text="リサイズ後")
+        self._update_metadata_preview(None)
 
     def _on_select_change(self, idx: Optional[int] = None) -> None:
         """Handle file selection change."""
@@ -1618,6 +1873,7 @@ class ResizeApp(customtkinter.CTk):
 
         self._reset_zoom()
         self._draw_previews(job)
+        self._update_metadata_preview(job)
 
     # -------------------- size calculation -----------------------------
     # サイズ計算に関する関数
