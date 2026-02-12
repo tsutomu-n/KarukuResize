@@ -30,6 +30,7 @@ def default_gui_settings() -> dict[str, Any]:
         "avif_speed": "6",
         "dry_run": False,
         "verbose_logging": False,
+        "show_tooltips": True,
         "exif_mode": "keep",
         "remove_gps": False,
         "exif_artist": "",

@@ -13,6 +13,7 @@ def test_load_returns_defaults_when_no_settings_file(tmp_path: Path) -> None:
     loaded = store.load()
 
     assert loaded == default_gui_settings()
+    assert loaded["show_tooltips"] is True
     assert not settings_path.exists()
 
 
@@ -25,6 +26,7 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     payload["output_format"] = "webp"
     payload["default_output_dir"] = "/tmp/out"
     payload["default_preset_id"] = "user-test-preset"
+    payload["show_tooltips"] = False
     store.save(payload)
 
     loaded = store.load()
@@ -33,6 +35,7 @@ def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     assert loaded["output_format"] == "webp"
     assert loaded["default_output_dir"] == "/tmp/out"
     assert loaded["default_preset_id"] == "user-test-preset"
+    assert loaded["show_tooltips"] is False
     assert loaded["schema_version"] == SCHEMA_VERSION
 
 
@@ -52,6 +55,7 @@ def test_load_migrates_legacy_settings_file(tmp_path: Path) -> None:
     assert loaded["quality"] == "65"
     assert loaded["ui_mode"] == "pro"
     assert loaded["default_output_dir"] == "/tmp/legacy"
+    assert loaded["show_tooltips"] is True
     assert loaded["schema_version"] == SCHEMA_VERSION
     assert settings_path.exists()
 
@@ -59,4 +63,5 @@ def test_load_migrates_legacy_settings_file(tmp_path: Path) -> None:
     assert migrated["quality"] == "65"
     assert migrated["ui_mode"] == "pro"
     assert migrated["default_output_dir"] == "/tmp/legacy"
+    assert migrated["show_tooltips"] is True
     assert migrated["schema_version"] == SCHEMA_VERSION

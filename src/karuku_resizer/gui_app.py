@@ -17,6 +17,7 @@ import logging
 import os
 import platform
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -71,6 +72,7 @@ from karuku_resizer.runtime_logging import (
     create_run_log_artifacts,
     write_run_summary,
 )
+from karuku_resizer.tools.tooltip_manager import TooltipManager
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -82,6 +84,11 @@ except ImportError:  # Pillow<10 fallback
     Resampling = _Resampling()  # type: ignore
 
 DEFAULT_PREVIEW = 480
+DEFAULT_WINDOW_GEOMETRY = "1200x800"
+MIN_WINDOW_WIDTH = 1200
+MIN_WINDOW_HEIGHT = 1
+WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
+TOOLTIP_DELAY_MS = 400
 
 # -------------------- UI color constants --------------------
 METALLIC_COLORS = {
@@ -229,6 +236,7 @@ class ResizeApp(customtkinter.CTk):
         # 設定マネージャー初期化
         self.settings_store = GuiSettingsStore()
         self.settings = self.settings_store.load()
+        self.settings["show_tooltips"] = self._to_bool(self.settings.get("show_tooltips", True))
         self.available_formats = supported_output_formats()
         self.preset_store = ProcessingPresetStore()
         self.processing_presets: List[ProcessingPreset] = self.preset_store.load()
@@ -247,8 +255,14 @@ class ResizeApp(customtkinter.CTk):
         self.font_bold = customtkinter.CTkFont(family=system_font, size=14, weight="bold")
 
         self.title("画像リサイズツール (DEBUG)" if DEBUG else "画像リサイズツール")
+        self.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         self._window_icon_image: Optional[ImageTk.PhotoImage] = None
         self._apply_window_icon()
+        self._tooltip_manager = TooltipManager(
+            self,
+            enabled_provider=lambda: self._to_bool(self.settings.get("show_tooltips", True)),
+            delay_ms=TOOLTIP_DELAY_MS,
+        )
 
         # 例外を握りつぶさず、GUI上で明示してログへ残す
         self.report_callback_exception = self._report_callback_exception
@@ -287,6 +301,7 @@ class ResizeApp(customtkinter.CTk):
         self._run_summary_finalized = False
 
         self._setup_ui()
+        self._setup_tooltips()
         self._setup_drag_and_drop()
         self._refresh_preset_menu(selected_preset_id=self.settings.get("default_preset_id", ""))
         self._restore_settings()
@@ -444,6 +459,74 @@ class ResizeApp(customtkinter.CTk):
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _register_tooltip(self, widget: Any, text: str) -> None:
+        if widget is None:
+            return
+        self._tooltip_manager.register(widget, text)
+
+    @staticmethod
+    def _recent_setting_tooltip_text(entry: Mapping[str, Any]) -> str:
+        used_at = str(entry.get("used_at", "")).strip()
+        if used_at:
+            return (
+                "この設定を再適用します。\n"
+                f"最終利用は {used_at} です。"
+            )
+        return "この設定を再適用します。"
+
+    def _setup_tooltips(self) -> None:
+        # Top bar and preset controls
+        self._register_tooltip(
+            self.select_button,
+            "画像を読み込みます。プロは再帰読込できます。",
+        )
+        self._register_tooltip(self.help_button, "使い方を表示します。")
+        self._register_tooltip(self.settings_button, "設定画面を開きます。")
+        self._register_tooltip(self.preset_menu, "プリセットを選択します。")
+        self._register_tooltip(self.preset_apply_button, "プリセットを適用します。")
+        self._register_tooltip(self.preset_save_button, "現在設定を保存します。")
+        self._register_tooltip(self.preset_manage_button, "プリセットを管理します。")
+
+        mode_tooltips = [
+            "比率(%)で拡大縮小します。",
+            "幅(px)を固定して変換します。",
+            "高さ(px)を固定して変換します。",
+            "幅と高さを固定して変換します。",
+        ]
+        for button, text in zip(self.mode_radio_buttons, mode_tooltips):
+            self._register_tooltip(button, text)
+
+        self._register_tooltip(self.ratio_entry, "比率(%)を入力します。")
+        self._register_tooltip(self.entry_w_single, "幅(px)を入力します。")
+        self._register_tooltip(self.entry_h_single, "高さ(px)を入力します。")
+        self._register_tooltip(self.entry_w_fixed, "固定幅(px)を入力します。")
+        self._register_tooltip(self.entry_h_fixed, "固定高(px)を入力します。")
+
+        self._register_tooltip(self.preview_button, "選択画像のプレビューを更新します。")
+        self._register_tooltip(self.save_button, "選択中の1枚を保存します。")
+        self._register_tooltip(
+            self.batch_button,
+            "現在設定を全画像へ一括適用します。",
+        )
+        self._register_tooltip(self.zoom_cb, "プレビュー倍率を切り替えます。")
+
+        self._register_tooltip(self.ui_mode_segment, "簡易/プロを切り替えます。")
+        self._register_tooltip(self.appearance_mode_segment, "テーマを切り替えます。")
+        self._register_tooltip(self.details_toggle_button, "詳細設定の表示を切り替えます。")
+        self._register_tooltip(self.metadata_toggle_button, "メタデータ表示を切り替えます。")
+        self._register_tooltip(self.output_format_menu, "出力形式を選択します。")
+        self._register_tooltip(self.quality_menu, "圧縮品質を選択します。")
+        self._register_tooltip(self.exif_mode_menu, "EXIFの扱いを選択します。")
+        self._register_tooltip(self.remove_gps_check, "EXIF内のGPS情報を削除します。")
+        self._register_tooltip(self.dry_run_check, "保存せずに処理結果を確認します。")
+        self._register_tooltip(self.verbose_log_check, "詳細ログを有効化します。")
+        self._register_tooltip(self.exif_preview_button, "EXIF変更内容を確認します。")
+        self._register_tooltip(self.open_log_folder_button, "ログ保存フォルダを開きます。")
+        self._register_tooltip(self.webp_method_menu, "WEBP方式を選択します。")
+        self._register_tooltip(self.webp_lossless_check, "WEBPを可逆圧縮で保存します。")
+        self._register_tooltip(self.avif_speed_menu, "AVIF速度を選択します。")
+        self._register_tooltip(self.cancel_button, "実行中の処理を中断します。")
 
     def _refresh_preset_menu(self, selected_preset_id: Optional[str] = None) -> None:
         label_to_id: Dict[str, str] = {}
@@ -1408,6 +1491,7 @@ class ResizeApp(customtkinter.CTk):
             )
             self._style_secondary_button(button)
             button.pack(side="left", padx=(0, 6))
+            self._register_tooltip(button, self._recent_setting_tooltip_text(entry))
             self._recent_setting_buttons.append(button)
 
     def _apply_recent_setting(self, fingerprint: str) -> None:
@@ -2597,6 +2681,7 @@ class ResizeApp(customtkinter.CTk):
         self.exif_datetime_original_var.set(str(self.settings.get("exif_datetime_original", "")))
         self.dry_run_var.set(self._to_bool(self.settings.get("dry_run", False)))
         self.verbose_log_var.set(self._to_bool(self.settings.get("verbose_logging", False)))
+        self.settings["show_tooltips"] = self._to_bool(self.settings.get("show_tooltips", True))
         details_expanded = self.settings.get("details_expanded", False)
         if not isinstance(details_expanded, bool):
             details_expanded = str(details_expanded).lower() in {"1", "true", "yes", "on"}
@@ -2606,9 +2691,10 @@ class ResizeApp(customtkinter.CTk):
 
         # ウィンドウサイズ復元
         try:
-            self.geometry(self.settings["window_geometry"])
+            saved_geometry = self._normalize_window_geometry(self.settings.get("window_geometry"))
+            self.geometry(saved_geometry)
         except Exception:
-            self.geometry("1200x800")  # フォールバック
+            self.geometry(DEFAULT_WINDOW_GEOMETRY)  # フォールバック
         
         # ズーム設定復元
         self.zoom_var.set(self.settings["zoom_preference"])
@@ -2619,6 +2705,19 @@ class ResizeApp(customtkinter.CTk):
         self._refresh_recent_settings_buttons()
         self._update_empty_state_hint()
         self._update_settings_summary()
+
+    @staticmethod
+    def _normalize_window_geometry(value: Any) -> str:
+        """ウィンドウジオメトリを正規化し、最小横幅を保証する。"""
+        geometry_text = str(value or DEFAULT_WINDOW_GEOMETRY).strip()
+        matched = WINDOW_GEOMETRY_PATTERN.match(geometry_text)
+        if not matched:
+            return DEFAULT_WINDOW_GEOMETRY
+
+        width = max(int(matched.group(1)), MIN_WINDOW_WIDTH)
+        height = max(int(matched.group(2)), 1)
+        position = matched.group(3) or ""
+        return f"{width}x{height}{position}"
     
     def _save_current_settings(self):
         """現在の設定を保存"""
@@ -2642,6 +2741,7 @@ class ResizeApp(customtkinter.CTk):
             "exif_datetime_original": self.exif_datetime_original_var.get(),
             "dry_run": self.dry_run_var.get(),
             "verbose_logging": self.verbose_log_var.get(),
+            "show_tooltips": self._to_bool(self.settings.get("show_tooltips", True)),
             "details_expanded": self.details_expanded,
             "metadata_panel_expanded": self.metadata_expanded,
             "window_geometry": self.geometry(),
@@ -3886,6 +3986,7 @@ class ResizeApp(customtkinter.CTk):
                 corner_radius=8,
             )
             button.pack(fill="x", padx=8, pady=4)
+            self._register_tooltip(button, f"この画像を選択します。\n{job.path}")
             self.file_buttons.append(button)
         self._update_empty_state_hint()
         if self.jobs:
@@ -4430,7 +4531,7 @@ class ResizeApp(customtkinter.CTk):
         dialog = customtkinter.CTkToplevel(self)
         self._settings_dialog = dialog
         dialog.title("設定")
-        dialog.geometry("640x420")
+        dialog.geometry("640x470")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -4452,6 +4553,9 @@ class ResizeApp(customtkinter.CTk):
                 self._normalized_pro_input_mode(str(self.settings.get("pro_input_mode", "recursive"))),
                 "フォルダ再帰",
             )
+        )
+        show_tooltips_var = customtkinter.BooleanVar(
+            value=self._to_bool(self.settings.get("show_tooltips", True))
         )
         default_output_dir_var = customtkinter.StringVar(
             value=str(self.settings.get("default_output_dir", ""))
@@ -4491,6 +4595,7 @@ class ResizeApp(customtkinter.CTk):
             pro_input_var.set(
                 PRO_INPUT_MODE_ID_TO_LABEL.get(defaults["pro_input_mode"], "フォルダ再帰")
             )
+            show_tooltips_var.set(self._to_bool(defaults.get("show_tooltips", True)))
             default_output_dir_var.set(str(defaults.get("default_output_dir", "")))
             default_preset_var.set(PRESET_NONE_LABEL)
 
@@ -4531,6 +4636,9 @@ class ResizeApp(customtkinter.CTk):
             self.settings["pro_input_mode"] = pro_input_mode
             self.settings["default_output_dir"] = default_output_dir
             self.settings["default_preset_id"] = default_preset_id
+            self.settings["show_tooltips"] = bool(show_tooltips_var.get())
+            if not self.settings["show_tooltips"]:
+                self._tooltip_manager.hide()
 
             self._apply_ui_mode()
             self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
@@ -4550,7 +4658,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
-        customtkinter.CTkOptionMenu(
+        ui_mode_menu = customtkinter.CTkOptionMenu(
             dialog,
             values=list(UI_MODE_LABEL_TO_ID.keys()),
             variable=ui_mode_var,
@@ -4560,7 +4668,9 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
+        )
+        ui_mode_menu.grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
+        self._register_tooltip(ui_mode_menu, "簡易/プロモードを選択します。")
 
         row += 1
         customtkinter.CTkLabel(
@@ -4569,7 +4679,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        customtkinter.CTkOptionMenu(
+        appearance_menu = customtkinter.CTkOptionMenu(
             dialog,
             values=list(APPEARANCE_LABEL_TO_ID.keys()),
             variable=appearance_var,
@@ -4579,7 +4689,29 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        )
+        appearance_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        self._register_tooltip(appearance_menu, "外観テーマを選択します。")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="ホバー説明",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        show_tooltips_check = customtkinter.CTkCheckBox(
+            dialog,
+            text="有効にする",
+            variable=show_tooltips_var,
+            font=self.font_default,
+            fg_color=METALLIC_COLORS["primary"],
+            hover_color=METALLIC_COLORS["hover"],
+            border_color=METALLIC_COLORS["border_medium"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
+        show_tooltips_check.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="w")
+        self._register_tooltip(show_tooltips_check, "ホバー説明の表示を切り替えます。")
 
         row += 1
         customtkinter.CTkLabel(
@@ -4588,7 +4720,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        customtkinter.CTkOptionMenu(
+        output_format_menu = customtkinter.CTkOptionMenu(
             dialog,
             values=self._build_output_format_labels(),
             variable=output_format_var,
@@ -4598,7 +4730,9 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        )
+        output_format_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        self._register_tooltip(output_format_menu, "起動時の既定出力形式を選択します。")
 
         row += 1
         customtkinter.CTkLabel(
@@ -4607,7 +4741,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        customtkinter.CTkOptionMenu(
+        quality_menu = customtkinter.CTkOptionMenu(
             dialog,
             values=QUALITY_VALUES,
             variable=quality_var,
@@ -4617,7 +4751,9 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        )
+        quality_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        self._register_tooltip(quality_menu, "起動時の既定品質を選択します。")
 
         row += 1
         customtkinter.CTkLabel(
@@ -4626,7 +4762,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        customtkinter.CTkOptionMenu(
+        default_preset_menu = customtkinter.CTkOptionMenu(
             dialog,
             values=self._preset_labels_with_none(),
             variable=default_preset_var,
@@ -4636,7 +4772,9 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        )
+        default_preset_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        self._register_tooltip(default_preset_menu, "起動時に使うプリセットを選択します。")
 
         row += 1
         customtkinter.CTkLabel(
@@ -4645,7 +4783,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        customtkinter.CTkOptionMenu(
+        pro_input_menu = customtkinter.CTkOptionMenu(
             dialog,
             values=list(PRO_INPUT_MODE_LABEL_TO_ID.keys()),
             variable=pro_input_var,
@@ -4655,7 +4793,9 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        )
+        pro_input_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        self._register_tooltip(pro_input_menu, "プロモードの既定入力方法を選択します。")
 
         row += 1
         customtkinter.CTkLabel(
@@ -4667,13 +4807,15 @@ class ResizeApp(customtkinter.CTk):
         default_output_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
         default_output_frame.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
         default_output_frame.grid_columnconfigure(0, weight=1)
-        customtkinter.CTkEntry(
+        default_output_entry = customtkinter.CTkEntry(
             default_output_frame,
             textvariable=default_output_dir_var,
             fg_color=METALLIC_COLORS["input_bg"],
             border_color=METALLIC_COLORS["border_light"],
             text_color=METALLIC_COLORS["text_primary"],
-        ).grid(row=0, column=0, sticky="ew")
+        )
+        default_output_entry.grid(row=0, column=0, sticky="ew")
+        self._register_tooltip(default_output_entry, "既定の保存先フォルダを設定します。")
         browse_button = customtkinter.CTkButton(
             default_output_frame,
             text="参照",
@@ -4683,6 +4825,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self._style_secondary_button(browse_button)
         browse_button.grid(row=0, column=1, padx=(8, 0))
+        self._register_tooltip(browse_button, "フォルダ選択を開きます。")
 
         button_row = row + 1
         button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
@@ -4697,6 +4840,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self._style_secondary_button(reset_button)
         reset_button.pack(side="left", padx=(0, 8))
+        self._register_tooltip(reset_button, "設定値を初期状態へ戻します。")
 
         cancel_button = customtkinter.CTkButton(
             button_frame,
@@ -4707,6 +4851,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self._style_secondary_button(cancel_button)
         cancel_button.pack(side="left", padx=(0, 8))
+        self._register_tooltip(cancel_button, "変更を保存せず閉じます。")
 
         save_button = customtkinter.CTkButton(
             button_frame,
@@ -4717,6 +4862,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self._style_primary_button(save_button)
         save_button.pack(side="left")
+        self._register_tooltip(save_button, "設定を保存して反映します。")
 
         dialog.protocol("WM_DELETE_WINDOW", _close_dialog)
         dialog.focus_set()
