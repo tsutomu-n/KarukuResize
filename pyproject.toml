@@ -77,6 +77,10 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+exclude = [
+    "src/karuku_resizer/resize_core.py",  # パーサバグ回避で除外
+    "tests/legacy",  # 旧アーキテクチャ検証の遺産テストを除外
+]
 
 [tool.ruff.lint]
 # 基本的に全チェック対象にし、必要なものを無視
@@ -84,9 +88,6 @@ ignore = [
     "F401",  # 未使用のインポート
     "F841",  # 未使用の変数
     "E501",  # 行が長すぎる
-]
-exclude = [
-    "src/karuku_resizer/resize_core.py",  # パーサバグ回避で除外
 ]
 
 [tool.ruff.lint.per-file-ignores]

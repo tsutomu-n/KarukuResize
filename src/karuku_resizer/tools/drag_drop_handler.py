@@ -84,13 +84,13 @@ class DragDropHandler:
             if hasattr(self.widget, 'cget'):
                 try:
                     self.original_bg_color = self.widget.cget('fg_color')
-                except:
+                except Exception:
                     self.original_bg_color = None
             
             # ハイライト表示
             try:
                 self.widget.configure(fg_color='#E3F2FD')  # 薄い青色
-            except:
+            except Exception:
                 pass
                 
     def _on_drop_leave(self, event):
@@ -98,7 +98,7 @@ class DragDropHandler:
         if hasattr(self.widget, 'configure') and self.original_bg_color:
             try:
                 self.widget.configure(fg_color=self.original_bg_color)
-            except:
+            except Exception:
                 pass
                 
     def _on_drop(self, event):

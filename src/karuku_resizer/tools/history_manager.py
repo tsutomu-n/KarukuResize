@@ -42,7 +42,7 @@ class HistoryEntry:
         """設定を辞書として取得"""
         try:
             return json.loads(self.settings)
-        except:
+        except Exception:
             return {}
 
 
