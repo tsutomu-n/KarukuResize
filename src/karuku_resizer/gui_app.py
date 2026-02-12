@@ -146,6 +146,7 @@ PRO_INPUT_MODE_LABEL_TO_ID = {
 
 PRO_INPUT_MODE_ID_TO_LABEL = {v: k for k, v in PRO_INPUT_MODE_LABEL_TO_ID.items()}
 PRESET_NONE_LABEL = "未設定"
+USER_PRESET_MAX = 6
 
 EXIF_PREVIEW_TAGS = [
     ("メーカー", 0x010F),
@@ -476,8 +477,49 @@ class ResizeApp(customtkinter.CTk):
             self.settings["default_preset_id"] = ""
             self._save_current_settings()
 
-    def _capture_current_processing_values(self) -> dict[str, Any]:
-        edit_values = self._current_exif_edit_values(show_warning=False)
+    def _select_user_preset_to_replace(
+        self,
+        user_presets: List[ProcessingPreset],
+        *,
+        parent: Optional[customtkinter.CTkToplevel] = None,
+    ) -> Optional[ProcessingPreset]:
+        choices = [preset.name for preset in user_presets]
+        hint = "\n".join(f"- {name}" for name in choices)
+        while True:
+            selected_name = simpledialog.askstring(
+                "プリセット上限",
+                f"ユーザープリセットは最大{USER_PRESET_MAX}件です。\n"
+                "置き換える既存プリセット名を入力してください。\n\n"
+                f"{hint}",
+                parent=parent or self,
+            )
+            if selected_name is None:
+                return None
+            selected_name = selected_name.strip()
+            target = next((preset for preset in user_presets if preset.name == selected_name), None)
+            if target is not None:
+                return target
+            messagebox.showwarning(
+                "プリセット上限",
+                "入力された名前のプリセットが見つかりませんでした。",
+                parent=parent or self,
+            )
+
+    def _capture_current_processing_values(
+        self,
+        *,
+        require_valid_exif_datetime: bool = False,
+        warning_parent: Optional[customtkinter.CTkToplevel] = None,
+    ) -> Optional[dict[str, Any]]:
+        edit_values = self._current_exif_edit_values(
+            show_warning=require_valid_exif_datetime,
+            strict=require_valid_exif_datetime,
+            warning_parent=warning_parent,
+        )
+        if EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep") == "edit" and edit_values is None:
+            return None
+        if edit_values is None:
+            edit_values = ExifEditValues()
         return merge_processing_values(
             {
                 "mode": self.mode_var.get(),
@@ -566,6 +608,13 @@ class ResizeApp(customtkinter.CTk):
         if preset is None:
             return False
 
+        if not preset.is_builtin:
+            preset.last_used_at = datetime.now().isoformat(timespec="seconds")
+            self._persist_user_presets(self._user_presets(), selected_preset_id=preset.preset_id)
+            refreshed = self._get_preset_by_id(preset.preset_id)
+            if refreshed is not None:
+                preset = refreshed
+
         self._apply_processing_values(preset.values)
         self._set_selected_preset_label_by_id(preset.preset_id)
         if persist:
@@ -618,7 +667,9 @@ class ResizeApp(customtkinter.CTk):
             messagebox.showwarning("プリセット保存", "プリセット名を入力してください。")
             return
 
-        captured_values = self._capture_current_processing_values()
+        captured_values = self._capture_current_processing_values(require_valid_exif_datetime=True)
+        if captured_values is None:
+            return
         now = datetime.now().isoformat(timespec="seconds")
         user_presets = self._user_presets()
         existing = next((preset for preset in user_presets if preset.name == name), None)
@@ -634,15 +685,40 @@ class ResizeApp(customtkinter.CTk):
             target_id = existing.preset_id
             status_text = f"プリセット更新: {name}"
         else:
-            new_preset = ProcessingPresetStore.new_user_preset(
-                name=name,
-                description="",
-                values=captured_values,
-                existing_ids=[preset.preset_id for preset in self.processing_presets],
-            )
-            user_presets.append(new_preset)
-            target_id = new_preset.preset_id
-            status_text = f"プリセット保存: {name}"
+            if len(user_presets) >= USER_PRESET_MAX:
+                replace_target = self._select_user_preset_to_replace(user_presets)
+                if replace_target is None:
+                    return
+                if not messagebox.askyesno(
+                    "プリセット置換",
+                    f"「{replace_target.name}」を「{name}」で置き換えますか？",
+                ):
+                    return
+                if any(
+                    preset.preset_id != replace_target.preset_id and preset.name == name
+                    for preset in user_presets
+                ):
+                    messagebox.showwarning(
+                        "プリセット保存",
+                        f"同名のユーザープリセット「{name}」が既に存在します。",
+                    )
+                    return
+                replace_target.name = name
+                replace_target.description = ""
+                replace_target.values = merge_processing_values(captured_values)
+                replace_target.updated_at = now
+                target_id = replace_target.preset_id
+                status_text = f"プリセット置換: {name}"
+            else:
+                new_preset = ProcessingPresetStore.new_user_preset(
+                    name=name,
+                    description="",
+                    values=captured_values,
+                    existing_ids=[preset.preset_id for preset in self.processing_presets],
+                )
+                user_presets.append(new_preset)
+                target_id = new_preset.preset_id
+                status_text = f"プリセット保存: {name}"
 
         self._persist_user_presets(user_presets, selected_preset_id=target_id)
         self._set_selected_preset_label_by_id(target_id)
@@ -790,7 +866,12 @@ class ResizeApp(customtkinter.CTk):
                     return
 
             updated_desc = description_var.get().strip()
-            updated_values = self._capture_current_processing_values()
+            updated_values = self._capture_current_processing_values(
+                require_valid_exif_datetime=True,
+                warning_parent=dialog,
+            )
+            if updated_values is None:
+                return
 
             user_presets: List[ProcessingPreset] = []
             for existing in self._user_presets():
@@ -2332,16 +2413,25 @@ class ResizeApp(customtkinter.CTk):
         self.avif_speed_var.set(str(normalized))
         return normalized
 
-    def _current_exif_edit_values(self, show_warning: bool = True) -> ExifEditValues:
+    def _current_exif_edit_values(
+        self,
+        show_warning: bool = True,
+        *,
+        strict: bool = False,
+        warning_parent: Optional[customtkinter.CTkToplevel] = None,
+    ) -> Optional[ExifEditValues]:
         datetime_text = self.exif_datetime_original_var.get().strip()
         if datetime_text and not self._validate_exif_datetime(datetime_text):
             if show_warning:
                 messagebox.showwarning(
                     "EXIF日時形式",
-                    "撮影日時は YYYY:MM:DD HH:MM:SS 形式で入力してください",
+                    "撮影日時は YYYY:MM:DD HH:MM:SS 形式で入力してください。\n"
+                    "不正な値のため、この操作を中止しました。",
+                    parent=warning_parent or self,
                 )
+            if strict:
+                return None
             datetime_text = ""
-            self.exif_datetime_original_var.set("")
 
         return ExifEditValues(
             artist=self.exif_artist_var.get(),
@@ -2433,12 +2523,18 @@ class ResizeApp(customtkinter.CTk):
         except ValueError:
             return False
 
-    def _build_save_options(self, output_format: str, exif_edit_values: Optional[ExifEditValues] = None) -> SaveOptions:
+    def _build_save_options(
+        self,
+        output_format: str,
+        exif_edit_values: Optional[ExifEditValues] = None,
+    ) -> Optional[SaveOptions]:
         pro_mode = self._is_pro_mode()
         exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
         edit_values = exif_edit_values
         if exif_mode == "edit" and edit_values is None:
-            edit_values = self._current_exif_edit_values(show_warning=True)
+            edit_values = self._current_exif_edit_values(show_warning=True, strict=True)
+            if edit_values is None:
+                return None
         return SaveOptions(
             output_format=output_format,  # type: ignore[arg-type]
             quality=self._current_quality(),
@@ -3196,6 +3292,8 @@ class ResizeApp(customtkinter.CTk):
         save_path = Path(save_path_str)
         self.settings["last_output_dir"] = str(save_path.parent)
         options = self._build_save_options(output_format)
+        if options is None:
+            return
         result = save_image(
             source_image=job.image,
             resized_image=job.resized,
@@ -3215,11 +3313,13 @@ class ResizeApp(customtkinter.CTk):
         self.status_var.set(msg)
         messagebox.showinfo("保存結果", msg)
 
-    def _build_batch_save_options(self, reference_output_format: str) -> SaveOptions:
+    def _build_batch_save_options(self, reference_output_format: str) -> Optional[SaveOptions]:
         exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
         batch_exif_edit_values = (
-            self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
+            self._current_exif_edit_values(show_warning=True, strict=True) if exif_mode == "edit" else None
         )
+        if exif_mode == "edit" and batch_exif_edit_values is None:
+            return None
         return self._build_save_options(
             reference_output_format, exif_edit_values=batch_exif_edit_values
         )
@@ -3431,6 +3531,8 @@ class ResizeApp(customtkinter.CTk):
             reference_output_format, reference_output_format.upper()
         )
         batch_options = self._build_batch_save_options(reference_output_format)
+        if batch_options is None:
+            return
 
         if not self._confirm_batch_save(
             reference_job=reference_job,

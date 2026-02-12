@@ -54,6 +54,7 @@ class ProcessingPreset:
     is_builtin: bool = False
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    last_used_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -64,6 +65,7 @@ class ProcessingPreset:
             "is_builtin": bool(self.is_builtin),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "last_used_at": self.last_used_at,
         }
         return payload
 
@@ -77,6 +79,7 @@ class ProcessingPreset:
             is_builtin=bool(data.get("is_builtin", False)),
             created_at=str(data.get("created_at", datetime.now().isoformat(timespec="seconds"))),
             updated_at=str(data.get("updated_at", datetime.now().isoformat(timespec="seconds"))),
+            last_used_at=str(data.get("last_used_at", "")),
         )
 
 
@@ -190,12 +193,14 @@ class ProcessingPresetStore:
             users = self._migrate_legacy_presets()
             if users:
                 self.save_users(users)
+        users = _sort_user_presets(users)
         merged = builtins + users
         return merged
 
     def save_users(self, presets: Iterable[ProcessingPreset]) -> None:
+        sorted_users = _sort_user_presets([preset for preset in presets if not preset.is_builtin])
         user_payload = [
-            preset.to_dict() for preset in presets if not preset.is_builtin and preset.preset_id
+            preset.to_dict() for preset in sorted_users if preset.preset_id
         ]
         payload = {
             "schema_version": SCHEMA_VERSION,
@@ -360,3 +365,32 @@ def _build_unique_user_preset_id(
         candidate = f"{base}-{counter}"
         counter += 1
     return candidate
+
+
+def _parse_iso_datetime(value: str) -> Optional[datetime]:
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _sort_user_presets(presets: list[ProcessingPreset]) -> list[ProcessingPreset]:
+    used: list[ProcessingPreset] = []
+    unused: list[ProcessingPreset] = []
+    for preset in presets:
+        if str(preset.last_used_at).strip():
+            used.append(preset)
+        else:
+            unused.append(preset)
+
+    used.sort(
+        key=lambda preset: _parse_iso_datetime(preset.last_used_at) or datetime.min,
+        reverse=True,
+    )
+    unused.sort(
+        key=lambda preset: _parse_iso_datetime(preset.created_at) or datetime.min,
+    )
+    return used + unused

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from karuku_resizer.processing_preset_store import (
+    ProcessingPreset,
     ProcessingPresetStore,
     builtin_processing_presets,
     default_processing_values,
@@ -76,3 +77,63 @@ def test_migrate_legacy_presets(tmp_path: Path) -> None:
     assert user.values["exif_mode"] == "remove"
     assert preset_path.exists()
     assert legacy_path.with_suffix(".json.migrated.bak").exists()
+
+
+def test_user_presets_sorted_by_last_used_then_created(tmp_path: Path) -> None:
+    preset_path = tmp_path / "processing_presets.json"
+    store = ProcessingPresetStore(preset_path=preset_path, legacy_paths=[])
+
+    base_values = default_processing_values()
+    user_presets = [
+        ProcessingPreset(
+            preset_id="user-unused-new",
+            name="未使用(新)",
+            description="",
+            values=base_values.copy(),
+            is_builtin=False,
+            created_at="2026-01-02T10:00:00",
+            updated_at="2026-01-02T10:00:00",
+            last_used_at="",
+        ),
+        ProcessingPreset(
+            preset_id="user-used-old",
+            name="使用済(旧)",
+            description="",
+            values=base_values.copy(),
+            is_builtin=False,
+            created_at="2026-01-01T10:00:00",
+            updated_at="2026-01-01T10:00:00",
+            last_used_at="2026-02-01T08:00:00",
+        ),
+        ProcessingPreset(
+            preset_id="user-unused-old",
+            name="未使用(旧)",
+            description="",
+            values=base_values.copy(),
+            is_builtin=False,
+            created_at="2026-01-01T09:00:00",
+            updated_at="2026-01-01T09:00:00",
+            last_used_at="",
+        ),
+        ProcessingPreset(
+            preset_id="user-used-new",
+            name="使用済(新)",
+            description="",
+            values=base_values.copy(),
+            is_builtin=False,
+            created_at="2026-01-03T10:00:00",
+            updated_at="2026-01-03T10:00:00",
+            last_used_at="2026-02-03T08:00:00",
+        ),
+    ]
+    store.save_users(user_presets)
+
+    loaded = store.load()
+    loaded_user_ids = [preset.preset_id for preset in loaded if not preset.is_builtin]
+
+    assert loaded_user_ids == [
+        "user-used-new",
+        "user-used-old",
+        "user-unused-old",
+        "user-unused-new",
+    ]
