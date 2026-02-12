@@ -13,6 +13,7 @@ import sys
 import json
 import shutil
 import time
+import argparse
 from pathlib import Path
 from typing import Optional, Union, Tuple
 from PIL import Image, UnidentifiedImageError
@@ -109,61 +110,6 @@ def get_windows_error_message(error_code):
         str: 日本語エラーメッセージ
     """
     return WINDOWS_ERROR_MESSAGES.get(error_code, "不明なエラー")
-
-
-def get_japanese_error_message(error):
-    """
-    例外から日本語のエラーメッセージを生成します
-
-    Args:
-        error: 例外オブジェクト
-
-    Returns:
-        str: 日本語エラーメッセージ
-    """
-    error_type = type(error).__name__
-    error_msg = str(error)
-    
-    # ファイル関連エラー
-    if isinstance(error, FileNotFoundError):
-        return f"ファイルが見つかりません: {error_msg}"
-    elif isinstance(error, PermissionError):
-        return f"アクセス権限がありません: {error_msg}"
-    elif isinstance(error, IsADirectoryError):
-        return f"ディレクトリが指定されました（ファイルを指定してください）: {error_msg}"
-    elif isinstance(error, NotADirectoryError):
-        return f"ディレクトリではありません: {error_msg}"
-    
-    # 画像関連エラー
-    elif isinstance(error, UnidentifiedImageError):
-        return f"画像ファイルとして認識できません: {error_msg}"
-    elif error_type == "DecompressionBombError":
-        return f"画像が大きすぎます（圧縮爆弾の可能性）: {error_msg}"
-    
-    # OS関連エラー
-    elif isinstance(error, OSError):
-        if hasattr(error, 'winerror') and error.winerror:
-            return get_windows_error_message(error.winerror)
-        elif error.errno == 28:  # ENOSPC
-            return "ディスク容量が不足しています"
-        elif error.errno == 36:  # ENAMETOOLONG
-            return "ファイル名が長すぎます"
-        else:
-            return f"システムエラー: {error_msg}"
-    
-    # メモリ関連エラー
-    elif isinstance(error, MemoryError):
-        return "メモリ不足エラー: 画像が大きすぎるか、使用可能なメモリが不足しています"
-    
-    # 値関連エラー
-    elif isinstance(error, ValueError):
-        return f"無効な値: {error_msg}"
-    elif isinstance(error, TypeError):
-        return f"型エラー: {error_msg}"
-    
-    # その他
-    else:
-        return f"{error_type}: {error_msg}"
 
 
 def retry_on_file_error(func, *args, max_retries=3, retry_delay=0.5, **kwargs):
@@ -1647,8 +1593,6 @@ def load_progress(input_file="progress.json"):
 # ----------------------------------------------------------------------
 # CLI Entry Point
 # ----------------------------------------------------------------------
-import argparse
-
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Create argument parser for CLI use."""
     p = argparse.ArgumentParser(
