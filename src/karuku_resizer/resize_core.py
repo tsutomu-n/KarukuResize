@@ -14,6 +14,7 @@ import json
 import shutil
 import time
 import argparse
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Union, Tuple
 from PIL import Image, UnidentifiedImageError
@@ -40,18 +41,45 @@ def setup_logging(
 ):
     """ロギングの設定を行います"""
     logger.remove()  # デフォルト設定を削除
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{function}</cyan>: <white>{message}</white>",
-        colorize=True,
-        level=console_level,
-    )
+
+    rich_enabled = False
+    try:
+        from rich.console import Console
+        from rich.logging import RichHandler
+
+        logger.add(
+            RichHandler(
+                console=Console(stderr=True, width=120),
+                rich_tracebacks=True,
+                tracebacks_show_locals=True,
+                markup=True,
+                show_path=False,
+            ),
+            level=console_level,
+            format="{message}",
+            backtrace=True,
+            diagnose=False,
+        )
+        rich_enabled = True
+    except Exception:
+        logger.add(
+            sys.stderr,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{function}</cyan>: <white>{message}</white>",
+            colorize=True,
+            level=console_level,
+            backtrace=True,
+            diagnose=False,
+        )
+
     logger.add(
         log_file,
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {function}: {message}",
         rotation="1 day",
         level=file_level,
+        encoding="utf-8",
     )
+    if rich_enabled:
+        logger.debug("Rich logging is enabled for CLI console output")
 
 
 def get_directory_size(path):
@@ -1718,6 +1746,19 @@ def _emit_cli_summary_json(summary: dict[str, Any]) -> None:
     print(json.dumps(summary, ensure_ascii=False))
 
 
+def _interpret_resize_result(result: Any) -> tuple[bool, str]:
+    if isinstance(result, tuple):
+        if not result:
+            return False, "空の処理結果が返されました"
+        success = bool(result[0])
+        if success:
+            return True, ""
+        if len(result) >= 2 and isinstance(result[1], str) and result[1].strip():
+            return False, result[1].strip()
+        return False, "処理失敗（詳細はログ参照）"
+    return False, "不正な処理結果が返されました"
+
+
 def main() -> None:  # noqa: D401
     """CLI を実行列に登録されています"""
 
@@ -1828,7 +1869,7 @@ def main() -> None:  # noqa: D401
     for img_path in image_paths:
         dst_path = get_destination_path(img_path, src_dir, dst_dir)
         try:
-            resize_and_compress_image(
+            result = resize_and_compress_image(
                 source_path=img_path,
                 dest_path=dst_path,
                 target_width=args.width,
@@ -1836,8 +1877,19 @@ def main() -> None:  # noqa: D401
                 format=args.format,
                 dry_run=args.dry_run,
             )
-            processed.append(img_path)
-            logger.info(f"✔ {img_path.name} → {dst_path.name}")
+            success, error_detail = _interpret_resize_result(result)
+            if success:
+                processed.append(img_path)
+                logger.info(f"✔ {img_path.name} → {dst_path.name}")
+                continue
+            logger.error(f"❌ {img_path.name}: {error_detail}")
+            remaining.append(img_path)
+            failed_files.append(
+                {
+                    "file": str(img_path),
+                    "error": error_detail,
+                }
+            )
         except Exception as e:
             error_detail = get_japanese_error_message(e)
             logger.error(f"❌ {img_path.name}: {error_detail}")

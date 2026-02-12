@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "loguru>=0.7.3,<0.8.0",
+    "rich>=13.7.1,<15.0.0",
     "pillow>=9.0.0",
     "tqdm>=4.60.0,<5.0.0",
     "TkEasyGUI>=0.2.20,<0.3.0",
