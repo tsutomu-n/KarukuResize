@@ -41,8 +41,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # 依存関係のインストール
-pip install -e .
-pip install pyinstaller
+uv sync --group dev
 ```
 
 ### 3. ローカルビルド
@@ -50,23 +49,23 @@ pip install pyinstaller
 #### 自動ビルドスクリプトを使用する場合
 
 ```bash
-python build_scripts/build_local.py
+uv run karukuresize-build-exe
 ```
 
 #### 手動でビルドする場合
 
 ```bash
-# クリーンビルド
-pyinstaller karukuresize.spec --clean --noconfirm
+# 上記コマンドが内部でPyInstallerを実行します
+uv run karukuresize-build-exe
 ```
 
 ### 4. ビルド結果
 
-ビルドが成功すると、`dist/KarukuResize/`ディレクトリに実行ファイルが生成されます。
+ビルドが成功すると、`dist/`ディレクトリに onefile 実行ファイルが生成されます。
 
-- **Windows**: `dist/KarukuResize/KarukuResize.exe`
-- **macOS**: `dist/KarukuResize.app`または`dist/KarukuResize/karukuresize`
-- **Linux**: `dist/KarukuResize/karukuresize`
+- **Windows**: `dist/KarukuResize.exe`
+- **macOS**: `dist/KarukuResize`
+- **Linux**: `dist/KarukuResize`
 
 ## GitHub Actionsでの自動ビルド
 
@@ -100,7 +99,8 @@ pip install customtkinter
 
 ### tkinterdnd2のエラー
 
-hook-tkinterdnd2.pyファイルがプロジェクトルートに存在することを確認してください。
+`src/karuku_resizer/tools/hook-tkinterdnd2.py` が存在し、`karukuresize-build-exe` 実行時に
+`--additional-hooks-dir` で同ディレクトリが渡されることを確認してください。
 
 ### 日本語フォントの問題
 
@@ -118,15 +118,15 @@ Windows 10/11で長いパスのサポートを有効にする：
 ### ビルドサイズの最適化
 
 ビルドサイズを削減するには：
-1. 不要な依存関係を除外（specファイルの`excludes`に追加）
-2. UPXを使用した圧縮（既定で有効）
-3. 一つのファイルモードは推奨しません（CustomTkinterの制限）
+1. 不要な依存関係をアンインストールしてビルド対象を最小化
+2. `src/karuku_resizer/build_exe.py` の引数を見直し、不要な hidden import を減らす
+3. UPX圧縮（PyInstaller側）を有効活用する
 
 ## 開発者向け情報
 
-### specファイルのカスタマイズ
+### ビルド設定のカスタマイズ
 
-`karukuresize.spec`ファイルを編集して、ビルド設定をカスタマイズできます：
+`src/karuku_resizer/build_exe.py` の `PYINSTALLER_ARGS` を編集して、ビルド設定をカスタマイズできます：
 
 - アイコンの追加
 - 追加のデータファイル
@@ -138,7 +138,7 @@ Windows 10/11で長いパスのサポートを有効にする：
 デバッグ情報を含むビルドを作成：
 
 ```bash
-pyinstaller karukuresize.spec --debug all
+PYINSTALLER_LOG_LEVEL=DEBUG uv run karukuresize-build-exe
 ```
 
 ### 署名と公証

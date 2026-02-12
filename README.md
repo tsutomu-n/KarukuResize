@@ -116,7 +116,7 @@ python -m karuku_resizer.resize_core -s 入力フォルダ -d 出力フォルダ
 
 ### WSL2
 - **CLI推奨** - 最も安定して動作
-- **GUI使用時** - [WSL2ガイド](./WSL2_GUIDE.md)参照（Windows側での実行を推奨）
+- **GUI使用時** - [WSL2ガイド](./docs/WSL2_GUIDE.md)参照（Windows側での実行を推奨）
 
 ### macOS/Linux
 すべての機能が利用可能です。
@@ -151,14 +151,14 @@ karukuresize-cli -s input -d output -w 1280 -q 85
 karukuresize-gui
 ```
 
-詳細は[クイックスタートガイド](./QUICK_START.md)をご覧ください。
+詳細は[クイックスタートガイド](./docs/QUICK_START.md)をご覧ください。
 
 ## 📚 ドキュメント
 
-- [インストールガイド](./INSTALLATION.md) - 詳細なインストール手順
-- [クイックスタート](./QUICK_START.md) - すぐに使い始めるためのガイド
-- [WSL2ガイド](./WSL2_GUIDE.md) - WSL2での使用方法
-- [Windowsガイド](./WINDOWS_GUIDE.md) - Windows 11での使用方法
+- [インストールガイド](./docs/INSTALLATION.md) - 詳細なインストール手順
+- [クイックスタート](./docs/QUICK_START.md) - すぐに使い始めるためのガイド
+- [WSL2ガイド](./docs/WSL2_GUIDE.md) - WSL2での使用方法
+- [Windowsガイド](./docs/WINDOWS_GUIDE.md) - Windows 11での使用方法
 - [開発者ガイド](./docs/developer_guide.md) - 開発者向けの技術情報
 - [APIリファレンス](./docs/api_reference.md) - 関数とクラスの詳細仕様
 

@@ -58,37 +58,29 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install uv
-          uv pip install -e .
-          uv pip install pyinstaller
+          uv sync --group dev
           
       - name: Build with PyInstaller
         run: |
-          pyinstaller karukuresize.spec --clean --noconfirm
+          uv run karukuresize-build-exe
           
       - name: Create distributable package (Windows)
         if: runner.os == 'Windows'
         run: |
-          # Windowsの配布用パッケージを作成
-          Compress-Archive -Path dist\KarukuResize\* -DestinationPath KarukuResize-Windows.zip
+          # onefile成果物をZIP化
+          Compress-Archive -Path dist\KarukuResize.exe -DestinationPath KarukuResize-Windows.zip
           
       - name: Create distributable package (macOS)
         if: runner.os == 'macOS'
         run: |
-          # macOSの配布用パッケージを作成
-          cd dist
-          # .appバンドルが作成されている場合
-          if [ -d "KarukuResize.app" ]; then
-            zip -r ../KarukuResize-macOS.zip KarukuResize.app
-          else
-            zip -r ../KarukuResize-macOS.zip KarukuResize
-          fi
+          # onefile成果物をZIP化
+          zip -j KarukuResize-macOS.zip dist/KarukuResize
           
       - name: Create distributable package (Linux)
         if: runner.os == 'Linux'
         run: |
-          # Linuxの配布用パッケージを作成
-          cd dist
-          tar -czf ../KarukuResize-Linux.tar.gz KarukuResize
+          # onefile成果物をtar.gz化
+          tar -czf KarukuResize-Linux.tar.gz -C dist KarukuResize
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -128,22 +120,22 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           Expand-Archive -Path KarukuResize-Windows.zip -DestinationPath test
-          # バージョン情報の確認など、基本的なテストを実行
-          ./test/KarukuResize/KarukuResize.exe --version || echo "Version check not implemented"
+          # onefile実行ファイルの存在確認
+          if (-not (Test-Path .\test\KarukuResize.exe)) { throw "KarukuResize.exe not found" }
           
       - name: Test executable (macOS)
         if: runner.os == 'macOS'
         run: |
           unzip KarukuResize-macOS.zip
-          # 実行権限の確認
-          ls -la KarukuResize.app/Contents/MacOS/ || ls -la KarukuResize/
+          # onefile実行ファイルの存在確認
+          ls -la KarukuResize
           
       - name: Test executable (Linux)
         if: runner.os == 'Linux'
         run: |
           tar -xzf KarukuResize-Linux.tar.gz
-          # 実行権限の確認
-          ls -la KarukuResize/
+          # onefile実行ファイルの存在確認
+          ls -la KarukuResize
           
   release:
     needs: test-build
