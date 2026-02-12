@@ -166,7 +166,9 @@ class ImagePreviewWidget(ctk.CTkFrame):
             self.after(0, lambda: self._update_image(image, info))
             
         except Exception as e:
-            self.after(0, lambda: self._show_error(f"画像の読み込みエラー: {str(e)}"))
+            # capture exception message now; lambda runs later on UI thread
+            error_message = f"画像の読み込みエラー: {e}"
+            self.after(0, lambda msg=error_message: self._show_error(msg))
             
     def _update_image(self, image: Image.Image, info: ImageInfo):
         """画像を更新"""

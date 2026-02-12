@@ -10,7 +10,7 @@ UIウィジェットから処理パラメータを統一的に抽出します。
 from typing import Dict, Any, Optional
 from pathlib import Path
 import customtkinter as ctk
-from image_processing_config import ImageProcessingConfig
+from ..image_processing_config import ImageProcessingConfig
 
 
 class UIParameterExtractor:

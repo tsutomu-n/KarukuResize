@@ -220,8 +220,8 @@ karukuresize-cli -s photos -d thumbnails -w 300 -q 90
 ## 📚 詳細ドキュメント
 
 - [インストール詳細](./INSTALLATION.md)
-- [開発者向け情報](./docs/developer_guide.md)
-- [API仕様](./docs/api_reference.md)
+- [開発者向け情報](./developer_guide.md)
+- [API仕様](./api_reference.md)
 
 ## 📞 サポート
 

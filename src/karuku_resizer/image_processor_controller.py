@@ -14,9 +14,9 @@ from typing import Dict, Any, Optional, Tuple, Callable
 from PIL import Image
 import time
 
-from resize_core import resize_and_compress_image, format_file_size
-from image_processing_config import ImageProcessingConfig
-from ui_parameter_extractor import UIParameterExtractor
+from .resize_core import resize_and_compress_image, format_file_size
+from .image_processing_config import ImageProcessingConfig
+from .tools.ui_parameter_extractor import UIParameterExtractor
 
 
 class ProcessingResult:

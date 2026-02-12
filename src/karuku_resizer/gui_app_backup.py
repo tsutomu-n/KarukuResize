@@ -27,7 +27,7 @@ from PIL import Image, ImageTk, ImageOps
 from PIL.Image import Resampling
 
 # ヘルプコンテンツとダイアログをインポート
-from karuku_resizer.constants import HELP_CONTENT, STEP_DESCRIPTIONS
+from karuku_resizer.help_content import HELP_CONTENT, STEP_DESCRIPTIONS
 from karuku_resizer.help_dialog import HelpDialog
 
 DEFAULT_PREVIEW = 480
@@ -429,7 +429,7 @@ class ResizeApp(customtkinter.CTk):
             messagebox.showwarning("注意", "画像が選択されていません。")
             return
 
-{{ ... }}
+        # omitted backup logic
         job = self.jobs[self.current_index]
         if not job.resized:
             self._preview_current() # Process if not already done
