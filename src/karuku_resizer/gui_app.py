@@ -17,6 +17,7 @@ import logging
 import os
 import platform
 import queue
+import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -45,6 +46,13 @@ from karuku_resizer.image_save_pipeline import (
     resolve_output_format,
     save_image,
     supported_output_formats,
+)
+from karuku_resizer.runtime_logging import (
+    DEFAULT_MAX_FILES,
+    DEFAULT_RETENTION_DAYS,
+    RunLogArtifacts,
+    create_run_log_artifacts,
+    write_run_summary,
 )
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
@@ -141,6 +149,7 @@ EXIF_PREVIEW_TAGS = [
 ]
 
 EXIF_GPS_INFO_TAG = 0x8825
+LOG_APP_NAME = "KarukuResize"
 
 
 @dataclass
@@ -180,14 +189,6 @@ class BatchSaveStats:
 
 
 DEBUG = False
-# ログディレクトリを確実に作成
-_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
-if DEBUG:
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(levelname)s %(message)s',
-                        handlers=[logging.FileHandler(_LOG_DIR / 'karuku_debug.log', encoding='utf-8'),
-                                  logging.StreamHandler()])
 
 logger = logging.getLogger(__name__)
 
@@ -296,13 +297,88 @@ class ResizeApp(customtkinter.CTk):
         self._file_scan_started_at = 0.0
         self._file_load_started_at = 0.0
         self._file_scan_pulse = 0.0
+        self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
+            app_name=LOG_APP_NAME,
+            retention_days=DEFAULT_RETENTION_DAYS,
+            max_files=DEFAULT_MAX_FILES,
+        )
+        self._run_summary_payload = self._create_initial_run_summary()
+        self._run_summary_finalized = False
 
         self._setup_ui()
         self._restore_settings()
         self._apply_log_level()
-        
+        self._write_run_summary_safe()
+
         self.after(0, self._update_mode)  # set initial enable states
-        logging.debug('ResizeApp initialized')
+        logging.info("ResizeApp initialized")
+        logging.info("Run log: %s", self._run_log_artifacts.run_log_path)
+        logging.info("Run summary: %s", self._run_log_artifacts.summary_path)
+
+    def _create_initial_run_summary(self) -> Dict[str, Any]:
+        started_at = datetime.now().isoformat(timespec="seconds")
+        return {
+            "run_id": self._run_log_artifacts.run_id,
+            "started_at": started_at,
+            "finished_at": None,
+            "app_name": LOG_APP_NAME,
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "log_file": str(self._run_log_artifacts.run_log_path),
+            "summary_file": str(self._run_log_artifacts.summary_path),
+            "batch_runs": [],
+            "errors": [],
+            "totals": {
+                "batch_run_count": 0,
+                "processed_count": 0,
+                "failed_count": 0,
+                "dry_run_count": 0,
+                "cancelled_count": 0,
+            },
+        }
+
+    def _write_run_summary_safe(self) -> None:
+        try:
+            write_run_summary(self._run_log_artifacts.summary_path, self._run_summary_payload)
+        except Exception:
+            logging.exception("Failed to write run summary")
+
+    def _finalize_run_summary(self) -> None:
+        if self._run_summary_finalized:
+            return
+        self._run_summary_payload["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        self._run_summary_finalized = True
+        self._write_run_summary_safe()
+
+    def _ensure_run_log_handler(self) -> None:
+        root_logger = logging.getLogger()
+        run_log_path = self._run_log_artifacts.run_log_path
+        log_dir = self._run_log_artifacts.log_dir
+
+        has_run_handler = False
+        for handler in list(root_logger.handlers):
+            if not isinstance(handler, logging.FileHandler):
+                continue
+            base_filename = getattr(handler, "baseFilename", "")
+            if not base_filename:
+                continue
+            handler_path = Path(base_filename)
+            if handler_path == run_log_path:
+                has_run_handler = True
+                continue
+            if handler_path.parent == log_dir and handler_path.name.startswith("run_") and handler_path.suffix == ".log":
+                root_logger.removeHandler(handler)
+                handler.close()
+
+        if has_run_handler:
+            return
+
+        run_log_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(run_log_path, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        root_logger.addHandler(handler)
 
     def _style_primary_button(self, button: customtkinter.CTkButton) -> None:
         button.configure(
@@ -877,6 +953,16 @@ class ResizeApp(customtkinter.CTk):
         self._style_secondary_button(self.exif_preview_button)
         self.exif_preview_button.pack(side="left", padx=(0, 10), pady=8)
 
+        self.open_log_folder_button = customtkinter.CTkButton(
+            self.advanced_controls_frame,
+            text="ログフォルダ",
+            width=110,
+            command=self._open_log_folder,
+            font=self.font_small,
+        )
+        self._style_secondary_button(self.open_log_folder_button)
+        self.open_log_folder_button.pack(side="left", padx=(0, 10), pady=8)
+
         self.codec_controls_frame = customtkinter.CTkFrame(parent)
         self._style_card_frame(self.codec_controls_frame, corner_radius=10)
         self.codec_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
@@ -1120,18 +1206,7 @@ class ResizeApp(customtkinter.CTk):
         level = logging.DEBUG if (self.verbose_log_var.get() and self._is_pro_mode()) else logging.INFO
         root_logger = logging.getLogger()
         root_logger.setLevel(level)
-
-        log_path = _LOG_DIR / "karuku_gui.log"
-        has_file_handler = any(
-            isinstance(h, logging.FileHandler) and Path(h.baseFilename) == log_path
-            for h in root_logger.handlers
-        )
-        if not has_file_handler:
-            handler = logging.FileHandler(log_path, encoding="utf-8")
-            handler.setFormatter(
-                logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-            )
-            root_logger.addHandler(handler)
+        self._ensure_run_log_handler()
 
     def _setup_main_layout(self):
         """メインレイアウトをセットアップ"""
@@ -1557,6 +1632,7 @@ class ResizeApp(customtkinter.CTk):
         if self._is_loading_files:
             self._file_load_cancel_event.set()
         self._save_current_settings()
+        self._finalize_run_summary()
         self.destroy()
 
     # -------------------- validation helpers ---------------------------
@@ -1811,6 +1887,14 @@ class ResizeApp(customtkinter.CTk):
     def _report_callback_exception(self, exc, val, tb):
         # Custom exception handler to log full traceback
         logging.error("Tkinter callback exception", exc_info=(exc, val, tb))
+        self._run_summary_payload["errors"].append(
+            {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "type": exc.__name__,
+                "message": str(val),
+            }
+        )
+        self._write_run_summary_safe()
         messagebox.showerror("例外", f"{exc.__name__}: {val}")
 
     def _update_mode(self, _e=None):
@@ -1993,6 +2077,7 @@ class ResizeApp(customtkinter.CTk):
             self.dry_run_check,
             self.verbose_log_check,
             self.exif_preview_button,
+            self.open_log_folder_button,
             self.webp_method_menu,
             self.webp_lossless_check,
             self.avif_speed_menu,
@@ -2664,6 +2749,48 @@ class ResizeApp(customtkinter.CTk):
                 msg += f"\n- ...ほか {len(stats.failed_details) - len(preview_lines)} 件"
         return msg
 
+    def _record_batch_run_summary(
+        self,
+        *,
+        stats: BatchSaveStats,
+        output_dir: Path,
+        reference_job: ImageJob,
+        reference_target: Tuple[int, int],
+        reference_format_label: str,
+        batch_options: SaveOptions,
+    ) -> None:
+        entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "mode": "dry-run" if batch_options.dry_run else "save",
+            "cancelled": bool(self._cancel_batch),
+            "output_dir": str(output_dir),
+            "reference_file": reference_job.path.name,
+            "reference_target": {
+                "width": reference_target[0],
+                "height": reference_target[1],
+            },
+            "reference_format": reference_format_label,
+            "totals": {
+                "selected_count": len(self.jobs),
+                "processed_count": stats.processed_count,
+                "failed_count": stats.failed_count,
+                "dry_run_count": stats.dry_run_count,
+                "exif_applied_count": stats.exif_applied_count,
+                "exif_fallback_count": stats.exif_fallback_count,
+                "gps_removed_count": stats.gps_removed_count,
+            },
+            "failed_files": list(stats.failed_details),
+        }
+        self._run_summary_payload["batch_runs"].append(entry)
+        totals = self._run_summary_payload["totals"]
+        totals["batch_run_count"] += 1
+        totals["processed_count"] += stats.processed_count
+        totals["failed_count"] += stats.failed_count
+        totals["dry_run_count"] += stats.dry_run_count
+        if self._cancel_batch:
+            totals["cancelled_count"] += 1
+        self._write_run_summary_safe()
+
     def _batch_save(self):
         if self._is_loading_files:
             messagebox.showinfo("処理中", "画像の読み込み中です。完了またはキャンセル後に実行してください。")
@@ -2699,6 +2826,14 @@ class ResizeApp(customtkinter.CTk):
             output_dir=output_dir,
             reference_target=reference_target,
             reference_output_format=reference_output_format,
+            batch_options=batch_options,
+        )
+        self._record_batch_run_summary(
+            stats=stats,
+            output_dir=output_dir,
+            reference_job=reference_job,
+            reference_target=reference_target,
+            reference_format_label=reference_format_label,
             batch_options=batch_options,
         )
         msg = self._build_batch_completion_message(
@@ -2800,6 +2935,23 @@ class ResizeApp(customtkinter.CTk):
     def _show_help(self):
         """使い方ヘルプを表示する"""
         HelpDialog(self, HELP_CONTENT).show()
+
+    def _open_log_folder(self) -> None:
+        log_dir = self._run_log_artifacts.log_dir
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            if os.name == "nt":
+                os.startfile(str(log_dir))  # type: ignore[attr-defined]
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", str(log_dir)])
+            else:
+                subprocess.Popen(["xdg-open", str(log_dir)])
+        except Exception as e:
+            logging.exception("Failed to open log directory: %s", log_dir)
+            messagebox.showerror(
+                "ログフォルダを開けません",
+                f"ログフォルダを開けませんでした。\n{log_dir}\n\n{e}",
+            )
 
     # -------------------- Zoom controls --------------------------------
     def _reset_zoom(self):
