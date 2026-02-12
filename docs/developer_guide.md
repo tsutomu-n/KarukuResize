@@ -81,11 +81,11 @@ pytest --cov=resize_core --cov-report=html
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/yourusername/KarukuResize.git
+git clone https://github.com/tsutomu-n/KarukuResize.git
 cd KarukuResize
 
-# 開発モードでインストール
-uv pip install -e .
+# 依存関係を同期（開発依存を含む）
+uv sync --group dev
 
 # pre-commitフックをインストール
 pre-commit install
@@ -331,17 +331,11 @@ GUIインターフェースを実装：
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/yourusername/KarukuResize.git
+git clone https://github.com/tsutomu-n/KarukuResize.git
 cd KarukuResize
 
-# 開発モードでインストール
-uv add -e .
-
-# 必要な依存関係をインストール
-uv add pillow customtkinter tqdm loguru
-
-# 開発ツールをインストール
-uv add --dev ruff pre-commit pytest
+# 依存関係を同期（開発依存を含む）
+uv sync --group dev
 ```
 
 ### pre-commitのセットアップ

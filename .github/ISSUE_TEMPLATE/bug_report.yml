@@ -1,0 +1,59 @@
+name: Bug report
+description: 不具合報告
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何が起きたかを簡潔に記載してください。
+      placeholder: 例) プロモード再帰読込中にアプリが応答しなくなる
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 再現できる手順を番号付きで記載してください。
+      placeholder: |
+        1. アプリを起動
+        2. プロモードに切替
+        3. フォルダを再帰読込
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待結果
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の結果
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: バージョン / コミット
+      placeholder: 例) v0.2.1 / main@abcdef
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 実行環境
+      description: OS, Python, 実行方法（GUI/CLI/EXE）など
+      placeholder: 例) Windows 11 / Python 3.12 / EXE
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ・スクリーンショット
+      description: 可能であれば貼り付けてください。

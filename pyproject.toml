@@ -4,6 +4,22 @@ version = "0.2.1"
 description = "KarukuResize:日本語対応の画像リサイズ・圧縮ツール（GUI対応版・Windows長パス対応）"
 readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "tsutomu-n" },
+]
+keywords = ["image", "resize", "compression", "gui", "cli", "python"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: Console",
+    "Environment :: X11 Applications",
+    "Topic :: Multimedia :: Graphics",
+]
 dependencies = [
     "loguru>=0.7.3,<0.8.0",
     "rich>=13.7.1,<15.0.0",
@@ -18,6 +34,11 @@ dependencies = [
     "darkdetect>=0.7.1",
     "pillow-avif-plugin>=1.4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tsutomu-n/KarukuResize"
+Repository = "https://github.com/tsutomu-n/KarukuResize"
+Issues = "https://github.com/tsutomu-n/KarukuResize/issues"
 
 [project.scripts]
 # GUIエントリポイント（旧 karukuresize-gui を新パスへ）

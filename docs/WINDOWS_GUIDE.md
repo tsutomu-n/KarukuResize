@@ -13,7 +13,7 @@ Windows 11 で KarukuResize を実行・ビルドするための手順です。
 
 ```powershell
 cd $HOME\Documents
-git clone https://github.com/yourusername/KarukuResize.git
+git clone https://github.com/tsutomu-n/KarukuResize.git
 cd KarukuResize
 
 python -m venv .venv

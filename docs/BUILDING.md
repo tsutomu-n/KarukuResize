@@ -26,7 +26,7 @@
 ### 1. リポジトリのクローン
 
 ```bash
-git clone https://github.com/yourusername/KarukuResize.git
+git clone https://github.com/tsutomu-n/KarukuResize.git
 cd KarukuResize
 ```
 

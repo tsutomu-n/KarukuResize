@@ -1,210 +1,124 @@
 # KarukuResize
 
-「軽く」画像をリサイズする高機能ツール
+KarukuResize は、画像のリサイズと保存を GUI / CLI の両方で扱えるツールです。  
+個人利用での「まとめて整える」「同じ設定をまとめて適用する」作業を、素早く安全に行うことを目的にしています。
 
-## 概要
+## できること
 
-KarukuResizeは画像のリサイズと圧縮を簡単に行えるマルチインターフェースツールです。GUIとCLIの両方に対応しています。日本語環境での使用に最適化され、Windows環境での長パス対応など実用的な機能を多数備えています。
+### GUI
+- 画像プレビューを見ながら設定して保存
+- 出力形式の選択（自動 / JPEG / PNG / WEBP / AVIF）
+- EXIF の保持 / 編集 / 削除、GPS削除、ドライラン
+- 一括適用保存（選択中画像の設定を読込済み全画像へ適用）
+- プロモードの再帰読込（`jpg / jpeg / png`）
+- ドラッグ&ドロップ読込（ファイル / フォルダー）
+- 読込中の進捗表示、キャンセル、失敗のみ再試行
+- 最近使った設定の再適用（最大6件）
 
-## 特徴
+### CLI
+- フォルダー内画像の一括リサイズ保存
+- 再帰探索の ON / OFF
+- 対象拡張子の指定
+- ドライラン
+- 実行結果JSON出力（`--json`）
+- 失敗一覧JSON保存（`--failures-file`）
+- Rich による読みやすいログ出力
 
-- **使いやすいGUIインターフェース** - 直感的な操作で画像処理が可能
-- **パワフルなコマンドラインツール** - バッチ処理やスクリプト自動化に最適
-- **複数フォーマットサポート** - JPEG, PNG, WEBP, GIF, BMP, TIFFなどの主要フォーマットに対応
-- **アスペクト比の維持** - 画像の縦横比を保ちながらリサイズ可能
-- **詳細なログ出力** - 処理状況と結果を分かりやすく表示
-- **Windows長パス対応** - 260文字制限を回避した安全なファイル処理
-- **日本語ファイル名対応** - 絵文字を含む特殊文字も適切に処理
-- **高度なエラーハンドリング** - 詳細な日本語エラーメッセージと自動リトライ機能
-- **プロモード再帰読込** - 指定フォルダ配下を再帰探索して `jpg/jpeg/png` を一括読込
-- **ドラッグ&ドロップ入力** - 画像ファイルの直接投入、プロモードでフォルダ投入にも対応
-- **非同期読込UI** - 探索/読込の進捗表示、残り時間目安、キャンセルに対応
-- **失敗のみ再試行** - 読込失敗ファイルだけをその場で再試行可能
-- **最近使った設定** - 保存時の設定を最大6件記憶し、ワンクリックで再適用
+## 必要環境
 
-## インストール
+- Python 3.12 以上
+- `uv`（推奨）
 
-### 前提条件
-- Python 3.12以上
-- pip または uv（推奨）
-
-### インストール手順
+## セットアップ
 
 ```bash
-# リポジトリをクローン
-git clone https://github.com/yourusername/KarukuResize.git
+git clone https://github.com/tsutomu-n/KarukuResize.git
 cd KarukuResize
-
-# 依存関係をインストール（uvを推奨）
-uv pip install -e .
-
-# または通常のpipを使用
-pip install -e .
+uv sync --group dev
 ```
 
-## 使い方
+## 起動方法
 
-### GUIモード
+### GUI
 
 ```bash
-# インストール後
-karukuresize-gui
-
-# モジュールとして実行したい場合 (開発中など)
-python -m karuku_resizer.gui_app
+uv run karukuresize-gui
+# または
+uv run python -m karuku_resizer.gui_app
 ```
 
-### コマンドラインモード
+### CLI
 
 ```bash
-# インストール後
-karukuresize-cli -s 入力フォルダ -d 出力フォルダ -w 1280 -q 85
-
-# モジュールとして実行したい場合 (開発中など)
-python -m karuku_resizer.resize_core -s 入力フォルダ -d 出力フォルダ -w 1280 -q 85
+uv run karukuresize-cli -s input -d output -w 1280 -q 85
 ```
 
-### 主なオプション
+## GUI クイックフロー
 
-| オプション | 説明 | デフォルト |
-|-----------|------|-----------|
-| `-s, --source` | 入力元のディレクトリパス | 必須 |
-| `-d, --dest` | 出力先のディレクトリパス | 必須 |
-| `-w, --width` | リサイズ後の最大幅 | 1280 |
-| `-q, --quality` | 画像の品質 (1-100) | 85 |
+1. `📂 画像を選択`（プロモードでは `📂 画像/フォルダを選択`）
+2. サイズを指定（比率 / 幅 / 高さ / 固定）
+3. `🔄 プレビュー`
+4. `💾 保存`（単体）または `📁 一括適用保存`（全体）
+
+補足:
+- プロモード再帰読込の対象は `jpg / jpeg / png`
+- D&D単体ファイルは `png / jpg / jpeg / webp / avif` も受理
+
+## CLI オプション
+
+| オプション | 説明 | 既定値 |
+|---|---|---|
+| `-s, --source` | 入力フォルダー | 必須 |
+| `-d, --dest` | 出力フォルダー | 必須 |
+| `-w, --width` | リサイズ後の最大幅(px) | `1280` |
+| `-q, --quality` | JPEG/WEBP 品質 (1-100) | `85` |
 | `-f, --format` | 出力形式 (`jpeg/png/webp`) | `jpeg` |
-| `--recursive / --no-recursive` | 再帰探索の有効/無効（無効時は直下のみ） | `--recursive` |
+| `--recursive / --no-recursive` | 再帰探索する / しない | `--recursive` |
 | `--extensions` | 対象拡張子（カンマ区切り） | `jpg,jpeg,png` |
-| `--failures-file` | 失敗一覧をJSON保存するファイルパス | なし |
-| `--dry-run` | 実際に保存せずシミュレート | False |
-| `--json` | 実行結果サマリをJSONで標準出力に出力 | False |
-| `-v, --verbose` | 詳細ログを増やす（重ね掛け可） | 0 |
+| `--failures-file` | 失敗一覧JSONの保存先 | なし |
+| `--dry-run` | 実ファイルを作らずシミュレート | `False` |
+| `--json` | 実行結果サマリをJSON出力 | `False` |
+| `-v, --verbose` | 詳細ログを増やす | `0` |
 
-## 機能詳細
-
-### コア機能（共通）
-- 複数の画像形式サポート（JPEG, PNG, WEBP, GIF, BMP, TIFF）
-- 高度な圧縮アルゴリズム
-- アスペクト比の保持
-- Windows長パス対応（260文字制限の回避）
-- 日本語ファイル名・パス対応
-- 詳細なログ記録
-- 処理進捗の表示
-
-### CLI機能
-- バッチ処理機能（複数ファイルの一括処理）
-- コマンドライン引数によるカスタマイズ
-- 処理の中断・再開機能
-- 処理統計情報の表示（ファイルサイズ削減率など）
-- Ctrl+C によるグレースフル終了
-
-### GUI機能
-- モダンなインターフェース（CustomTkinter使用）
-- 画像リストを読み込み、1枚ずつプレビューしながら設定可能
-- 出力形式選択（自動/JPEG/PNG/WEBP/AVIF）
-- EXIF保持/編集/削除、GPS削除、ドライラン対応
-- **一括適用保存**: 選択中画像の設定（サイズ/形式）を読込済み画像全体へ適用
-- **プロモード入力**
-  - ファイル個別選択
-  - フォルダ再帰読込（`jpg/jpeg/png`）
-  - ドラッグ&ドロップ（ファイル: `png/jpg/jpeg/webp/avif`、フォルダ: プロモード時のみ再帰）
-  - 前回入力方式（再帰/個別）の記憶
-- 非同期読込の進捗表示（探索中/読込中）、キャンセル、失敗のみ再試行
-
-## 環境別の使い方
-
-### Windows
-ネイティブで動作します。GUI・CLI共に完全サポート。
-
-### WSL2
-- **CLI推奨** - 最も安定して動作
-- **GUI使用時** - [WSL2ガイド](./docs/WSL2_GUIDE.md)参照（Windows側での実行を推奨）
-
-### macOS/Linux
-すべての機能が利用可能です。
-
-## 使用例
-
-### Web用に画像を最適化
-```bash
-karukuresize-cli -s photos -d web_photos -w 1280 -q 85
-```
-
-### サムネイル作成
-```bash
-karukuresize-cli -s images -d thumbnails -w 300 -q 80
-```
-
-### 高品質で保存
-```bash
-karukuresize-cli -s original -d high_quality -w 1920 -q 95
-```
-
-## 🚀 クイックスタート
+例:
 
 ```bash
-# 1. インストール
-uv pip install -e .
+# 直下のみ対象
+uv run karukuresize-cli -s input -d output --no-recursive
 
-# 2. CLI実行
-karukuresize-cli -s input -d output -w 1280 -q 85
+# 対象拡張子を拡張
+uv run karukuresize-cli -s input -d output --extensions jpg,jpeg,png,webp,avif
 
-# 3. GUI実行
-karukuresize-gui
+# 失敗一覧を保存しつつJSON要約を標準出力
+uv run karukuresize-cli -s input -d output --failures-file failures.json --json
 ```
 
-詳細は[クイックスタートガイド](./docs/QUICK_START.md)をご覧ください。
+## Windows ビルド
 
-## 📚 ドキュメント
-
-- [インストールガイド](./docs/INSTALLATION.md) - 詳細なインストール手順
-- [クイックスタート](./docs/QUICK_START.md) - すぐに使い始めるためのガイド
-- [WSL2ガイド](./docs/WSL2_GUIDE.md) - WSL2での使用方法
-- [Windowsガイド](./docs/WINDOWS_GUIDE.md) - Windows 11での使用方法
-- [開発者ガイド](./docs/developer_guide.md) - 開発者向けの技術情報
-- [APIリファレンス](./docs/api_reference.md) - 関数とクラスの詳細仕様
-
-## 🔧 最近の更新（2026年2月12日）
-
-### GUI操作性の改善
-- **一括適用保存**: 選択中画像を基準に全画像へ同一設定を適用
-- **一括保存のエラーハンドリング強化**: 1件失敗しても全体継続、失敗詳細を集約表示
-- **ドライラン強化**: 一括処理時にモード明示・件数表示・実ファイル未作成を明示
-
-### プロモード読込の改善
-- **再帰読込を非同期化**: UIフリーズを抑制し、探索/読込進捗を表示
-- **残り時間の目安表示**: 読込進捗から概算残時間を表示
-- **失敗のみ再試行**: 読込失敗分のみ再読込
-- **入力方式の記憶**: 再帰/個別の前回選択を設定として保持
-- **ドラッグ&ドロップ対応**: ファイル/フォルダ投入から読込開始（処理中は他操作を抑止）
-
-### UI/UXの改善
-- **空状態ガイド**: 画像未読込時に「投入→設定→保存」の3ステップを表示
-- **処理段階の明示**: 探索中/読込中/保存中/キャンセル中をステータスバー上に表示
-- **結果ダイアログ強化**: 失敗一覧コピーと（読込時）失敗のみ再試行ボタンを追加
-
-## 🧪 テスト
-
-```bash
-# すべてのテストを実行
-pytest
-
-# カバレッジ付きで実行
-pytest --cov=resize_core --cov-report=html
+```powershell
+uv run karukuresize-build-exe
 ```
+
+- 生成物: `dist\KarukuResize.exe`
+- EXEアイコンは `assets\app.ico` を使用
+
+詳細は `docs/WINDOWS_GUIDE.md` と `docs/BUILDING.md` を参照してください。
+
+## ドキュメント
+
+- `CONTRIBUTING.md`
+- `docs/QUICK_START.md`
+- `docs/WINDOWS_GUIDE.md`
+- `docs/BUILDING.md`
+- `docs/WSL2_GUIDE.md`
+- `docs/INSTALLATION.md`
+- `docs/api_reference.md`
 
 ## 開発
 
-プルリクエストや機能提案は大歓迎です。コード品質維持のため、pre-commitフックを使用したruffによる自動チェックを導入しています。
-
-### 開発環境のセットアップ
-
 ```bash
-# 開発モードでインストール
-uv pip install -e .
-
-# pre-commitフックをインストール
-pre-commit install
+uv run pytest -q
+uv run ruff check src tests
 ```
 
 ## ライセンス
