@@ -24,9 +24,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from tkinter import filedialog, messagebox, simpledialog
+from urllib.parse import unquote, urlparse
 
 import customtkinter
 from PIL import Image, ImageOps, ImageTk
+try:
+    from tkinterdnd2 import COPY, DND_FILES, TkinterDnD
+    TKDND_AVAILABLE = True
+except Exception:
+    COPY = "copy"  # type: ignore[assignment]
+    DND_FILES = "DND_Files"  # type: ignore[assignment]
+    TkinterDnD = None  # type: ignore[assignment]
+    TKDND_AVAILABLE = False
 
 # ヘルプコンテンツとダイアログをインポート
 from karuku_resizer.help_content import HELP_CONTENT, STEP_DESCRIPTIONS
@@ -104,6 +113,7 @@ QUALITY_VALUES = [str(v) for v in range(5, 101, 5)]
 WEBP_METHOD_VALUES = [str(v) for v in range(0, 7)]
 AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
 PRO_MODE_RECURSIVE_INPUT_EXTENSIONS = (".jpg", ".jpeg", ".png")
+SELECTABLE_INPUT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
 FILE_LOAD_FAILURE_PREVIEW_LIMIT = 20
 
 FORMAT_LABEL_TO_ID = {
@@ -255,6 +265,7 @@ class ResizeApp(customtkinter.CTk):
         self._file_scan_started_at = 0.0
         self._file_load_started_at = 0.0
         self._file_scan_pulse = 0.0
+        self._drag_drop_enabled = False
         self._settings_dialog: Optional[customtkinter.CTkToplevel] = None
         self._preset_dialog: Optional[customtkinter.CTkToplevel] = None
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
@@ -266,6 +277,7 @@ class ResizeApp(customtkinter.CTk):
         self._run_summary_finalized = False
 
         self._setup_ui()
+        self._setup_drag_and_drop()
         self._refresh_preset_menu(selected_preset_id=self.settings.get("default_preset_id", ""))
         self._restore_settings()
         self._apply_default_preset_if_configured()
@@ -2624,6 +2636,278 @@ class ResizeApp(customtkinter.CTk):
         actives = self._entry_widgets.get(mode, [])
         if actives:
             actives[0].focus_set()
+
+    def _setup_drag_and_drop(self) -> None:
+        if not TKDND_AVAILABLE or TkinterDnD is None:
+            logging.info("Drag and drop disabled: tkinterdnd2 unavailable")
+            return
+
+        try:
+            TkinterDnD._require(self)
+        except Exception as exc:
+            logging.warning("Drag and drop initialization failed: %s", exc)
+            return
+
+        targets = [
+            self,
+            self.main_content,
+            self.file_list_frame,
+            self.canvas_org,
+            self.canvas_resz,
+        ]
+        registered = 0
+        for widget in targets:
+            try:
+                widget.drop_target_register(DND_FILES)
+                widget.dnd_bind("<<DropEnter>>", self._on_drop_enter)
+                widget.dnd_bind("<<DropPosition>>", self._on_drop_position)
+                widget.dnd_bind("<<DropLeave>>", self._on_drop_leave)
+                widget.dnd_bind("<<Drop>>", self._on_drop_files)
+                registered += 1
+            except Exception:
+                logging.exception("Failed to register drop target: %s", widget)
+
+        self._drag_drop_enabled = registered > 0
+        if self._drag_drop_enabled:
+            logging.info("Drag and drop enabled on %d widgets", registered)
+
+    @staticmethod
+    def _dedupe_paths(paths: List[Path]) -> List[Path]:
+        seen: set[str] = set()
+        deduped: List[Path] = []
+        for path in paths:
+            marker = str(path).lower()
+            if marker in seen:
+                continue
+            seen.add(marker)
+            deduped.append(path)
+        return deduped
+
+    @staticmethod
+    def _is_selectable_input_file(path: Path) -> bool:
+        return path.suffix.lower() in SELECTABLE_INPUT_EXTENSIONS
+
+    @staticmethod
+    def _normalize_dropped_path_text(value: str) -> str:
+        text = value.strip()
+        if not text:
+            return ""
+        if text.startswith("file://"):
+            parsed = urlparse(text)
+            if parsed.scheme == "file":
+                normalized = unquote(parsed.path or "")
+                if parsed.netloc and parsed.netloc.lower() != "localhost":
+                    normalized = f"//{parsed.netloc}{normalized}"
+                if os.name == "nt" and len(normalized) >= 3 and normalized[0] == "/" and normalized[2] == ":":
+                    normalized = normalized[1:]
+                if normalized:
+                    text = normalized
+        return text
+
+    def _parse_drop_paths(self, raw_data: Any) -> List[Path]:
+        data = str(raw_data or "").strip()
+        if not data:
+            return []
+        try:
+            raw_items = list(self.tk.splitlist(data))
+        except Exception:
+            raw_items = [data]
+
+        expanded_items: List[str] = []
+        for item in raw_items:
+            text = str(item)
+            if "\n" in text:
+                expanded_items.extend(line for line in text.splitlines() if line.strip())
+            else:
+                expanded_items.append(text)
+
+        paths: List[Path] = []
+        for item in expanded_items:
+            text = str(item).strip()
+            if text.startswith("{") and text.endswith("}"):
+                text = text[1:-1]
+            text = text.strip().strip('"')
+            text = self._normalize_dropped_path_text(text)
+            if text:
+                paths.append(Path(text))
+        return self._dedupe_paths(paths)
+
+    def _on_drop_enter(self, _event: Any) -> str:
+        return str(COPY)
+
+    def _on_drop_position(self, _event: Any) -> str:
+        return str(COPY)
+
+    def _on_drop_leave(self, _event: Any) -> None:
+        return
+
+    def _on_drop_files(self, event: Any) -> str:
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "現在、画像読み込み処理中です。完了またはキャンセル後に再実行してください。")
+            return str(COPY)
+
+        dropped_paths = self._parse_drop_paths(getattr(event, "data", ""))
+        if not dropped_paths:
+            messagebox.showwarning("ドラッグ&ドロップ", "ドロップされたパスを解釈できませんでした。")
+            return str(COPY)
+
+        self._handle_dropped_paths(dropped_paths)
+        return str(COPY)
+
+    def _handle_dropped_paths(self, dropped_paths: List[Path]) -> None:
+        files: List[Path] = []
+        dirs: List[Path] = []
+        ignored_count = 0
+        for path in dropped_paths:
+            try:
+                if not path.exists():
+                    ignored_count += 1
+                    continue
+                if path.is_dir():
+                    dirs.append(path)
+                elif path.is_file() and self._is_selectable_input_file(path):
+                    files.append(path)
+                else:
+                    ignored_count += 1
+            except OSError:
+                ignored_count += 1
+
+        files = self._dedupe_paths(files)
+        dirs = self._dedupe_paths(dirs)
+        if not files and not dirs:
+            messagebox.showwarning("ドラッグ&ドロップ", "画像ファイルまたはフォルダーが見つかりませんでした。")
+            return
+
+        if dirs and not self._is_pro_mode():
+            switch_to_pro = messagebox.askyesno(
+                "ドラッグ&ドロップ",
+                "フォルダーが含まれています。\n"
+                "プロモードへ切り替えて再帰読み込みしますか？",
+            )
+            if switch_to_pro:
+                self.ui_mode_var.set("プロ")
+                self._apply_ui_mode()
+                self._update_settings_summary()
+            else:
+                dirs = []
+
+        if not files and not dirs:
+            messagebox.showwarning("ドラッグ&ドロップ", "フォルダーを扱うにはプロモードに切り替えてください。")
+            return
+
+        if dirs:
+            self.settings["pro_input_mode"] = "recursive"
+        elif self._is_pro_mode():
+            self.settings["pro_input_mode"] = "files"
+
+        self._start_drop_load_async(files=files, dirs=dirs)
+        if ignored_count > 0:
+            self.status_var.set(f"{self.status_var.get()} / 対象外 {ignored_count}件をスキップ")
+
+    def _start_drop_load_async(self, files: List[Path], dirs: List[Path]) -> None:
+        if not files and not dirs:
+            return
+
+        root_dir = dirs[0] if len(dirs) == 1 else None
+        self._begin_file_load_session(
+            mode_label="ドラッグ&ドロップ読込",
+            root_dir=root_dir,
+            clear_existing_jobs=True,
+        )
+        if root_dir is None and files:
+            self.settings["last_input_dir"] = str(files[0].parent)
+        elif root_dir is not None:
+            self.settings["last_input_dir"] = str(root_dir)
+
+        self.status_var.set(
+            f"ドラッグ&ドロップ読込開始: フォルダー{len(dirs)}件 / ファイル{len(files)}件 / "
+            f"{self._loading_hint_text()}"
+        )
+
+        if dirs:
+            worker = threading.Thread(
+                target=self._scan_and_load_drop_items_worker,
+                args=(files, dirs, self._file_load_cancel_event, self._file_load_queue),
+                daemon=True,
+                name="karuku-dnd-loader",
+            )
+        else:
+            worker = threading.Thread(
+                target=self._load_paths_worker,
+                args=(files, self._file_load_cancel_event, self._file_load_queue),
+                daemon=True,
+                name="karuku-dnd-file-loader",
+            )
+        worker.start()
+        self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+
+    @staticmethod
+    def _scan_and_load_drop_items_worker(
+        dropped_files: List[Path],
+        dropped_dirs: List[Path],
+        cancel_event: threading.Event,
+        out_queue: "queue.Queue[Dict[str, Any]]",
+    ) -> None:
+        try:
+            candidates: List[Path] = []
+            seen: set[str] = set()
+
+            def _add_candidate(path: Path) -> None:
+                marker = str(path).lower()
+                if marker in seen:
+                    return
+                seen.add(marker)
+                candidates.append(path)
+
+            detected = 0
+            for path in dropped_files:
+                if cancel_event.is_set():
+                    out_queue.put({"type": "done", "canceled": True})
+                    return
+                if path.exists() and path.is_file() and path.suffix.lower() in SELECTABLE_INPUT_EXTENSIONS:
+                    _add_candidate(path)
+                    detected += 1
+                    if detected % 40 == 0:
+                        out_queue.put({"type": "scan_progress", "count": detected})
+
+            for root_dir in dropped_dirs:
+                if cancel_event.is_set():
+                    out_queue.put({"type": "done", "canceled": True})
+                    return
+                for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
+                    if cancel_event.is_set():
+                        out_queue.put({"type": "done", "canceled": True})
+                        return
+                    base_dir = Path(dirpath)
+                    for name in filenames:
+                        if cancel_event.is_set():
+                            out_queue.put({"type": "done", "canceled": True})
+                            return
+                        if Path(name).suffix.lower() in PRO_MODE_RECURSIVE_INPUT_EXTENSIONS:
+                            _add_candidate(base_dir / name)
+                            detected += 1
+                            if detected % 40 == 0:
+                                out_queue.put({"type": "scan_progress", "count": detected})
+
+            candidates.sort(key=lambda p: str(p).lower())
+            out_queue.put({"type": "scan_done", "total": len(candidates)})
+
+            for index, path in enumerate(candidates, start=1):
+                if cancel_event.is_set():
+                    out_queue.put({"type": "done", "canceled": True})
+                    return
+                try:
+                    with Image.open(path) as opened:
+                        opened.load()
+                        img = ImageOps.exif_transpose(opened)
+                    out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
+                except Exception as exc:
+                    out_queue.put({"type": "load_error", "path": path, "error": str(exc), "index": index})
+
+            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+        except Exception as exc:
+            out_queue.put({"type": "fatal", "error": str(exc)})
+            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
 
     # -------------------- file selection -------------------------------
     def _select_files(self):

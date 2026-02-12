@@ -9,6 +9,7 @@ import os
 import subprocess
 import platform
 import shutil
+import zipfile
 from pathlib import Path
 
 def clean_build_dirs():
@@ -18,13 +19,6 @@ def clean_build_dirs():
         if Path(dir_name).exists():
             print(f"Cleaning {dir_name}...")
             shutil.rmtree(dir_name)
-    
-    # .specファイルのバックアップ
-    spec_file = Path('karukuresize.spec')
-    if spec_file.exists():
-        backup_file = spec_file.with_suffix('.spec.bak')
-        shutil.copy2(spec_file, backup_file)
-        print(f"Backed up {spec_file} to {backup_file}")
 
 def install_dependencies():
     """必要な依存関係をインストール"""
@@ -37,13 +31,8 @@ def build_executable():
     """PyInstallerで実行ファイルをビルド"""
     print(f"Building for {platform.system()}...")
     
-    # PyInstallerコマンド
-    cmd = [
-        sys.executable, '-m', 'PyInstaller',
-        'karukuresize.spec',
-        '--clean',
-        '--noconfirm'
-    ]
+    # プロジェクト標準のビルドエントリポイントを実行
+    cmd = [sys.executable, '-m', 'karuku_resizer.build_exe']
     
     # ビルド実行
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -68,9 +57,13 @@ def create_package():
     print(f"Creating package for {system}...")
     
     if system == 'Windows':
-        # Windowsの場合はZIPファイルを作成
-        output_file = 'KarukuResize-Windows.zip'
-        shutil.make_archive('KarukuResize-Windows', 'zip', 'dist/KarukuResize')
+        exe_path = dist_dir / 'KarukuResize.exe'
+        if not exe_path.exists():
+            print(f"{exe_path} が見つかりません。先にビルドを実行してください。")
+            return
+        output_file = Path('KarukuResize-Windows.zip')
+        with zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(exe_path, arcname=exe_path.name)
         print(f"Created {output_file}")
         
     elif system == 'Darwin':  # macOS

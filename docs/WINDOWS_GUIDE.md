@@ -37,6 +37,7 @@ uv run python -m karuku_resizer.gui_app
 2. `📂 画像/フォルダを選択`
 3. `はい: フォルダーを再帰読み込み`
 4. 対象は `jpg/jpeg/png`
+5. ドラッグ&ドロップでも同様（単体ファイルは `png/jpg/jpeg/webp/avif`）
 
 動作仕様:
 - 読込中は操作を抑制し、進捗バーとステータスを表示
