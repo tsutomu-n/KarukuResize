@@ -324,8 +324,7 @@ class ResizeApp(customtkinter.CTk):
         self._write_run_summary_safe()
 
         self.after(0, self._update_mode)  # set initial enable states
-        self.after(0, self._update_action_hint)
-        self.after(0, self._update_session_summary)
+        self.after(0, self._refresh_status_indicators)
         logging.info("ResizeApp initialized")
         logging.info("Run log: %s", self._run_log_artifacts.run_log_path)
         logging.info("Run summary: %s", self._run_log_artifacts.summary_path)
@@ -2375,7 +2374,7 @@ class ResizeApp(customtkinter.CTk):
         total = len(self.jobs)
         failed = sum(1 for job in self.jobs if job.last_process_state == "failed")
         unprocessed = sum(1 for job in self.jobs if job.last_process_state == "unprocessed")
-        visible = len(self._visible_job_indices) if self._visible_job_indices else total
+        visible = len(self._visible_job_indices)
         if hasattr(self, "file_filter_var"):
             filter_label_value = self.file_filter_var.get()
         else:
@@ -2393,6 +2392,10 @@ class ResizeApp(customtkinter.CTk):
         if not hasattr(self, "session_summary_var"):
             return
         self.session_summary_var.set(self._session_status_text())
+
+    def _refresh_status_indicators(self) -> None:
+        self._update_action_hint()
+        self._update_session_summary()
 
     def _update_action_hint(self) -> None:
         if not hasattr(self, "action_hint_var"):
@@ -3598,8 +3601,7 @@ class ResizeApp(customtkinter.CTk):
             cancel_command=self._cancel_file_loading,
             initial_progress=0.05,
         )
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     def _set_interactive_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -3657,8 +3659,7 @@ class ResizeApp(customtkinter.CTk):
             self._toggle_exif_edit_fields()
             self._update_settings_summary()
             self._refresh_recent_settings_buttons()
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     @staticmethod
     def _scan_and_load_images_worker(
@@ -3903,8 +3904,7 @@ class ResizeApp(customtkinter.CTk):
             failed_details=self._file_load_failed_details,
             retry_callback=retry_callback,
         )
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     def _cancel_file_loading(self) -> None:
         if not self._is_loading_files:
@@ -3912,7 +3912,7 @@ class ResizeApp(customtkinter.CTk):
         self._file_load_cancel_event.set()
         self._set_operation_stage("キャンセル中")
         self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
-        self._update_action_hint()
+        self._refresh_status_indicators()
 
     def _copy_text_to_clipboard(self, text: str) -> bool:
         try:
@@ -4133,7 +4133,6 @@ class ResizeApp(customtkinter.CTk):
 
     def _on_file_filter_changed(self, _value: str) -> None:
         self._populate_listbox()
-        self._update_session_summary()
 
     def _job_passes_file_filter(self, job: ImageJob) -> bool:
         filter_label = self.file_filter_var.get() if hasattr(self, "file_filter_var") else "全件"
@@ -4161,8 +4160,7 @@ class ResizeApp(customtkinter.CTk):
             self._clear_preview_panels()
             self.status_var.set("有効な画像を読み込めませんでした")
             self._update_empty_state_hint()
-            self._update_action_hint()
-            self._update_session_summary()
+            self._refresh_status_indicators()
             return
 
         for i, job in enumerate(self.jobs):
@@ -4194,8 +4192,7 @@ class ResizeApp(customtkinter.CTk):
             self.empty_state_label.configure(text="フィルタ条件に一致する画像がありません。")
             if self.empty_state_label.winfo_manager() != "pack":
                 self.empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     def _clear_preview_panels(self):
         self.current_index = None
@@ -4207,8 +4204,7 @@ class ResizeApp(customtkinter.CTk):
         self.info_resized_var.set("--- x ---  ---  (---)")
         self.resized_title_label.configure(text="リサイズ後")
         self._update_metadata_preview(None)
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     def _visible_button_pos_for_job_index(self, job_index: Optional[int]) -> Optional[int]:
         if job_index is None:
@@ -4265,8 +4261,7 @@ class ResizeApp(customtkinter.CTk):
         self._reset_zoom()
         self._draw_previews(job)
         self._update_metadata_preview(job)
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     # -------------------- size calculation -----------------------------
     # サイズ計算に関する関数
@@ -4488,8 +4483,7 @@ class ResizeApp(customtkinter.CTk):
             cancel_command=self._cancel_active_operation,
             initial_progress=0.0,
         )
-        self._update_action_hint()
-        self._update_session_summary()
+        self._refresh_status_indicators()
 
     def _process_single_batch_job(
         self,
@@ -4584,8 +4578,7 @@ class ResizeApp(customtkinter.CTk):
         finally:
             self._end_operation_scope()
             self._populate_listbox()
-            self._update_action_hint()
-            self._update_session_summary()
+            self._refresh_status_indicators()
 
         return stats
 
