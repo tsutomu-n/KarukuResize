@@ -119,7 +119,13 @@ def _list_run_files(log_dir: Path) -> list[Path]:
         files = [path for path in log_dir.iterdir() if _is_run_file(path)]
     except OSError:
         return []
-    return sorted(files, key=lambda p: p.stat().st_mtime)
+    def _safe_mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    return sorted(files, key=_safe_mtime)
 
 
 def _is_run_file(path: Path) -> bool:
