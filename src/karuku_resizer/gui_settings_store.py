@@ -45,6 +45,7 @@ def default_gui_settings() -> dict[str, Any]:
         "default_output_dir": "",
         "default_preset_id": "",
         "pro_input_mode": "recursive",
+        "recent_processing_settings": [],
     }
 
 

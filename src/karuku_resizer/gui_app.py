@@ -12,6 +12,7 @@ A convenience CLI entry point `karuku-resizer` is also provided if installed as 
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import platform
@@ -22,7 +23,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from tkinter import filedialog, messagebox, simpledialog
 from urllib.parse import unquote, urlparse
 
@@ -115,6 +116,8 @@ AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
 PRO_MODE_RECURSIVE_INPUT_EXTENSIONS = (".jpg", ".jpeg", ".png")
 SELECTABLE_INPUT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
 FILE_LOAD_FAILURE_PREVIEW_LIMIT = 20
+RECENT_SETTINGS_MAX = 6
+OPERATION_ONLY_CANCEL_HINT = "中止のみ可能"
 
 FORMAT_LABEL_TO_ID = {
     "自動": "auto",
@@ -268,6 +271,8 @@ class ResizeApp(customtkinter.CTk):
         self._drag_drop_enabled = False
         self._settings_dialog: Optional[customtkinter.CTkToplevel] = None
         self._preset_dialog: Optional[customtkinter.CTkToplevel] = None
+        self._result_dialog: Optional[customtkinter.CTkToplevel] = None
+        self._recent_setting_buttons: List[customtkinter.CTkButton] = []
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
             app_name=LOG_APP_NAME,
             retention_days=DEFAULT_RETENTION_DAYS,
@@ -1232,10 +1237,33 @@ class ResizeApp(customtkinter.CTk):
         self._style_secondary_button(self.details_toggle_button)
         self.details_toggle_button.pack(side="right", padx=(0, 6), pady=8)
 
+        self.recent_settings_row = customtkinter.CTkFrame(self.settings_header_frame, fg_color="transparent")
+        self.recent_settings_row.pack(side="bottom", fill="x", padx=10, pady=(0, 8))
+        self.recent_settings_title_label = customtkinter.CTkLabel(
+            self.recent_settings_row,
+            text="最近使った設定",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        )
+        self.recent_settings_title_label.pack(side="left", padx=(0, 8))
+        self.recent_settings_buttons_frame = customtkinter.CTkFrame(
+            self.recent_settings_row,
+            fg_color="transparent",
+        )
+        self.recent_settings_buttons_frame.pack(side="left", fill="x", expand=True)
+        self.recent_settings_empty_label = customtkinter.CTkLabel(
+            self.recent_settings_buttons_frame,
+            text="まだありません",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+        )
+        self.recent_settings_empty_label.pack(side="left")
+
         self.detail_settings_frame = customtkinter.CTkFrame(self)
         self._style_card_frame(self.detail_settings_frame, corner_radius=12)
         self._setup_output_controls(self.detail_settings_frame)
         self._register_setting_watchers()
+        self._refresh_recent_settings_buttons()
         self._apply_ui_mode()
         self._update_settings_summary()
         self._set_details_panel_visibility(False)
@@ -1255,6 +1283,148 @@ class ResizeApp(customtkinter.CTk):
 
     def _on_setting_var_changed(self, *_args):
         self._update_settings_summary()
+
+    @staticmethod
+    def _recent_setting_label_from_values(values: Mapping[str, Any]) -> str:
+        merged = merge_processing_values(values)
+        mode = str(merged.get("mode", "ratio"))
+        if mode == "width":
+            size_text = f"幅{merged.get('width_value', '')}px"
+        elif mode == "height":
+            size_text = f"高{merged.get('height_value', '')}px"
+        elif mode == "fixed":
+            size_text = f"固定{merged.get('width_value', '')}x{merged.get('height_value', '')}"
+        else:
+            size_text = f"比率{merged.get('ratio_value', '100')}%"
+        format_id = str(merged.get("output_format", "auto")).lower()
+        format_label = FORMAT_ID_TO_LABEL.get(format_id, "自動")
+        quality_text = f"Q{merged.get('quality', '85')}"
+        return f"{size_text}/{format_label}/{quality_text}"
+
+    @staticmethod
+    def _recent_settings_fingerprint(values: Mapping[str, Any]) -> str:
+        merged = merge_processing_values(values)
+        return json.dumps(merged, ensure_ascii=False, sort_keys=True)
+
+    @classmethod
+    def _normalize_recent_settings_entries(cls, raw: Any) -> List[Dict[str, Any]]:
+        if not isinstance(raw, list):
+            return []
+
+        entries: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            values_raw = item.get("values")
+            if not isinstance(values_raw, Mapping):
+                continue
+            values = merge_processing_values(values_raw)
+            fingerprint = str(item.get("fingerprint", "")).strip() or cls._recent_settings_fingerprint(values)
+            if not fingerprint or fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            label = str(item.get("label", "")).strip() or cls._recent_setting_label_from_values(values)
+            used_at = str(item.get("used_at", "")).strip()
+            entries.append(
+                {
+                    "fingerprint": fingerprint,
+                    "label": label,
+                    "used_at": used_at,
+                    "values": values,
+                }
+            )
+            if len(entries) >= RECENT_SETTINGS_MAX:
+                break
+        return entries
+
+    def _recent_settings_entries(self) -> List[Dict[str, Any]]:
+        entries = self._normalize_recent_settings_entries(self.settings.get("recent_processing_settings", []))
+        self.settings["recent_processing_settings"] = entries
+        return entries
+
+    def _refresh_recent_settings_buttons(self) -> None:
+        if not hasattr(self, "recent_settings_buttons_frame"):
+            return
+
+        for button in self._recent_setting_buttons:
+            button.destroy()
+        self._recent_setting_buttons = []
+
+        entries = self._recent_settings_entries()
+        if not entries:
+            if self.recent_settings_empty_label.winfo_manager() != "pack":
+                self.recent_settings_empty_label.pack(side="left")
+            return
+
+        if self.recent_settings_empty_label.winfo_manager():
+            self.recent_settings_empty_label.pack_forget()
+
+        for index, entry in enumerate(entries, start=1):
+            button = customtkinter.CTkButton(
+                self.recent_settings_buttons_frame,
+                text=f"{index}:{entry['label']}",
+                width=124,
+                command=lambda fp=entry["fingerprint"]: self._apply_recent_setting(fp),
+                font=self.font_small,
+            )
+            self._style_secondary_button(button)
+            button.pack(side="left", padx=(0, 6))
+            self._recent_setting_buttons.append(button)
+
+    def _apply_recent_setting(self, fingerprint: str) -> None:
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "画像読み込み中は最近使った設定を適用できません。")
+            return
+
+        entries = self._recent_settings_entries()
+        target_index = next(
+            (index for index, entry in enumerate(entries) if entry.get("fingerprint") == fingerprint),
+            -1,
+        )
+        if target_index < 0:
+            messagebox.showwarning("最近使った設定", "選択された設定が見つかりませんでした。")
+            self._refresh_recent_settings_buttons()
+            return
+
+        entry = entries.pop(target_index)
+        values = entry.get("values")
+        if not isinstance(values, Mapping):
+            messagebox.showwarning("最近使った設定", "設定データが不正です。")
+            self._refresh_recent_settings_buttons()
+            return
+
+        self._apply_processing_values(values)
+        entry["used_at"] = datetime.now().isoformat(timespec="seconds")
+        entries.insert(0, entry)
+        self.settings["recent_processing_settings"] = entries[:RECENT_SETTINGS_MAX]
+        self._save_current_settings()
+        self._refresh_recent_settings_buttons()
+        self.status_var.set(f"最近使った設定を適用: {entry.get('label', '')}")
+
+    def _register_recent_setting_from_current(self) -> None:
+        values = self._capture_current_processing_values(require_valid_exif_datetime=False)
+        if values is None:
+            return
+        merged = merge_processing_values(values)
+        fingerprint = self._recent_settings_fingerprint(merged)
+        label = self._recent_setting_label_from_values(merged)
+        now = datetime.now().isoformat(timespec="seconds")
+
+        entries = self._recent_settings_entries()
+        entries = [entry for entry in entries if entry.get("fingerprint") != fingerprint]
+        entries.insert(
+            0,
+            {
+                "fingerprint": fingerprint,
+                "label": label,
+                "used_at": now,
+                "values": merged,
+            },
+        )
+        self.settings["recent_processing_settings"] = entries[:RECENT_SETTINGS_MAX]
+        self._save_current_settings()
+        self._refresh_recent_settings_buttons()
 
     def _ui_mode_id(self) -> str:
         return UI_MODE_LABEL_TO_ID.get(self.ui_mode_var.get(), "simple")
@@ -1319,6 +1489,8 @@ class ResizeApp(customtkinter.CTk):
         self._toggle_exif_edit_fields()
         self._apply_log_level()
         self._update_metadata_panel_state()
+        self._update_empty_state_hint()
+        self._refresh_recent_settings_buttons()
 
     def _update_settings_summary(self):
         mode_label = self.ui_mode_var.get()
@@ -1339,6 +1511,28 @@ class ResizeApp(customtkinter.CTk):
             f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
         )
         self.settings_summary_var.set(summary)
+
+    def _empty_state_text(self) -> str:
+        lines = [
+            "1. 画像を選択 または ドラッグ&ドロップ",
+            "2. サイズ・形式を指定",
+            "3. 保存 または 一括適用保存",
+        ]
+        if self._is_pro_mode():
+            lines.append("プロ: フォルダー投入で再帰読込（jpg/jpeg/png）")
+        lines.append(f"処理中は {OPERATION_ONLY_CANCEL_HINT}")
+        return "\n".join(lines)
+
+    def _update_empty_state_hint(self) -> None:
+        if not hasattr(self, "empty_state_label"):
+            return
+        if self.jobs:
+            if self.empty_state_label.winfo_manager():
+                self.empty_state_label.pack_forget()
+            return
+        self.empty_state_label.configure(text=self._empty_state_text())
+        if self.empty_state_label.winfo_manager() != "pack":
+            self.empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
 
     def _toggle_details_panel(self):
         self._set_details_panel_visibility(not self.details_expanded)
@@ -1948,6 +2142,19 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_status_bar(self):
         """ステータスバーをセットアップ"""
+        self.operation_stage_var = customtkinter.StringVar(value="")
+        self.operation_stage_label = customtkinter.CTkLabel(
+            self,
+            textvariable=self.operation_stage_var,
+            anchor="w",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["warning"],
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            corner_radius=10,
+            padx=10,
+        )
+        self.operation_stage_label.pack_forget()
+
         self.status_var = customtkinter.StringVar(value="準備完了")
         self.status_label = customtkinter.CTkLabel(
             self,
@@ -1960,6 +2167,18 @@ class ResizeApp(customtkinter.CTk):
             padx=10,
         )
         self.status_label.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
+
+    def _show_operation_stage(self, stage_text: str) -> None:
+        if not stage_text:
+            return
+        self.operation_stage_var.set(f"処理段階: {stage_text} / {OPERATION_ONLY_CANCEL_HINT}")
+        if self.operation_stage_label.winfo_manager() != "pack":
+            self.operation_stage_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+
+    def _hide_operation_stage(self) -> None:
+        self.operation_stage_var.set("")
+        if self.operation_stage_label.winfo_manager():
+            self.operation_stage_label.pack_forget()
 
     def _setup_left_panel(self):
         """左側のパネル（ファイルリスト）をセットアップ"""
@@ -1981,6 +2200,17 @@ class ResizeApp(customtkinter.CTk):
         )
         self.file_list_frame.pack(side="left", fill="y", padx=(0, 6))
         self.file_buttons: List[customtkinter.CTkButton] = []
+        self.empty_state_label = customtkinter.CTkLabel(
+            self.file_list_frame,
+            text="",
+            justify="left",
+            anchor="w",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+            wraplength=220,
+        )
+        self.empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
+        self._update_empty_state_hint()
 
     def _setup_right_panel(self):
         """右側のパネル（プレビュー）をセットアップ"""
@@ -2293,6 +2523,8 @@ class ResizeApp(customtkinter.CTk):
         self._apply_user_appearance_mode(saved_appearance, redraw=False)
         self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
+        self._refresh_recent_settings_buttons()
+        self._update_empty_state_hint()
         self._update_settings_summary()
     
     def _save_current_settings(self):
@@ -2325,6 +2557,9 @@ class ResizeApp(customtkinter.CTk):
             "default_preset_id": str(self.settings.get("default_preset_id", "")).strip(),
             "pro_input_mode": self._normalized_pro_input_mode(
                 str(self.settings.get("pro_input_mode", "recursive"))
+            ),
+            "recent_processing_settings": self._normalize_recent_settings_entries(
+                self.settings.get("recent_processing_settings", [])
             ),
         })
         self.settings_store.save(self.settings)
@@ -3042,6 +3277,7 @@ class ResizeApp(customtkinter.CTk):
 
         self._set_interactive_controls_enabled(False)
         self._prepare_file_loading_ui()
+        self._show_operation_stage("探索中")
 
     def _prepare_file_loading_ui(self) -> None:
         self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
@@ -3053,6 +3289,7 @@ class ResizeApp(customtkinter.CTk):
         state = "normal" if enabled else "disabled"
         widgets = [
             self.select_button,
+            self.help_button,
             self.settings_button,
             self.preset_menu,
             self.preset_apply_button,
@@ -3078,6 +3315,8 @@ class ResizeApp(customtkinter.CTk):
             self.zoom_cb,
         ]
         widgets.extend(self.mode_radio_buttons)
+        widgets.extend(self.file_buttons)
+        widgets.extend(self._recent_setting_buttons)
         for widget in widgets:
             try:
                 widget.configure(state=state)
@@ -3100,6 +3339,7 @@ class ResizeApp(customtkinter.CTk):
             self._update_codec_controls_state()
             self._toggle_exif_edit_fields()
             self._update_settings_summary()
+            self._refresh_recent_settings_buttons()
 
     @staticmethod
     def _scan_and_load_images_worker(
@@ -3191,7 +3431,7 @@ class ResizeApp(customtkinter.CTk):
         return str(path)
 
     def _loading_hint_text(self) -> str:
-        return "読み込み中は他操作を無効化（中止可）"
+        return f"読み込み中は他操作を無効化（{OPERATION_ONLY_CANCEL_HINT}）"
 
     def _loading_progress_status_text(self, latest_path: Optional[Path] = None, failed: bool = False) -> str:
         total = self._file_load_total_candidates
@@ -3252,6 +3492,7 @@ class ResizeApp(customtkinter.CTk):
         if msg_type == "scan_done":
             self._file_load_total_candidates = int(message.get("total", 0))
             self._file_load_started_at = time.monotonic()
+            self._show_operation_stage("読込中")
             if self._file_load_total_candidates == 0:
                 self.progress_bar.set(1.0)
                 self.status_var.set(
@@ -3318,6 +3559,7 @@ class ResizeApp(customtkinter.CTk):
         self.cancel_button.pack_forget()
         self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
         self._set_interactive_controls_enabled(True)
+        self._hide_operation_stage()
 
         if self.jobs:
             self._populate_listbox()
@@ -3331,26 +3573,170 @@ class ResizeApp(customtkinter.CTk):
             msg = f"{self._file_load_mode_label}を中止しました。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
         else:
             msg = f"{self._file_load_mode_label}完了。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
-        if self._file_load_failed_details:
-            preview = self._file_load_failed_details[:FILE_LOAD_FAILURE_PREVIEW_LIMIT]
-            msg += "\n失敗詳細:"
-            for detail in preview:
-                msg += f"\n- {detail}"
-            if len(self._file_load_failed_details) > len(preview):
-                msg += f"\n- ...ほか {len(self._file_load_failed_details) - len(preview)} 件"
         self.status_var.set(msg)
+        retry_callback: Optional[Callable[[], None]] = None
         if (not canceled) and retry_paths:
-            retry = messagebox.askyesno("読込結果", f"{msg}\n\n失敗のみ再試行しますか？")
-            if retry:
+            def _retry_failed_only() -> None:
                 self._start_retry_failed_load_async(retry_paths)
-                return
-        messagebox.showinfo("読込結果", msg)
+
+            retry_callback = _retry_failed_only
+        self._show_operation_result_dialog(
+            title="読込結果",
+            summary_text=msg,
+            failed_details=self._file_load_failed_details,
+            retry_callback=retry_callback,
+        )
 
     def _cancel_file_loading(self) -> None:
         if not self._is_loading_files:
             return
         self._file_load_cancel_event.set()
+        self._show_operation_stage("キャンセル中")
         self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
+
+    def _copy_text_to_clipboard(self, text: str) -> bool:
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update_idletasks()
+            return True
+        except Exception:
+            logging.exception("Failed to copy text to clipboard")
+            return False
+
+    def _build_failure_report_text(
+        self,
+        *,
+        title: str,
+        summary_text: str,
+        failed_details: List[str],
+    ) -> str:
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        lines = [f"[{timestamp}] {title}", summary_text]
+        if failed_details:
+            lines.append("")
+            lines.append(f"失敗一覧 ({len(failed_details)}件):")
+            lines.extend(f"- {detail}" for detail in failed_details)
+        return "\n".join(lines)
+
+    def _show_operation_result_dialog(
+        self,
+        *,
+        title: str,
+        summary_text: str,
+        failed_details: List[str],
+        retry_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        if self._result_dialog is not None and self._result_dialog.winfo_exists():
+            try:
+                self._result_dialog.grab_release()
+            except Exception:
+                pass
+            self._result_dialog.destroy()
+
+        dialog = customtkinter.CTkToplevel(self)
+        self._result_dialog = dialog
+        dialog.title(title)
+        dialog.geometry("760x430")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
+        dialog.grid_columnconfigure(0, weight=1)
+
+        customtkinter.CTkLabel(
+            dialog,
+            text=title,
+            font=self.font_bold,
+            text_color=METALLIC_COLORS["text_primary"],
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
+
+        customtkinter.CTkLabel(
+            dialog,
+            text=summary_text,
+            justify="left",
+            anchor="w",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+            wraplength=720,
+        ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+
+        failed_preview = "\n".join(failed_details[:FILE_LOAD_FAILURE_PREVIEW_LIMIT]) if failed_details else ""
+        details_text = failed_preview
+        if failed_details and len(failed_details) > FILE_LOAD_FAILURE_PREVIEW_LIMIT:
+            details_text += f"\n...ほか {len(failed_details) - FILE_LOAD_FAILURE_PREVIEW_LIMIT} 件"
+        if not details_text:
+            details_text = "失敗はありません。"
+
+        details_box = customtkinter.CTkTextbox(
+            dialog,
+            height=230,
+            corner_radius=8,
+            border_width=1,
+            border_color=METALLIC_COLORS["border_light"],
+            fg_color=METALLIC_COLORS["input_bg"],
+            text_color=METALLIC_COLORS["text_primary"],
+            font=self.font_small,
+            wrap="word",
+        )
+        details_box.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 10))
+        details_box.insert("1.0", details_text)
+        details_box.configure(state="disabled")
+
+        button_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        button_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 14))
+        button_row.grid_columnconfigure(0, weight=1)
+
+        def _close() -> None:
+            if dialog.winfo_exists():
+                dialog.grab_release()
+                dialog.destroy()
+            self._result_dialog = None
+
+        close_button = customtkinter.CTkButton(
+            button_row,
+            text="閉じる",
+            width=110,
+            command=_close,
+            font=self.font_default,
+        )
+        self._style_secondary_button(close_button)
+        close_button.pack(side="right", padx=(8, 0))
+
+        if retry_callback is not None:
+            retry_button = customtkinter.CTkButton(
+                button_row,
+                text="失敗のみ再試行",
+                width=140,
+                command=lambda: (_close(), retry_callback()),
+                font=self.font_default,
+            )
+            self._style_primary_button(retry_button)
+            retry_button.pack(side="right", padx=(8, 0))
+
+        if failed_details:
+            copy_button = customtkinter.CTkButton(
+                button_row,
+                text="失敗一覧をコピー",
+                width=140,
+                command=lambda: messagebox.showinfo(
+                    "コピー",
+                    "失敗一覧をクリップボードにコピーしました。"
+                    if self._copy_text_to_clipboard(
+                        self._build_failure_report_text(
+                            title=title,
+                            summary_text=summary_text,
+                            failed_details=failed_details,
+                        )
+                    )
+                    else "クリップボードへのコピーに失敗しました。",
+                    parent=dialog,
+                ),
+                font=self.font_default,
+            )
+            self._style_secondary_button(copy_button)
+            copy_button.pack(side="right", padx=(0, 8))
 
     def _reset_loaded_jobs(self) -> None:
         self.jobs.clear()
@@ -3359,6 +3745,7 @@ class ResizeApp(customtkinter.CTk):
             button.destroy()
         self.file_buttons = []
         self._clear_preview_panels()
+        self._update_empty_state_hint()
 
     @staticmethod
     def _discover_recursive_image_paths(root_dir: Path) -> List[Path]:
@@ -3397,6 +3784,7 @@ class ResizeApp(customtkinter.CTk):
         if not self.jobs:
             self._clear_preview_panels()
             self.status_var.set("有効な画像を読み込めませんでした")
+            self._update_empty_state_hint()
             return
 
         for i, job in enumerate(self.jobs):
@@ -3413,6 +3801,7 @@ class ResizeApp(customtkinter.CTk):
             )
             button.pack(fill="x", padx=8, pady=4)
             self.file_buttons.append(button)
+        self._update_empty_state_hint()
         if self.jobs:
             self._on_select_change(0)
 
@@ -3594,6 +3983,7 @@ class ResizeApp(customtkinter.CTk):
         else:
             msg = f"{result.output_path.name} を保存しました"
         msg = f"{msg}\n{self._exif_status_text(result)}"
+        self._register_recent_setting_from_current()
         self.status_var.set(msg)
         messagebox.showinfo("保存結果", msg)
 
@@ -3641,11 +4031,13 @@ class ResizeApp(customtkinter.CTk):
         return Path(output_dir_str)
 
     def _prepare_batch_ui(self) -> None:
+        self._set_interactive_controls_enabled(False)
         self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
         self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
         self.cancel_button.pack(side="bottom", pady=(0, 10))
         self.progress_bar.set(0)
         self._cancel_batch = False
+        self._show_operation_stage("保存中")
 
     def _process_single_batch_job(
         self,
@@ -3716,6 +4108,8 @@ class ResizeApp(customtkinter.CTk):
         finally:
             self.progress_bar.pack_forget()
             self.cancel_button.pack_forget()
+            self._set_interactive_controls_enabled(True)
+            self._hide_operation_stage()
 
         return stats
 
@@ -3746,14 +4140,6 @@ class ResizeApp(customtkinter.CTk):
             if batch_options.dry_run:
                 msg += f"\nドライラン件数: {stats.dry_run_count}件"
                 msg += "\nドライランのため、実ファイルは作成していません。"
-
-        if stats.failed_details:
-            preview_lines = stats.failed_details[:5]
-            msg += "\n失敗詳細:"
-            for detail in preview_lines:
-                msg += f"\n- {detail}"
-            if len(stats.failed_details) > len(preview_lines):
-                msg += f"\n- ...ほか {len(stats.failed_details) - len(preview_lines)} 件"
         return msg
 
     def _record_batch_run_summary(
@@ -3852,11 +4238,19 @@ class ResizeApp(customtkinter.CTk):
             reference_format_label=reference_format_label,
             batch_options=batch_options,
         )
+        if stats.processed_count > 0:
+            self._register_recent_setting_from_current()
         self.status_var.set(msg)
-        messagebox.showinfo("完了", msg)
+        self._show_operation_result_dialog(
+            title="一括処理結果",
+            summary_text=msg,
+            failed_details=stats.failed_details,
+            retry_callback=None,
+        )
 
     def _cancel_batch_save(self):
         self._cancel_batch = True
+        self._show_operation_stage("キャンセル中")
 
     def _cancel_active_operation(self):
         if self._is_loading_files:
