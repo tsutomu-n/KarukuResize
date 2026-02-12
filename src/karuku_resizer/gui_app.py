@@ -14,11 +14,15 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import platform
-from dataclasses import dataclass
+import queue
+import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from tkinter import filedialog, messagebox
 
 import customtkinter
@@ -86,6 +90,8 @@ MAX_ZOOM = 10.0
 QUALITY_VALUES = [str(v) for v in range(5, 101, 5)]
 WEBP_METHOD_VALUES = [str(v) for v in range(0, 7)]
 AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
+PRO_MODE_RECURSIVE_INPUT_EXTENSIONS = (".jpg", ".jpeg", ".png")
+FILE_LOAD_FAILURE_PREVIEW_LIMIT = 20
 
 FORMAT_LABEL_TO_ID = {
     "自動": "auto",
@@ -145,6 +151,32 @@ class ImageJob:
     metadata_loaded: bool = False
     metadata_text: str = ""
     metadata_error: Optional[str] = None
+
+
+@dataclass
+class BatchSaveStats:
+    processed_count: int = 0
+    failed_count: int = 0
+    dry_run_count: int = 0
+    exif_applied_count: int = 0
+    exif_fallback_count: int = 0
+    gps_removed_count: int = 0
+    failed_details: List[str] = field(default_factory=list)
+
+    def record_success(self, result: SaveResult) -> None:
+        self.processed_count += 1
+        if result.dry_run:
+            self.dry_run_count += 1
+        if result.exif_attached:
+            self.exif_applied_count += 1
+        if result.exif_fallback_without_metadata:
+            self.exif_fallback_count += 1
+        if result.gps_removed:
+            self.gps_removed_count += 1
+
+    def record_failure(self, file_name: str, detail: str) -> None:
+        self.failed_count += 1
+        self.failed_details.append(f"{file_name}: {detail}")
 
 
 DEBUG = False
@@ -215,6 +247,7 @@ class SettingsManager:
             "zoom_preference": "画面に合わせる",
             "last_input_dir": "",
             "last_output_dir": "",
+            "pro_input_mode": "recursive",
         }
 
 
@@ -250,6 +283,19 @@ class ResizeApp(customtkinter.CTk):
         self.jobs: List[ImageJob] = []
         self.current_index: Optional[int] = None
         self._cancel_batch = False
+        self._is_loading_files = False
+        self._file_load_cancel_event = threading.Event()
+        self._file_load_queue: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=8)
+        self._file_load_after_id: Optional[str] = None
+        self._file_load_total_candidates = 0
+        self._file_load_loaded_count = 0
+        self._file_load_failed_details: List[str] = []
+        self._file_load_failed_paths: List[Path] = []
+        self._file_load_root_dir: Optional[Path] = None
+        self._file_load_mode_label = "再帰読み込み"
+        self._file_scan_started_at = 0.0
+        self._file_load_started_at = 0.0
+        self._file_scan_pulse = 0.0
 
         self._setup_ui()
         self._restore_settings()
@@ -324,6 +370,7 @@ class ResizeApp(customtkinter.CTk):
 
         # Mode radio buttons
         self.mode_var = customtkinter.StringVar(value="ratio")
+        self.mode_radio_buttons: List[customtkinter.CTkRadioButton] = []
         modes = [
             ("比率 %", "ratio"),
             ("幅 px", "width"),
@@ -331,7 +378,7 @@ class ResizeApp(customtkinter.CTk):
             ("幅×高", "fixed"),
         ]
         for text, val in modes:
-            customtkinter.CTkRadioButton(
+            mode_radio = customtkinter.CTkRadioButton(
                 top,
                 text=text,
                 variable=self.mode_var,
@@ -342,7 +389,9 @@ class ResizeApp(customtkinter.CTk):
                 hover_color=METALLIC_COLORS["hover"],
                 border_color=METALLIC_COLORS["border_medium"],
                 text_color=METALLIC_COLORS["text_primary"],
-            ).pack(side="left", padx=(0, 4))
+            )
+            mode_radio.pack(side="left", padx=(0, 4))
+            self.mode_radio_buttons.append(mode_radio)
 
         self._setup_entry_widgets(top)
         self._setup_action_buttons(top)
@@ -475,6 +524,11 @@ class ResizeApp(customtkinter.CTk):
     def _apply_ui_mode(self):
         pro_mode = self._is_pro_mode()
         self._update_exif_mode_options_for_ui_mode()
+        self.select_button.configure(
+            text="📂 画像/フォルダを選択" if pro_mode else "📂 画像を選択"
+        )
+        if self._is_loading_files:
+            self.select_button.configure(state="disabled")
 
         if pro_mode:
             if self.advanced_controls_frame.winfo_manager() != "pack":
@@ -1111,7 +1165,9 @@ class ResizeApp(customtkinter.CTk):
         self.progress_bar.set(0)
         self.progress_bar.pack_forget()  # 初期は非表示
 
-        self.cancel_button = customtkinter.CTkButton(self, text="キャンセル", width=100, command=self._cancel_batch_save)
+        self.cancel_button = customtkinter.CTkButton(
+            self, text="キャンセル", width=100, command=self._cancel_active_operation
+        )
         self._style_secondary_button(self.cancel_button)
         self.cancel_button.pack_forget()  # 初期は非表示
 
@@ -1489,12 +1545,17 @@ class ResizeApp(customtkinter.CTk):
             "details_expanded": self.details_expanded,
             "metadata_panel_expanded": self.metadata_expanded,
             "window_geometry": self.geometry(),
-            "zoom_preference": self.zoom_var.get()
+            "zoom_preference": self.zoom_var.get(),
+            "pro_input_mode": self._normalized_pro_input_mode(
+                str(self.settings.get("pro_input_mode", "recursive"))
+            ),
         })
         self.settings_manager.save_settings(self.settings)
     
     def _on_closing(self):
         """アプリ終了時の処理"""
+        if self._is_loading_files:
+            self._file_load_cancel_event.set()
         self._save_current_settings()
         self.destroy()
 
@@ -1777,34 +1838,478 @@ class ResizeApp(customtkinter.CTk):
 
     # -------------------- file selection -------------------------------
     def _select_files(self):
-        # 前回のディレクトリから開始
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "現在、画像読み込み処理中です。完了またはキャンセル後に再実行してください。")
+            return
+
         initial_dir = self.settings.get("last_input_dir", "")
-        
-        paths = filedialog.askopenfilenames(
-            title="画像を選択", 
-            initialdir=initial_dir,
-            filetypes=[("画像", "*.png *.jpg *.jpeg *.webp *.avif"), ("すべて", "*.*")]
-        )
+        if self._is_pro_mode():
+            paths, remembered_dir, started_async = self._select_files_in_pro_mode(initial_dir)
+            if started_async:
+                return
+        else:
+            paths, remembered_dir = self._select_files_in_simple_mode(initial_dir)
         if not paths:
             return
-            
-        # ディレクトリを記憶
-        self.settings["last_input_dir"] = str(Path(paths[0]).parent)
 
+        if remembered_dir is not None:
+            self.settings["last_input_dir"] = str(remembered_dir)
+
+        self._load_selected_paths(paths)
+        self._populate_listbox()
+
+    def _select_files_in_simple_mode(self, initial_dir: str) -> Tuple[List[Path], Optional[Path]]:
+        selected = filedialog.askopenfilenames(
+            title="画像を選択",
+            initialdir=initial_dir,
+            filetypes=[("画像", "*.png *.jpg *.jpeg *.webp *.avif"), ("すべて", "*.*")],
+        )
+        if not selected:
+            return [], None
+        paths = [Path(p) for p in selected]
+        return paths, paths[0].parent
+
+    def _select_files_in_pro_mode(self, initial_dir: str) -> Tuple[List[Path], Optional[Path], bool]:
+        saved_mode = self._normalized_pro_input_mode(str(self.settings.get("pro_input_mode", "recursive")))
+        default_mode_text = "フォルダー再帰" if saved_mode == "recursive" else "ファイル個別"
+        choice = messagebox.askyesnocancel(
+            "画像選択（プロ）",
+            "はい: フォルダーを再帰読み込み\n"
+            "いいえ: ファイルを個別選択\n"
+            f"キャンセル: 中止\n\n既定: {default_mode_text}",
+            default="yes" if saved_mode == "recursive" else "no",
+        )
+        if choice is None:
+            return [], None, False
+        if choice is False:
+            self.settings["pro_input_mode"] = "files"
+            paths, remembered_dir = self._select_files_in_simple_mode(initial_dir)
+            return paths, remembered_dir, False
+
+        self.settings["pro_input_mode"] = "recursive"
+        root_dir_str = filedialog.askdirectory(
+            title="対象フォルダーを選択（再帰）",
+            initialdir=initial_dir,
+        )
+        if not root_dir_str:
+            return [], None, False
+
+        root_dir = Path(root_dir_str)
+        self._start_recursive_load_async(root_dir)
+        return [], root_dir, True
+
+    @staticmethod
+    def _normalized_pro_input_mode(value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized in {"recursive", "files"}:
+            return normalized
+        return "recursive"
+
+    def _start_recursive_load_async(self, root_dir: Path) -> None:
+        self._begin_file_load_session(mode_label="再帰読み込み", root_dir=root_dir, clear_existing_jobs=True)
+        self._is_loading_files = True
+        self.status_var.set(
+            f"再帰探索開始: {root_dir} / 読み込み中は他操作を無効化（中止可）"
+        )
+
+        worker = threading.Thread(
+            target=self._scan_and_load_images_worker,
+            args=(root_dir, self._file_load_cancel_event, self._file_load_queue),
+            daemon=True,
+            name="karuku-recursive-loader",
+        )
+        worker.start()
+        self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+
+    def _start_retry_failed_load_async(self, paths: List[Path]) -> None:
+        unique_paths = list(dict.fromkeys(paths))
+        if not unique_paths:
+            return
+
+        self._begin_file_load_session(
+            mode_label="失敗再試行",
+            root_dir=self._file_load_root_dir,
+            clear_existing_jobs=False,
+        )
+        self.status_var.set(
+            f"失敗再試行開始: 対象 {len(unique_paths)}件 / 読み込み中は他操作を無効化（中止可）"
+        )
+        worker = threading.Thread(
+            target=self._load_paths_worker,
+            args=(unique_paths, self._file_load_cancel_event, self._file_load_queue),
+            daemon=True,
+            name="karuku-retry-loader",
+        )
+        worker.start()
+        self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+
+    def _begin_file_load_session(
+        self,
+        mode_label: str,
+        root_dir: Optional[Path],
+        clear_existing_jobs: bool,
+    ) -> None:
+        if clear_existing_jobs:
+            self._reset_loaded_jobs()
+        if root_dir is not None:
+            self.settings["last_input_dir"] = str(root_dir)
+        self._is_loading_files = True
+        self._file_load_cancel_event = threading.Event()
+        self._file_load_queue = queue.Queue(maxsize=8)
+        self._file_load_after_id = None
+        self._file_load_total_candidates = 0
+        self._file_load_loaded_count = 0
+        self._file_load_failed_details = []
+        self._file_load_failed_paths = []
+        self._file_scan_pulse = 0.0
+        self._file_scan_started_at = time.monotonic()
+        self._file_load_started_at = 0.0
+        self._file_load_mode_label = mode_label
+        self._file_load_root_dir = root_dir
+
+        self._set_interactive_controls_enabled(False)
+        self._prepare_file_loading_ui()
+
+    def _prepare_file_loading_ui(self) -> None:
+        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+        self.cancel_button.configure(text="読み込み中止", command=self._cancel_file_loading)
+        self.cancel_button.pack(side="bottom", pady=(0, 10))
+        self.progress_bar.set(0.05)
+
+    def _set_interactive_controls_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        widgets = [
+            self.select_button,
+            self.preview_button,
+            self.save_button,
+            self.batch_button,
+            self.ui_mode_segment,
+            self.appearance_mode_segment,
+            self.details_toggle_button,
+            self.output_format_menu,
+            self.quality_menu,
+            self.exif_mode_menu,
+            self.remove_gps_check,
+            self.dry_run_check,
+            self.verbose_log_check,
+            self.exif_preview_button,
+            self.webp_method_menu,
+            self.webp_lossless_check,
+            self.avif_speed_menu,
+            self.zoom_cb,
+        ]
+        widgets.extend(self.mode_radio_buttons)
+        for widget in widgets:
+            try:
+                widget.configure(state=state)
+            except Exception:
+                continue
+
+        for entry in self._all_entries:
+            entry.configure(state=state)
+        for entry in (
+            self.exif_artist_entry,
+            self.exif_copyright_entry,
+            self.exif_comment_entry,
+            self.exif_datetime_entry,
+        ):
+            entry.configure(state=state)
+
+        if enabled:
+            self._apply_ui_mode()
+            self._update_mode()
+            self._update_codec_controls_state()
+            self._toggle_exif_edit_fields()
+            self._update_settings_summary()
+
+    @staticmethod
+    def _scan_and_load_images_worker(
+        root_dir: Path,
+        cancel_event: threading.Event,
+        out_queue: "queue.Queue[Dict[str, Any]]",
+    ) -> None:
+        try:
+            candidates: List[Path] = []
+            detected = 0
+            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
+                if cancel_event.is_set():
+                    out_queue.put({"type": "done", "canceled": True})
+                    return
+                base_dir = Path(dirpath)
+                for name in filenames:
+                    if cancel_event.is_set():
+                        out_queue.put({"type": "done", "canceled": True})
+                        return
+                    suffix = Path(name).suffix.lower()
+                    if suffix in PRO_MODE_RECURSIVE_INPUT_EXTENSIONS:
+                        candidates.append(base_dir / name)
+                        detected += 1
+                        if detected % 40 == 0:
+                            out_queue.put({"type": "scan_progress", "count": detected})
+
+            candidates.sort(key=lambda p: str(p).lower())
+            out_queue.put({"type": "scan_done", "total": len(candidates)})
+
+            for index, path in enumerate(candidates, start=1):
+                if cancel_event.is_set():
+                    out_queue.put({"type": "done", "canceled": True})
+                    return
+                try:
+                    with Image.open(path) as opened:
+                        opened.load()
+                        img = ImageOps.exif_transpose(opened)
+                    out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
+                except Exception as e:
+                    out_queue.put({"type": "load_error", "path": path, "error": str(e), "index": index})
+
+            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+        except Exception as e:
+            out_queue.put({"type": "fatal", "error": str(e)})
+            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+
+    @staticmethod
+    def _load_paths_worker(
+        paths: List[Path],
+        cancel_event: threading.Event,
+        out_queue: "queue.Queue[Dict[str, Any]]",
+    ) -> None:
+        try:
+            out_queue.put({"type": "scan_done", "total": len(paths)})
+            for index, path in enumerate(paths, start=1):
+                if cancel_event.is_set():
+                    out_queue.put({"type": "done", "canceled": True})
+                    return
+                try:
+                    with Image.open(path) as opened:
+                        opened.load()
+                        img = ImageOps.exif_transpose(opened)
+                    out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
+                except Exception as e:
+                    out_queue.put({"type": "load_error", "path": path, "error": str(e), "index": index})
+
+            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+        except Exception as e:
+            out_queue.put({"type": "fatal", "error": str(e)})
+            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        whole = max(0, int(seconds))
+        if whole < 60:
+            return f"{whole}秒"
+        minutes, sec = divmod(whole, 60)
+        if minutes < 60:
+            return f"{minutes}分{sec:02d}秒"
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours}時間{minutes:02d}分"
+
+    def _format_path_for_display(self, path: Path) -> str:
+        if self._file_load_root_dir is not None:
+            try:
+                return path.relative_to(self._file_load_root_dir).as_posix()
+            except ValueError:
+                pass
+        return str(path)
+
+    def _loading_hint_text(self) -> str:
+        return "読み込み中は他操作を無効化（中止可）"
+
+    def _loading_progress_status_text(self, latest_path: Optional[Path] = None, failed: bool = False) -> str:
+        total = self._file_load_total_candidates
+        loaded = self._file_load_loaded_count
+        failed_count = len(self._file_load_failed_details)
+        done_count = loaded + failed_count
+        path_text = ""
+        if latest_path is not None:
+            path_text = self._format_path_for_display(latest_path)
+
+        remaining_text = "算出中"
+        if self._file_load_started_at > 0 and total > 0 and done_count > 0:
+            elapsed = max(0.001, time.monotonic() - self._file_load_started_at)
+            speed = done_count / elapsed
+            if speed > 0:
+                remaining_sec = max(0.0, (total - done_count) / speed)
+                remaining_text = self._format_duration(remaining_sec)
+
+        prefix = f"{self._file_load_mode_label}: 読込中 {done_count}/{total} (成功{loaded} 失敗{failed_count})"
+        if path_text:
+            action = "失敗" if failed else "処理"
+            prefix += f" / {action}: {path_text}"
+        return f"{prefix} / 残り約{remaining_text} / {self._loading_hint_text()}"
+
+    def _poll_file_load_queue(self) -> None:
+        if not self._is_loading_files:
+            self._file_load_after_id = None
+            return
+
+        handled = 0
+        while handled < 30:
+            try:
+                message = self._file_load_queue.get_nowait()
+            except queue.Empty:
+                break
+            handled += 1
+            self._handle_file_load_message(message)
+            if not self._is_loading_files:
+                break
+
+        if self._is_loading_files:
+            self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+        else:
+            self._file_load_after_id = None
+
+    def _handle_file_load_message(self, message: Dict[str, Any]) -> None:
+        msg_type = str(message.get("type", ""))
+        if msg_type == "scan_progress":
+            detected = int(message.get("count", 0))
+            self._file_scan_pulse = (self._file_scan_pulse + 0.08) % 1.0
+            self.progress_bar.set(max(0.05, self._file_scan_pulse))
+            elapsed_text = self._format_duration(time.monotonic() - self._file_scan_started_at)
+            self.status_var.set(
+                f"{self._file_load_mode_label}: 探索中 {detected} 件検出 / 経過{elapsed_text} / {self._loading_hint_text()}"
+            )
+            return
+
+        if msg_type == "scan_done":
+            self._file_load_total_candidates = int(message.get("total", 0))
+            self._file_load_started_at = time.monotonic()
+            if self._file_load_total_candidates == 0:
+                self.progress_bar.set(1.0)
+                self.status_var.set(
+                    f"{self._file_load_mode_label}: 対象画像（jpg/jpeg/png）は0件でした"
+                )
+            else:
+                self.progress_bar.set(0)
+                self.status_var.set(
+                    f"{self._file_load_mode_label}: 読込開始 0/{self._file_load_total_candidates} / {self._loading_hint_text()}"
+                )
+            return
+
+        if msg_type == "loaded":
+            path = Path(str(message.get("path", "")))
+            image = message.get("image")
+            if isinstance(image, Image.Image):
+                self.jobs.append(ImageJob(path, image))
+            self._file_load_loaded_count += 1
+            total = self._file_load_total_candidates
+            done_count = self._file_load_loaded_count + len(self._file_load_failed_details)
+            if total > 0:
+                self.progress_bar.set(min(1.0, done_count / total))
+                self.status_var.set(self._loading_progress_status_text(latest_path=path, failed=False))
+            else:
+                self.status_var.set(
+                    f"{self._file_load_mode_label}: 読込中 / 処理: {self._format_path_for_display(path)} / {self._loading_hint_text()}"
+                )
+            return
+
+        if msg_type == "load_error":
+            path = Path(str(message.get("path", "")))
+            error = str(message.get("error", "読み込み失敗"))
+            display_path = self._format_path_for_display(path)
+            self._file_load_failed_details.append(f"{display_path}: {error}")
+            self._file_load_failed_paths.append(path)
+            total = self._file_load_total_candidates
+            done_count = self._file_load_loaded_count + len(self._file_load_failed_details)
+            if total > 0:
+                self.progress_bar.set(min(1.0, done_count / total))
+                self.status_var.set(self._loading_progress_status_text(latest_path=path, failed=True))
+            return
+
+        if msg_type == "fatal":
+            error = str(message.get("error", "不明なエラー"))
+            self._file_load_failed_details.append(f"致命的エラー: {error}")
+            logging.error("Fatal error in recursive loader: %s", error)
+            return
+
+        if msg_type == "done":
+            canceled = bool(message.get("canceled", False))
+            self._finish_recursive_load(canceled=canceled)
+
+    def _finish_recursive_load(self, canceled: bool) -> None:
+        retry_paths = list(self._file_load_failed_paths)
+        self._is_loading_files = False
+        if self._file_load_after_id is not None:
+            try:
+                self.after_cancel(self._file_load_after_id)
+            except Exception:
+                pass
+            self._file_load_after_id = None
+
+        self.progress_bar.pack_forget()
+        self.cancel_button.pack_forget()
+        self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
+        self._set_interactive_controls_enabled(True)
+
+        if self.jobs:
+            self._populate_listbox()
+        else:
+            self._clear_preview_panels()
+
+        total = self._file_load_total_candidates
+        loaded = self._file_load_loaded_count
+        failed = len(self._file_load_failed_details)
+        if canceled:
+            msg = f"{self._file_load_mode_label}を中止しました。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
+        else:
+            msg = f"{self._file_load_mode_label}完了。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
+        if self._file_load_failed_details:
+            preview = self._file_load_failed_details[:FILE_LOAD_FAILURE_PREVIEW_LIMIT]
+            msg += "\n失敗詳細:"
+            for detail in preview:
+                msg += f"\n- {detail}"
+            if len(self._file_load_failed_details) > len(preview):
+                msg += f"\n- ...ほか {len(self._file_load_failed_details) - len(preview)} 件"
+        self.status_var.set(msg)
+        if (not canceled) and retry_paths:
+            retry = messagebox.askyesno("読込結果", f"{msg}\n\n失敗のみ再試行しますか？")
+            if retry:
+                self._start_retry_failed_load_async(retry_paths)
+                return
+        messagebox.showinfo("読込結果", msg)
+
+    def _cancel_file_loading(self) -> None:
+        if not self._is_loading_files:
+            return
+        self._file_load_cancel_event.set()
+        self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
+
+    def _reset_loaded_jobs(self) -> None:
+        self.jobs.clear()
+        self.current_index = None
+        for button in self.file_buttons:
+            button.destroy()
+        self.file_buttons = []
+        self._clear_preview_panels()
+
+    @staticmethod
+    def _discover_recursive_image_paths(root_dir: Path) -> List[Path]:
+        paths: List[Path] = []
+        try:
+            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
+                base_dir = Path(dirpath)
+                for name in filenames:
+                    if Path(name).suffix.lower() in PRO_MODE_RECURSIVE_INPUT_EXTENSIONS:
+                        paths.append(base_dir / name)
+        except OSError:
+            logging.exception("Recursive scan failed: %s", root_dir)
+            return []
+        paths.sort(key=lambda p: str(p).lower())
+        return paths
+
+    def _load_selected_paths(self, paths: List[Path]) -> None:
         # 新規選択として状態を初期化する
         self.jobs.clear()
         self.current_index = None
-        for p in paths:
+        for path in paths:
             try:
-                with Image.open(p) as opened:
+                with Image.open(path) as opened:
                     opened.load()
                     # EXIF Orientationを正規化して表示/処理を統一する。
                     img = ImageOps.exif_transpose(opened)
             except Exception as e:  # pragma: no cover
-                messagebox.showerror("エラー", f"{p} の読み込みに失敗しました: {e}")
+                messagebox.showerror("エラー", f"{path} の読み込みに失敗しました: {e}")
                 continue
-            self.jobs.append(ImageJob(Path(p), img))
-        self._populate_listbox()
+            self.jobs.append(ImageJob(path, img))
 
     def _populate_listbox(self):
         for button in self.file_buttons:
@@ -1946,6 +2451,9 @@ class ResizeApp(customtkinter.CTk):
         return reference_job, target_size, output_format
 
     def _preview_current(self):
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "画像の読み込み中です。完了またはキャンセル後に実行してください。")
+            return
         if self.current_index is None:
             messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
             return
@@ -1954,6 +2462,9 @@ class ResizeApp(customtkinter.CTk):
         self._draw_previews(job)
 
     def _save_current(self):
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "画像の読み込み中です。完了またはキャンセル後に実行してください。")
+            return
         if self.current_index is None:
             messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
             return
@@ -2001,7 +2512,162 @@ class ResizeApp(customtkinter.CTk):
         self.status_var.set(msg)
         messagebox.showinfo("保存結果", msg)
 
+    def _build_batch_save_options(self, reference_output_format: str) -> SaveOptions:
+        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
+        batch_exif_edit_values = (
+            self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
+        )
+        return self._build_save_options(
+            reference_output_format, exif_edit_values=batch_exif_edit_values
+        )
+
+    @staticmethod
+    def _batch_run_mode_text(batch_options: SaveOptions) -> str:
+        return "ドライラン（実ファイルは作成しません）" if batch_options.dry_run else "保存"
+
+    def _confirm_batch_save(
+        self,
+        reference_job: ImageJob,
+        reference_target: Tuple[int, int],
+        reference_format_label: str,
+        batch_options: SaveOptions,
+    ) -> bool:
+        return messagebox.askokcancel(
+            "一括適用保存の確認",
+            f"基準画像: {reference_job.path.name}\n"
+            f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
+            f"出力形式: {reference_format_label}\n"
+            f"モード: {self._batch_run_mode_text(batch_options)}\n\n"
+            f"読み込み中の {len(self.jobs)} 枚すべてに同じ設定を適用して処理します。",
+        )
+
+    def _select_batch_output_dir(self) -> Optional[Path]:
+        initial_dir = self.settings.get("last_output_dir") or self.settings.get("last_input_dir") or Path.home()
+        output_dir_str = filedialog.askdirectory(title="保存先フォルダを選択", initialdir=str(initial_dir))
+        if not output_dir_str:
+            return None
+        return Path(output_dir_str)
+
+    def _prepare_batch_ui(self) -> None:
+        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+        self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
+        self.cancel_button.pack(side="bottom", pady=(0, 10))
+        self.progress_bar.set(0)
+        self._cancel_batch = False
+
+    def _process_single_batch_job(
+        self,
+        job: ImageJob,
+        output_dir: Path,
+        reference_target: Tuple[int, int],
+        reference_output_format: str,
+        batch_options: SaveOptions,
+        stats: BatchSaveStats,
+    ) -> None:
+        resized_img = self._resize_image_to_target(job.image, reference_target)
+        if not resized_img:
+            stats.record_failure(job.path.name, "リサイズ失敗")
+            return
+
+        out_base = self._build_unique_batch_base_path(
+            output_dir=output_dir,
+            stem=job.path.stem,
+            output_format=reference_output_format,
+            dry_run=batch_options.dry_run,
+        )
+        result = save_image(
+            source_image=job.image,
+            resized_image=resized_img,
+            output_path=out_base,
+            options=batch_options,
+        )
+        if result.success:
+            stats.record_success(result)
+            return
+
+        error_detail = result.error or "保存処理で不明なエラー"
+        stats.record_failure(job.path.name, error_detail)
+        logging.error(f"Failed to save {result.output_path}: {result.error}")
+
+    def _run_batch_save(
+        self,
+        output_dir: Path,
+        reference_target: Tuple[int, int],
+        reference_output_format: str,
+        batch_options: SaveOptions,
+    ) -> BatchSaveStats:
+        stats = BatchSaveStats()
+        total_files = len(self.jobs)
+        self._prepare_batch_ui()
+
+        try:
+            for i, job in enumerate(self.jobs):
+                if self._cancel_batch:
+                    break
+
+                self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
+                self.progress_bar.set((i + 1) / total_files)
+                self.update_idletasks()
+
+                try:
+                    self._process_single_batch_job(
+                        job=job,
+                        output_dir=output_dir,
+                        reference_target=reference_target,
+                        reference_output_format=reference_output_format,
+                        batch_options=batch_options,
+                        stats=stats,
+                    )
+                except Exception as e:
+                    stats.record_failure(job.path.name, f"例外 {e}")
+                    logging.exception("Unexpected error during batch save: %s", job.path)
+        finally:
+            self.progress_bar.pack_forget()
+            self.cancel_button.pack_forget()
+
+        return stats
+
+    def _build_batch_completion_message(
+        self,
+        stats: BatchSaveStats,
+        reference_job: ImageJob,
+        reference_target: Tuple[int, int],
+        reference_format_label: str,
+        batch_options: SaveOptions,
+    ) -> str:
+        total_files = len(self.jobs)
+        if self._cancel_batch:
+            msg = (
+                f"一括処理がキャンセルされました。"
+                f"({stats.processed_count}/{total_files}件完了)"
+            )
+        else:
+            mode_text = "ドライラン" if batch_options.dry_run else "保存"
+            msg = (
+                f"一括処理完了。{stats.processed_count}/{total_files}件を{mode_text}しました。"
+                f"\n失敗: {stats.failed_count}件 / EXIF付与: {stats.exif_applied_count}件 / EXIFフォールバック: {stats.exif_fallback_count}件 / GPS削除: {stats.gps_removed_count}件"
+            )
+            msg += (
+                f"\n基準: {reference_job.path.name} / "
+                f"{reference_target[0]}x{reference_target[1]} / {reference_format_label}"
+            )
+            if batch_options.dry_run:
+                msg += f"\nドライラン件数: {stats.dry_run_count}件"
+                msg += "\nドライランのため、実ファイルは作成していません。"
+
+        if stats.failed_details:
+            preview_lines = stats.failed_details[:5]
+            msg += "\n失敗詳細:"
+            for detail in preview_lines:
+                msg += f"\n- {detail}"
+            if len(stats.failed_details) > len(preview_lines):
+                msg += f"\n- ...ほか {len(stats.failed_details) - len(preview_lines)} 件"
+        return msg
+
     def _batch_save(self):
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "画像の読み込み中です。完了またはキャンセル後に実行してください。")
+            return
         if not self.jobs:
             messagebox.showwarning("ファイル未選択", "ファイルが選択されていません")
             return
@@ -2014,130 +2680,45 @@ class ResizeApp(customtkinter.CTk):
         reference_format_label = FORMAT_ID_TO_LABEL.get(
             reference_output_format, reference_output_format.upper()
         )
+        batch_options = self._build_batch_save_options(reference_output_format)
 
-        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
-        batch_exif_edit_values = (
-            self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
-        )
-        batch_options = self._build_save_options(
-            reference_output_format, exif_edit_values=batch_exif_edit_values
-        )
-        run_mode_text = "ドライラン（実ファイルは作成しません）" if batch_options.dry_run else "保存"
-
-        if not messagebox.askokcancel(
-            "一括適用保存の確認",
-            f"基準画像: {reference_job.path.name}\n"
-            f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
-            f"出力形式: {reference_format_label}\n"
-            f"モード: {run_mode_text}\n\n"
-            f"読み込み中の {len(self.jobs)} 枚すべてに同じ設定を適用して処理します。",
+        if not self._confirm_batch_save(
+            reference_job=reference_job,
+            reference_target=reference_target,
+            reference_format_label=reference_format_label,
+            batch_options=batch_options,
         ):
             return
 
-        initial_dir = self.settings.get("last_output_dir") or self.settings.get("last_input_dir") or Path.home()
-        output_dir_str = filedialog.askdirectory(title="保存先フォルダを選択", initialdir=str(initial_dir))
-        if not output_dir_str:
+        output_dir = self._select_batch_output_dir()
+        if output_dir is None:
             return
-
-        output_dir = Path(output_dir_str)
         self.settings["last_output_dir"] = str(output_dir)
 
-        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-        self.cancel_button.pack(side="bottom", pady=(0, 10))
-        self.progress_bar.set(0)
-        self._cancel_batch = False
-
-        processed_count = 0
-        failed_count = 0
-        dry_run_count = 0
-        exif_applied_count = 0
-        exif_fallback_count = 0
-        gps_removed_count = 0
-        total_files = len(self.jobs)
-        failed_details: List[str] = []
-
-        try:
-            for i, job in enumerate(self.jobs):
-                if self._cancel_batch:
-                    break
-
-                self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
-                self.progress_bar.set((i + 1) / total_files)
-                self.update_idletasks()
-
-                try:
-                    resized_img = self._resize_image_to_target(job.image, reference_target)
-                    if not resized_img:
-                        failed_count += 1
-                        failed_details.append(f"{job.path.name}: リサイズ失敗")
-                        continue
-
-                    out_base = self._build_unique_batch_base_path(
-                        output_dir=output_dir,
-                        stem=job.path.stem,
-                        output_format=reference_output_format,
-                        dry_run=batch_options.dry_run,
-                    )
-                    result = save_image(
-                        source_image=job.image,
-                        resized_image=resized_img,
-                        output_path=out_base,
-                        options=batch_options,
-                    )
-                    if result.success:
-                        processed_count += 1
-                        if result.dry_run:
-                            dry_run_count += 1
-                        if result.exif_attached:
-                            exif_applied_count += 1
-                        if result.exif_fallback_without_metadata:
-                            exif_fallback_count += 1
-                        if result.gps_removed:
-                            gps_removed_count += 1
-                    else:
-                        failed_count += 1
-                        error_detail = result.error or "保存処理で不明なエラー"
-                        failed_details.append(f"{job.path.name}: {error_detail}")
-                        logging.error(f"Failed to save {result.output_path}: {result.error}")
-                except Exception as e:
-                    failed_count += 1
-                    failed_details.append(f"{job.path.name}: 例外 {e}")
-                    logging.exception("Unexpected error during batch save: %s", job.path)
-        finally:
-            self.progress_bar.pack_forget()
-            self.cancel_button.pack_forget()
-
-        if self._cancel_batch:
-            msg = (
-                f"一括処理がキャンセルされました。"
-                f"({processed_count}/{total_files}件完了)"
-            )
-        else:
-            mode_text = "ドライラン" if batch_options.dry_run else "保存"
-            msg = (
-                f"一括処理完了。{processed_count}/{total_files}件を{mode_text}しました。"
-                f"\n失敗: {failed_count}件 / EXIF付与: {exif_applied_count}件 / EXIFフォールバック: {exif_fallback_count}件 / GPS削除: {gps_removed_count}件"
-            )
-            msg += (
-                f"\n基準: {reference_job.path.name} / "
-                f"{reference_target[0]}x{reference_target[1]} / {reference_format_label}"
-            )
-            if batch_options.dry_run:
-                msg += f"\nドライラン件数: {dry_run_count}件"
-                msg += "\nドライランのため、実ファイルは作成していません。"
-
-        if failed_details:
-            preview_lines = failed_details[:5]
-            msg += "\n失敗詳細:"
-            for detail in preview_lines:
-                msg += f"\n- {detail}"
-            if len(failed_details) > len(preview_lines):
-                msg += f"\n- ...ほか {len(failed_details) - len(preview_lines)} 件"
+        stats = self._run_batch_save(
+            output_dir=output_dir,
+            reference_target=reference_target,
+            reference_output_format=reference_output_format,
+            batch_options=batch_options,
+        )
+        msg = self._build_batch_completion_message(
+            stats=stats,
+            reference_job=reference_job,
+            reference_target=reference_target,
+            reference_format_label=reference_format_label,
+            batch_options=batch_options,
+        )
         self.status_var.set(msg)
         messagebox.showinfo("完了", msg)
 
     def _cancel_batch_save(self):
         self._cancel_batch = True
+
+    def _cancel_active_operation(self):
+        if self._is_loading_files:
+            self._cancel_file_loading()
+            return
+        self._cancel_batch_save()
 
     def _draw_previews(self, job: ImageJob):
         """Draw original and resized previews on canvases."""
