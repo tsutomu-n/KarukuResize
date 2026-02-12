@@ -12,7 +12,6 @@ A convenience CLI entry point `karuku-resizer` is also provided if installed as 
 from __future__ import annotations
 
 import io
-import json
 import logging
 import os
 import platform
@@ -23,8 +22,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from tkinter import filedialog, messagebox
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+from tkinter import filedialog, messagebox, simpledialog
 
 import customtkinter
 from PIL import Image, ImageOps, ImageTk
@@ -32,6 +31,12 @@ from PIL import Image, ImageOps, ImageTk
 # ヘルプコンテンツとダイアログをインポート
 from karuku_resizer.help_content import HELP_CONTENT, STEP_DESCRIPTIONS
 from karuku_resizer.help_dialog import HelpDialog
+from karuku_resizer.gui_settings_store import GuiSettingsStore, default_gui_settings
+from karuku_resizer.processing_preset_store import (
+    ProcessingPreset,
+    ProcessingPresetStore,
+    merge_processing_values,
+)
 from karuku_resizer.image_save_pipeline import (
     ExifEditValues,
     SaveOptions,
@@ -134,6 +139,14 @@ APPEARANCE_LABEL_TO_ID = {
 
 APPEARANCE_ID_TO_LABEL = {v: k for k, v in APPEARANCE_LABEL_TO_ID.items()}
 
+PRO_INPUT_MODE_LABEL_TO_ID = {
+    "フォルダ再帰": "recursive",
+    "ファイル個別": "files",
+}
+
+PRO_INPUT_MODE_ID_TO_LABEL = {v: k for k, v in PRO_INPUT_MODE_LABEL_TO_ID.items()}
+PRESET_NONE_LABEL = "未設定"
+
 EXIF_PREVIEW_TAGS = [
     ("メーカー", 0x010F),
     ("機種", 0x0110),
@@ -193,73 +206,17 @@ DEBUG = False
 logger = logging.getLogger(__name__)
 
 
-class SettingsManager:
-    """設定ファイル管理クラス"""
-    def __init__(self, settings_file: str = "karuku_settings.json"):
-        self.settings_file = Path(settings_file)
-
-    def load_settings(self) -> dict:
-        """設定ファイルを読み込む"""
-        defaults = self._default_settings()
-        if self.settings_file.exists():
-            try:
-                with open(self.settings_file, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                    if isinstance(loaded, dict):
-                        defaults.update(loaded)
-            except Exception as e:
-                logging.error(f"Failed to load settings: {e}")
-        return defaults
-
-    def save_settings(self, settings: dict) -> None:
-        """設定ファイルを保存する"""
-        try:
-            with open(self.settings_file, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logging.error(f"Failed to save settings: {e}")
-
-    @staticmethod
-    def _default_settings() -> dict:
-        """デフォルト設定を返す"""
-        return {
-            "mode": "ratio",
-            "ui_mode": "simple",
-            "appearance_mode": "system",
-            "ratio_value": "100",
-            "width_value": "",
-            "height_value": "",
-            "quality": "85",
-            "output_format": "auto",
-            "webp_method": "6",
-            "webp_lossless": False,
-            "avif_speed": "6",
-            "dry_run": False,
-            "verbose_logging": False,
-            "exif_mode": "keep",
-            "remove_gps": False,
-            "exif_artist": "",
-            "exif_copyright": "",
-            "exif_user_comment": "",
-            "exif_datetime_original": "",
-            "details_expanded": False,
-            "metadata_panel_expanded": False,
-            "window_geometry": "1200x800",
-            "zoom_preference": "画面に合わせる",
-            "last_input_dir": "",
-            "last_output_dir": "",
-            "pro_input_mode": "recursive",
-        }
-
-
 class ResizeApp(customtkinter.CTk):
     def __init__(self) -> None:
         super().__init__()
 
         # 設定マネージャー初期化
-        self.settings_manager = SettingsManager()
-        self.settings = self.settings_manager.load_settings()
+        self.settings_store = GuiSettingsStore()
+        self.settings = self.settings_store.load()
         self.available_formats = supported_output_formats()
+        self.preset_store = ProcessingPresetStore()
+        self.processing_presets: List[ProcessingPreset] = self.preset_store.load()
+        self._preset_name_to_id: Dict[str, str] = {}
 
         # --- Theme ---
         customtkinter.set_appearance_mode("system")
@@ -297,6 +254,8 @@ class ResizeApp(customtkinter.CTk):
         self._file_scan_started_at = 0.0
         self._file_load_started_at = 0.0
         self._file_scan_pulse = 0.0
+        self._settings_dialog: Optional[customtkinter.CTkToplevel] = None
+        self._preset_dialog: Optional[customtkinter.CTkToplevel] = None
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
             app_name=LOG_APP_NAME,
             retention_days=DEFAULT_RETENTION_DAYS,
@@ -306,7 +265,9 @@ class ResizeApp(customtkinter.CTk):
         self._run_summary_finalized = False
 
         self._setup_ui()
+        self._refresh_preset_menu(selected_preset_id=self.settings.get("default_preset_id", ""))
         self._restore_settings()
+        self._apply_default_preset_if_configured()
         self._apply_log_level()
         self._write_run_summary_safe()
 
@@ -422,6 +383,598 @@ class ResizeApp(customtkinter.CTk):
             return "system"
         return normalized
 
+    @staticmethod
+    def _to_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _refresh_preset_menu(self, selected_preset_id: Optional[str] = None) -> None:
+        label_to_id: Dict[str, str] = {}
+        labels: List[str] = []
+        for preset in self.processing_presets:
+            base_label = preset.name.strip() or preset.preset_id
+            if preset.is_builtin:
+                base_label = f"🔒 {base_label}"
+            label = base_label
+            suffix_index = 2
+            while label in label_to_id:
+                label = f"{base_label} ({suffix_index})"
+                suffix_index += 1
+            labels.append(label)
+            label_to_id[label] = preset.preset_id
+
+        if not labels:
+            labels = [PRESET_NONE_LABEL]
+
+        self._preset_name_to_id = label_to_id
+        if hasattr(self, "preset_menu"):
+            self.preset_menu.configure(values=labels)
+
+        if selected_preset_id:
+            self._set_selected_preset_label_by_id(selected_preset_id)
+            return
+
+        current_label = self.preset_var.get() if hasattr(self, "preset_var") else PRESET_NONE_LABEL
+        if current_label in labels:
+            self.preset_var.set(current_label)
+        else:
+            self.preset_var.set(labels[0])
+
+    def _set_selected_preset_label_by_id(self, preset_id: str) -> None:
+        for label, mapped_id in self._preset_name_to_id.items():
+            if mapped_id == preset_id:
+                self.preset_var.set(label)
+                return
+        if self._preset_name_to_id:
+            self.preset_var.set(next(iter(self._preset_name_to_id.keys())))
+        else:
+            self.preset_var.set(PRESET_NONE_LABEL)
+
+    def _selected_preset_id(self) -> str:
+        return self._preset_name_to_id.get(self.preset_var.get(), "")
+
+    def _preset_label_for_id(self, preset_id: str, fallback: str = PRESET_NONE_LABEL) -> str:
+        for label, mapped_id in self._preset_name_to_id.items():
+            if mapped_id == preset_id:
+                return label
+        return fallback
+
+    def _preset_labels_with_none(self) -> List[str]:
+        labels = [PRESET_NONE_LABEL]
+        labels.extend(self._preset_name_to_id.keys())
+        return labels
+
+    def _get_preset_by_id(self, preset_id: str) -> Optional[ProcessingPreset]:
+        if not preset_id:
+            return None
+        for preset in self.processing_presets:
+            if preset.preset_id == preset_id:
+                return preset
+        return None
+
+    def _user_presets(self) -> List[ProcessingPreset]:
+        return [preset for preset in self.processing_presets if not preset.is_builtin]
+
+    def _persist_user_presets(
+        self,
+        user_presets: List[ProcessingPreset],
+        *,
+        selected_preset_id: Optional[str] = None,
+    ) -> None:
+        selected_id = selected_preset_id or self._selected_preset_id()
+        self.preset_store.save_users(user_presets)
+        self.processing_presets = self.preset_store.load()
+        if selected_id and self._get_preset_by_id(selected_id) is None:
+            selected_id = ""
+        if not selected_id and self.processing_presets:
+            selected_id = self.processing_presets[0].preset_id
+        self._refresh_preset_menu(selected_preset_id=selected_id)
+
+        default_preset_id = str(self.settings.get("default_preset_id", "")).strip()
+        if default_preset_id and self._get_preset_by_id(default_preset_id) is None:
+            self.settings["default_preset_id"] = ""
+            self._save_current_settings()
+
+    def _capture_current_processing_values(self) -> dict[str, Any]:
+        edit_values = self._current_exif_edit_values(show_warning=False)
+        return merge_processing_values(
+            {
+                "mode": self.mode_var.get(),
+                "ratio_value": self.pct_var.get(),
+                "width_value": self.w_var.get(),
+                "height_value": self.h_var.get(),
+                "quality": str(self._current_quality()),
+                "output_format": FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto"),
+                "webp_method": str(self._current_webp_method()),
+                "webp_lossless": self.webp_lossless_var.get(),
+                "avif_speed": str(self._current_avif_speed()),
+                "dry_run": self.dry_run_var.get(),
+                "exif_mode": EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep"),
+                "remove_gps": self.remove_gps_var.get(),
+                "exif_artist": edit_values.artist or "",
+                "exif_copyright": edit_values.copyright_text or "",
+                "exif_user_comment": edit_values.user_comment or "",
+                "exif_datetime_original": edit_values.datetime_original or "",
+            }
+        )
+
+    def _apply_processing_values(self, values: Mapping[str, Any]) -> None:
+        merged = merge_processing_values(values)
+
+        mode = str(merged.get("mode", "ratio"))
+        if mode not in {"ratio", "width", "height", "fixed"}:
+            mode = "ratio"
+        self.mode_var.set(mode)
+        self.pct_var.set(str(merged.get("ratio_value", "100")))
+        self.w_var.set(str(merged.get("width_value", "")))
+        self.h_var.set(str(merged.get("height_value", "")))
+
+        try:
+            quality = normalize_quality(int(merged.get("quality", 85)))
+        except (TypeError, ValueError):
+            quality = 85
+        self.quality_var.set(str(quality))
+
+        output_format_id = str(merged.get("output_format", "auto")).lower()
+        if output_format_id not in FORMAT_ID_TO_LABEL:
+            output_format_id = "auto"
+        output_label = FORMAT_ID_TO_LABEL.get(output_format_id, "自動")
+        if output_label not in self._build_output_format_labels():
+            output_label = "自動"
+        self.output_format_var.set(output_label)
+
+        try:
+            webp_method = normalize_webp_method(int(merged.get("webp_method", 6)))
+        except (TypeError, ValueError):
+            webp_method = 6
+        self.webp_method_var.set(str(webp_method))
+        self.webp_lossless_var.set(self._to_bool(merged.get("webp_lossless", False)))
+
+        try:
+            avif_speed = normalize_avif_speed(int(merged.get("avif_speed", 6)))
+        except (TypeError, ValueError):
+            avif_speed = 6
+        self.avif_speed_var.set(str(avif_speed))
+
+        self.dry_run_var.set(self._to_bool(merged.get("dry_run", False)))
+
+        exif_mode_id = str(merged.get("exif_mode", "keep")).lower()
+        if exif_mode_id not in EXIF_ID_TO_LABEL:
+            exif_mode_id = "keep"
+        if exif_mode_id == "edit" and not self._is_pro_mode():
+            self.ui_mode_var.set("プロ")
+        self.exif_mode_var.set(EXIF_ID_TO_LABEL.get(exif_mode_id, "保持"))
+        self.remove_gps_var.set(self._to_bool(merged.get("remove_gps", False)))
+        self.exif_artist_var.set(str(merged.get("exif_artist", "")))
+        self.exif_copyright_var.set(str(merged.get("exif_copyright", "")))
+        self.exif_user_comment_var.set(str(merged.get("exif_user_comment", "")))
+        self.exif_datetime_original_var.set(str(merged.get("exif_datetime_original", "")))
+
+        self._update_mode()
+        self._apply_ui_mode()
+        self._on_output_format_changed(self.output_format_var.get())
+        self._on_quality_changed(self.quality_var.get())
+        self._on_exif_mode_changed(self.exif_mode_var.get())
+        self._update_settings_summary()
+
+        if self.current_index is not None and self.current_index < len(self.jobs):
+            self._draw_previews(self.jobs[self.current_index])
+
+    def _apply_preset_by_id(self, preset_id: str, *, announce: bool = True, persist: bool = True) -> bool:
+        preset = self._get_preset_by_id(preset_id)
+        if preset is None:
+            return False
+
+        self._apply_processing_values(preset.values)
+        self._set_selected_preset_label_by_id(preset.preset_id)
+        if persist:
+            self._save_current_settings()
+        if announce:
+            self.status_var.set(f"プリセット適用: {preset.name}")
+        return True
+
+    def _apply_selected_preset(self) -> None:
+        preset_id = self._selected_preset_id()
+        if not preset_id:
+            messagebox.showinfo("プリセット", "適用するプリセットを選択してください。")
+            return
+        if not self._apply_preset_by_id(preset_id, announce=True, persist=True):
+            messagebox.showerror("プリセット", "選択されたプリセットを適用できませんでした。")
+
+    def _apply_default_preset_if_configured(self) -> None:
+        preset_id = str(self.settings.get("default_preset_id", "")).strip()
+        if not preset_id:
+            return
+        if self._apply_preset_by_id(preset_id, announce=False, persist=False):
+            preset = self._get_preset_by_id(preset_id)
+            if preset is not None:
+                self.status_var.set(f"既定プリセット適用: {preset.name}")
+            return
+
+        self.settings["default_preset_id"] = ""
+        self._save_current_settings()
+
+    def _save_current_as_preset(self) -> None:
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "画像読み込み中はプリセット保存できません。")
+            return
+
+        initial_name = ""
+        selected_preset = self._get_preset_by_id(self._selected_preset_id())
+        if selected_preset is not None and not selected_preset.is_builtin:
+            initial_name = selected_preset.name
+
+        name = simpledialog.askstring(
+            "プリセット保存",
+            "プリセット名を入力してください。",
+            parent=self,
+            initialvalue=initial_name,
+        )
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            messagebox.showwarning("プリセット保存", "プリセット名を入力してください。")
+            return
+
+        captured_values = self._capture_current_processing_values()
+        now = datetime.now().isoformat(timespec="seconds")
+        user_presets = self._user_presets()
+        existing = next((preset for preset in user_presets if preset.name == name), None)
+        if existing is not None:
+            overwrite = messagebox.askyesno(
+                "プリセット保存",
+                f"同名のプリセット「{name}」があります。上書きしますか？",
+            )
+            if not overwrite:
+                return
+            existing.values = merge_processing_values(captured_values)
+            existing.updated_at = now
+            target_id = existing.preset_id
+            status_text = f"プリセット更新: {name}"
+        else:
+            new_preset = ProcessingPresetStore.new_user_preset(
+                name=name,
+                description="",
+                values=captured_values,
+                existing_ids=[preset.preset_id for preset in self.processing_presets],
+            )
+            user_presets.append(new_preset)
+            target_id = new_preset.preset_id
+            status_text = f"プリセット保存: {name}"
+
+        self._persist_user_presets(user_presets, selected_preset_id=target_id)
+        self._set_selected_preset_label_by_id(target_id)
+        self._save_current_settings()
+        self.status_var.set(status_text)
+
+    def _open_preset_manager_dialog(self) -> None:
+        if self._preset_dialog is not None and self._preset_dialog.winfo_exists():
+            self._preset_dialog.focus_set()
+            return
+
+        dialog = customtkinter.CTkToplevel(self)
+        self._preset_dialog = dialog
+        dialog.title("プリセット管理")
+        dialog.geometry("700x360")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
+        dialog.grid_columnconfigure(1, weight=1)
+
+        selected_label_var = customtkinter.StringVar(value=self.preset_var.get())
+        name_var = customtkinter.StringVar(value="")
+        description_var = customtkinter.StringVar(value="")
+        info_var = customtkinter.StringVar(value="")
+        default_status_var = customtkinter.StringVar(value="")
+
+        def _close_dialog() -> None:
+            if dialog.winfo_exists():
+                dialog.grab_release()
+                dialog.destroy()
+            self._preset_dialog = None
+
+        def _current_preset_id() -> str:
+            return self._preset_name_to_id.get(selected_label_var.get(), "")
+
+        def _current_preset() -> Optional[ProcessingPreset]:
+            return self._get_preset_by_id(_current_preset_id())
+
+        def _refresh_dialog_menu(selected_id: Optional[str] = None) -> None:
+            labels = list(self._preset_name_to_id.keys()) or [PRESET_NONE_LABEL]
+            preset_option_menu.configure(values=labels)
+            if selected_id:
+                selected_label_var.set(self._preset_label_for_id(selected_id, labels[0]))
+            elif selected_label_var.get() not in labels:
+                selected_label_var.set(labels[0])
+
+        def _build_preset_info_text(preset: ProcessingPreset) -> str:
+            values = merge_processing_values(preset.values)
+            mode = str(values.get("mode", "ratio"))
+            if mode == "ratio":
+                size_text = f"比率 {values.get('ratio_value', '100')}%"
+            elif mode == "width":
+                size_text = f"幅 {values.get('width_value', '')}px"
+            elif mode == "height":
+                size_text = f"高さ {values.get('height_value', '')}px"
+            else:
+                size_text = f"固定 {values.get('width_value', '')}x{values.get('height_value', '')}px"
+            format_id = str(values.get("output_format", "auto")).lower()
+            format_label = FORMAT_ID_TO_LABEL.get(format_id, "自動")
+            exif_mode_label = EXIF_ID_TO_LABEL.get(str(values.get("exif_mode", "keep")), "保持")
+            preset_kind = "組み込み" if preset.is_builtin else "ユーザー"
+            updated_at = preset.updated_at or "-"
+            return (
+                f"種別: {preset_kind} / ID: {preset.preset_id}\n"
+                f"サイズ: {size_text} / 形式: {format_label} / 品質: {values.get('quality', '85')}\n"
+                f"EXIF: {exif_mode_label} / GPS削除: {'ON' if self._to_bool(values.get('remove_gps', False)) else 'OFF'} / "
+                f"ドライラン: {'ON' if self._to_bool(values.get('dry_run', False)) else 'OFF'}\n"
+                f"更新日時: {updated_at}"
+            )
+
+        def _refresh_dialog_fields(*_args: object) -> None:
+            preset = _current_preset()
+            default_id = str(self.settings.get("default_preset_id", "")).strip()
+            if preset is None:
+                name_var.set("")
+                description_var.set("")
+                info_var.set("プリセットを選択してください。")
+                default_status_var.set("既定プリセット: 未設定")
+                name_entry.configure(state="disabled")
+                description_entry.configure(state="disabled")
+                update_button.configure(state="disabled")
+                delete_button.configure(state="disabled")
+                apply_button.configure(state="disabled")
+                set_default_button.configure(state="disabled")
+                return
+
+            name_var.set(preset.name)
+            description_var.set(preset.description)
+            info_var.set(_build_preset_info_text(preset))
+            default_label = self._preset_label_for_id(default_id, PRESET_NONE_LABEL) if default_id else PRESET_NONE_LABEL
+            default_status_var.set(f"既定プリセット: {default_label}")
+
+            is_user = not preset.is_builtin
+            field_state = "normal" if is_user else "disabled"
+            name_entry.configure(state=field_state)
+            description_entry.configure(state=field_state)
+            update_button.configure(state="normal" if is_user else "disabled")
+            delete_button.configure(state="normal" if is_user else "disabled")
+            apply_button.configure(state="normal")
+            set_default_button.configure(state="normal")
+
+        def _apply_dialog_preset() -> None:
+            preset_id = _current_preset_id()
+            if not preset_id:
+                return
+            if self._apply_preset_by_id(preset_id, announce=True, persist=True):
+                self._refresh_preset_menu(selected_preset_id=preset_id)
+                selected_label_var.set(self._preset_label_for_id(preset_id, selected_label_var.get()))
+                _refresh_dialog_fields()
+
+        def _set_default_preset() -> None:
+            preset_id = _current_preset_id()
+            if not preset_id:
+                return
+            self.settings["default_preset_id"] = preset_id
+            self._save_current_settings()
+            default_status_var.set(f"既定プリセット: {self._preset_label_for_id(preset_id, PRESET_NONE_LABEL)}")
+            self.status_var.set("既定プリセットを更新しました。")
+
+        def _clear_default_preset() -> None:
+            self.settings["default_preset_id"] = ""
+            self._save_current_settings()
+            default_status_var.set(f"既定プリセット: {PRESET_NONE_LABEL}")
+            self.status_var.set("既定プリセットを解除しました。")
+
+        def _update_user_preset_from_current() -> None:
+            preset = _current_preset()
+            if preset is None or preset.is_builtin:
+                messagebox.showwarning("プリセット更新", "ユーザープリセットを選択してください。", parent=dialog)
+                return
+
+            updated_name = name_var.get().strip()
+            if not updated_name:
+                messagebox.showwarning("プリセット更新", "プリセット名を入力してください。", parent=dialog)
+                return
+
+            for existing in self._user_presets():
+                if existing.preset_id != preset.preset_id and existing.name == updated_name:
+                    messagebox.showwarning(
+                        "プリセット更新",
+                        f"同名のユーザープリセット「{updated_name}」が存在します。",
+                        parent=dialog,
+                    )
+                    return
+
+            updated_desc = description_var.get().strip()
+            updated_values = self._capture_current_processing_values()
+
+            user_presets: List[ProcessingPreset] = []
+            for existing in self._user_presets():
+                if existing.preset_id == preset.preset_id:
+                    existing.name = updated_name
+                    existing.description = updated_desc
+                    existing.values = merge_processing_values(updated_values)
+                    existing.updated_at = datetime.now().isoformat(timespec="seconds")
+                user_presets.append(existing)
+
+            self._persist_user_presets(user_presets, selected_preset_id=preset.preset_id)
+            self._set_selected_preset_label_by_id(preset.preset_id)
+            _refresh_dialog_menu(selected_id=preset.preset_id)
+            _refresh_dialog_fields()
+            self._save_current_settings()
+            self.status_var.set(f"プリセット更新: {updated_name}")
+
+        def _delete_user_preset() -> None:
+            preset = _current_preset()
+            if preset is None or preset.is_builtin:
+                messagebox.showwarning("プリセット削除", "削除できるのはユーザープリセットのみです。", parent=dialog)
+                return
+
+            if not messagebox.askyesno(
+                "プリセット削除",
+                f"「{preset.name}」を削除しますか？",
+                parent=dialog,
+            ):
+                return
+
+            remaining = [existing for existing in self._user_presets() if existing.preset_id != preset.preset_id]
+            deleted_id = preset.preset_id
+            self._persist_user_presets(remaining)
+            if str(self.settings.get("default_preset_id", "")).strip() == deleted_id:
+                self.settings["default_preset_id"] = ""
+                self._save_current_settings()
+            fallback_id = self._selected_preset_id()
+            _refresh_dialog_menu(selected_id=fallback_id)
+            _refresh_dialog_fields()
+            self.status_var.set(f"プリセット削除: {preset.name}")
+
+        row = 0
+        customtkinter.CTkLabel(
+            dialog,
+            text="対象プリセット",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
+        preset_option_menu = customtkinter.CTkOptionMenu(
+            dialog,
+            variable=selected_label_var,
+            values=list(self._preset_name_to_id.keys()) or [PRESET_NONE_LABEL],
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        )
+        preset_option_menu.grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="名称（ユーザーのみ変更可）",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        name_entry = customtkinter.CTkEntry(
+            dialog,
+            textvariable=name_var,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
+        name_entry.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="説明（任意）",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        description_entry = customtkinter.CTkEntry(
+            dialog,
+            textvariable=description_var,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
+        description_entry.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            textvariable=default_status_var,
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+            anchor="w",
+            justify="left",
+        ).grid(row=row, column=0, columnspan=2, padx=20, pady=(2, 6), sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            textvariable=info_var,
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+            anchor="w",
+            justify="left",
+        ).grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+
+        row += 1
+        action_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        action_frame.grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 16), sticky="e")
+
+        apply_button = customtkinter.CTkButton(
+            action_frame,
+            text="適用",
+            width=88,
+            command=_apply_dialog_preset,
+            font=self.font_small,
+        )
+        self._style_secondary_button(apply_button)
+        apply_button.pack(side="left", padx=(0, 8))
+
+        set_default_button = customtkinter.CTkButton(
+            action_frame,
+            text="既定に設定",
+            width=108,
+            command=_set_default_preset,
+            font=self.font_small,
+        )
+        self._style_secondary_button(set_default_button)
+        set_default_button.pack(side="left", padx=(0, 8))
+
+        clear_default_button = customtkinter.CTkButton(
+            action_frame,
+            text="既定解除",
+            width=92,
+            command=_clear_default_preset,
+            font=self.font_small,
+        )
+        self._style_secondary_button(clear_default_button)
+        clear_default_button.pack(side="left", padx=(0, 8))
+
+        update_button = customtkinter.CTkButton(
+            action_frame,
+            text="現在設定で更新",
+            width=132,
+            command=_update_user_preset_from_current,
+            font=self.font_small,
+        )
+        self._style_primary_button(update_button)
+        update_button.pack(side="left", padx=(0, 8))
+
+        delete_button = customtkinter.CTkButton(
+            action_frame,
+            text="削除",
+            width=82,
+            command=_delete_user_preset,
+            font=self.font_small,
+        )
+        self._style_secondary_button(delete_button)
+        delete_button.pack(side="left", padx=(0, 8))
+
+        close_button = customtkinter.CTkButton(
+            action_frame,
+            text="閉じる",
+            width=82,
+            command=_close_dialog,
+            font=self.font_small,
+        )
+        self._style_secondary_button(close_button)
+        close_button.pack(side="left")
+
+        selected_label_var.trace_add("write", _refresh_dialog_fields)
+        _refresh_dialog_menu()
+        _refresh_dialog_fields()
+
+        dialog.protocol("WM_DELETE_WINDOW", _close_dialog)
+        dialog.focus_set()
+
     def _setup_ui(self):
         """UI要素をセットアップ"""
         # -------------------- UI top bar --------------------------------
@@ -439,6 +992,60 @@ class ResizeApp(customtkinter.CTk):
         )
         self._style_secondary_button(self.help_button)
         self.help_button.pack(side="left", padx=(0, 10), pady=8)
+        self.settings_button = customtkinter.CTkButton(
+            top, text="⚙ 設定", width=90, command=self._open_settings_dialog, font=self.font_default
+        )
+        self._style_secondary_button(self.settings_button)
+        self.settings_button.pack(side="left", padx=(0, 10), pady=8)
+
+        customtkinter.CTkLabel(
+            top,
+            text="プリセット",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).pack(side="left", padx=(0, 4), pady=8)
+        self.preset_var = customtkinter.StringVar(value=PRESET_NONE_LABEL)
+        self.preset_menu = customtkinter.CTkOptionMenu(
+            top,
+            variable=self.preset_var,
+            values=[PRESET_NONE_LABEL],
+            width=180,
+            font=self.font_small,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        )
+        self.preset_menu.pack(side="left", padx=(0, 6), pady=8)
+        self.preset_apply_button = customtkinter.CTkButton(
+            top,
+            text="適用",
+            width=72,
+            command=self._apply_selected_preset,
+            font=self.font_small,
+        )
+        self._style_secondary_button(self.preset_apply_button)
+        self.preset_apply_button.pack(side="left", padx=(0, 4), pady=8)
+        self.preset_save_button = customtkinter.CTkButton(
+            top,
+            text="保存",
+            width=72,
+            command=self._save_current_as_preset,
+            font=self.font_small,
+        )
+        self._style_secondary_button(self.preset_save_button)
+        self.preset_save_button.pack(side="left", padx=(0, 4), pady=8)
+        self.preset_manage_button = customtkinter.CTkButton(
+            top,
+            text="管理",
+            width=72,
+            command=self._open_preset_manager_dialog,
+            font=self.font_small,
+        )
+        self._style_secondary_button(self.preset_manage_button)
+        self.preset_manage_button.pack(side="left", padx=(0, 10), pady=8)
 
         # Spacer to push subsequent widgets to the right
         spacer = customtkinter.CTkFrame(top, fg_color="transparent")
@@ -1567,13 +2174,13 @@ class ResizeApp(customtkinter.CTk):
                 "保持",
             )
         )
-        self.remove_gps_var.set(bool(self.settings.get("remove_gps", False)))
+        self.remove_gps_var.set(self._to_bool(self.settings.get("remove_gps", False)))
         self.exif_artist_var.set(str(self.settings.get("exif_artist", "")))
         self.exif_copyright_var.set(str(self.settings.get("exif_copyright", "")))
         self.exif_user_comment_var.set(str(self.settings.get("exif_user_comment", "")))
         self.exif_datetime_original_var.set(str(self.settings.get("exif_datetime_original", "")))
-        self.dry_run_var.set(bool(self.settings.get("dry_run", False)))
-        self.verbose_log_var.set(bool(self.settings.get("verbose_logging", False)))
+        self.dry_run_var.set(self._to_bool(self.settings.get("dry_run", False)))
+        self.verbose_log_var.set(self._to_bool(self.settings.get("verbose_logging", False)))
         details_expanded = self.settings.get("details_expanded", False)
         if not isinstance(details_expanded, bool):
             details_expanded = str(details_expanded).lower() in {"1", "true", "yes", "on"}
@@ -1621,11 +2228,13 @@ class ResizeApp(customtkinter.CTk):
             "metadata_panel_expanded": self.metadata_expanded,
             "window_geometry": self.geometry(),
             "zoom_preference": self.zoom_var.get(),
+            "default_output_dir": str(self.settings.get("default_output_dir", "")),
+            "default_preset_id": str(self.settings.get("default_preset_id", "")).strip(),
             "pro_input_mode": self._normalized_pro_input_mode(
                 str(self.settings.get("pro_input_mode", "recursive"))
             ),
         })
-        self.settings_manager.save_settings(self.settings)
+        self.settings_store.save(self.settings)
     
     def _on_closing(self):
         """アプリ終了時の処理"""
@@ -2064,6 +2673,11 @@ class ResizeApp(customtkinter.CTk):
         state = "normal" if enabled else "disabled"
         widgets = [
             self.select_button,
+            self.settings_button,
+            self.preset_menu,
+            self.preset_apply_button,
+            self.preset_save_button,
+            self.preset_manage_button,
             self.preview_button,
             self.save_button,
             self.batch_button,
@@ -2562,7 +3176,11 @@ class ResizeApp(customtkinter.CTk):
 
         output_format = self._resolve_output_format_for_image(job.image)
         ext_default = destination_with_extension(Path(f"{job.path.stem}_resized"), output_format).suffix
-        initial_dir = self.settings.get("last_output_dir") or Path.home()
+        initial_dir = (
+            self.settings.get("last_output_dir")
+            or self.settings.get("default_output_dir")
+            or Path.home()
+        )
         initial_file = f"{job.path.stem}_resized{ext_default}"
 
         save_path_str = filedialog.asksaveasfilename(
@@ -2627,7 +3245,12 @@ class ResizeApp(customtkinter.CTk):
         )
 
     def _select_batch_output_dir(self) -> Optional[Path]:
-        initial_dir = self.settings.get("last_output_dir") or self.settings.get("last_input_dir") or Path.home()
+        initial_dir = (
+            self.settings.get("last_output_dir")
+            or self.settings.get("default_output_dir")
+            or self.settings.get("last_input_dir")
+            or Path.home()
+        )
         output_dir_str = filedialog.askdirectory(title="保存先フォルダを選択", initialdir=str(initial_dir))
         if not output_dir_str:
             return None
@@ -2935,6 +3558,305 @@ class ResizeApp(customtkinter.CTk):
     def _show_help(self):
         """使い方ヘルプを表示する"""
         HelpDialog(self, HELP_CONTENT).show()
+
+    def _open_settings_dialog(self) -> None:
+        if self._settings_dialog is not None and self._settings_dialog.winfo_exists():
+            self._settings_dialog.focus_set()
+            return
+
+        dialog = customtkinter.CTkToplevel(self)
+        self._settings_dialog = dialog
+        dialog.title("設定")
+        dialog.geometry("640x420")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
+        dialog.grid_columnconfigure(1, weight=1)
+
+        ui_mode_var = customtkinter.StringVar(value=self.ui_mode_var.get())
+        appearance_var = customtkinter.StringVar(value=self.appearance_mode_var.get())
+        quality_var = customtkinter.StringVar(value=self.quality_var.get())
+        output_format_var = customtkinter.StringVar(value=self.output_format_var.get())
+        default_preset_var = customtkinter.StringVar(
+            value=self._preset_label_for_id(
+                str(self.settings.get("default_preset_id", "")).strip(),
+                PRESET_NONE_LABEL,
+            )
+        )
+        pro_input_var = customtkinter.StringVar(
+            value=PRO_INPUT_MODE_ID_TO_LABEL.get(
+                self._normalized_pro_input_mode(str(self.settings.get("pro_input_mode", "recursive"))),
+                "フォルダ再帰",
+            )
+        )
+        default_output_dir_var = customtkinter.StringVar(
+            value=str(self.settings.get("default_output_dir", ""))
+        )
+
+        def _close_dialog() -> None:
+            if dialog.winfo_exists():
+                dialog.grab_release()
+                dialog.destroy()
+            self._settings_dialog = None
+
+        def _browse_default_output_dir() -> None:
+            initial_dir = (
+                default_output_dir_var.get().strip()
+                or str(self.settings.get("last_output_dir", ""))
+                or str(Path.home())
+            )
+            selected_dir = filedialog.askdirectory(
+                title="既定の保存先フォルダを選択",
+                initialdir=initial_dir,
+            )
+            if selected_dir:
+                default_output_dir_var.set(selected_dir)
+
+        def _reset_dialog_values() -> None:
+            if not messagebox.askyesno(
+                "設定初期化の確認",
+                "設定をデフォルト値に戻しますか？\n（保存するまでは反映されません）",
+                parent=dialog,
+            ):
+                return
+            defaults = default_gui_settings()
+            ui_mode_var.set(UI_MODE_ID_TO_LABEL.get(defaults["ui_mode"], "簡易"))
+            appearance_var.set(APPEARANCE_ID_TO_LABEL.get(defaults["appearance_mode"], "システム"))
+            quality_var.set(str(defaults["quality"]))
+            output_format_var.set(FORMAT_ID_TO_LABEL.get(defaults["output_format"], "自動"))
+            pro_input_var.set(
+                PRO_INPUT_MODE_ID_TO_LABEL.get(defaults["pro_input_mode"], "フォルダ再帰")
+            )
+            default_output_dir_var.set(str(defaults.get("default_output_dir", "")))
+            default_preset_var.set(PRESET_NONE_LABEL)
+
+        def _save_dialog_values() -> None:
+            try:
+                quality_value = normalize_quality(int(quality_var.get()))
+            except (TypeError, ValueError):
+                messagebox.showwarning("入力エラー", "品質は数値で指定してください。", parent=dialog)
+                return
+
+            ui_mode_label = ui_mode_var.get()
+            if ui_mode_label not in UI_MODE_LABEL_TO_ID:
+                ui_mode_label = "簡易"
+
+            appearance_label = appearance_var.get()
+            if appearance_label not in APPEARANCE_LABEL_TO_ID:
+                appearance_label = "システム"
+
+            format_label = output_format_var.get()
+            available_formats = self._build_output_format_labels()
+            if format_label not in available_formats:
+                format_label = "自動"
+
+            pro_input_mode = PRO_INPUT_MODE_LABEL_TO_ID.get(pro_input_var.get(), "recursive")
+            default_output_dir = default_output_dir_var.get().strip()
+            if default_output_dir:
+                default_output_dir = str(Path(default_output_dir).expanduser())
+            selected_default_label = default_preset_var.get().strip()
+            if selected_default_label == PRESET_NONE_LABEL:
+                default_preset_id = ""
+            else:
+                default_preset_id = self._preset_name_to_id.get(selected_default_label, "")
+
+            self.ui_mode_var.set(ui_mode_label)
+            self.appearance_mode_var.set(appearance_label)
+            self.quality_var.set(str(quality_value))
+            self.output_format_var.set(format_label)
+            self.settings["pro_input_mode"] = pro_input_mode
+            self.settings["default_output_dir"] = default_output_dir
+            self.settings["default_preset_id"] = default_preset_id
+
+            self._apply_ui_mode()
+            self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
+            self._on_output_format_changed(self.output_format_var.get())
+            self._on_quality_changed(self.quality_var.get())
+            self._update_settings_summary()
+            self._save_current_settings()
+            self.status_var.set("設定を保存しました。")
+
+            _close_dialog()
+
+        row = 0
+
+        customtkinter.CTkLabel(
+            dialog,
+            text="UIモード",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
+        customtkinter.CTkOptionMenu(
+            dialog,
+            values=list(UI_MODE_LABEL_TO_ID.keys()),
+            variable=ui_mode_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="テーマ",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        customtkinter.CTkOptionMenu(
+            dialog,
+            values=list(APPEARANCE_LABEL_TO_ID.keys()),
+            variable=appearance_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="既定の出力形式",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        customtkinter.CTkOptionMenu(
+            dialog,
+            values=self._build_output_format_labels(),
+            variable=output_format_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="既定の品質",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        customtkinter.CTkOptionMenu(
+            dialog,
+            values=QUALITY_VALUES,
+            variable=quality_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="既定プリセット",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        customtkinter.CTkOptionMenu(
+            dialog,
+            values=self._preset_labels_with_none(),
+            variable=default_preset_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="プロモード入力方式",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        customtkinter.CTkOptionMenu(
+            dialog,
+            values=list(PRO_INPUT_MODE_LABEL_TO_ID.keys()),
+            variable=pro_input_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="既定の保存先フォルダ",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        default_output_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        default_output_frame.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        default_output_frame.grid_columnconfigure(0, weight=1)
+        customtkinter.CTkEntry(
+            default_output_frame,
+            textvariable=default_output_dir_var,
+            fg_color=METALLIC_COLORS["input_bg"],
+            border_color=METALLIC_COLORS["border_light"],
+            text_color=METALLIC_COLORS["text_primary"],
+        ).grid(row=0, column=0, sticky="ew")
+        browse_button = customtkinter.CTkButton(
+            default_output_frame,
+            text="参照",
+            width=70,
+            command=_browse_default_output_dir,
+            font=self.font_small,
+        )
+        self._style_secondary_button(browse_button)
+        browse_button.grid(row=0, column=1, padx=(8, 0))
+
+        button_row = row + 1
+        button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        button_frame.grid(row=button_row, column=0, columnspan=2, padx=20, pady=(18, 16), sticky="e")
+
+        reset_button = customtkinter.CTkButton(
+            button_frame,
+            text="初期化",
+            width=90,
+            command=_reset_dialog_values,
+            font=self.font_small,
+        )
+        self._style_secondary_button(reset_button)
+        reset_button.pack(side="left", padx=(0, 8))
+
+        cancel_button = customtkinter.CTkButton(
+            button_frame,
+            text="キャンセル",
+            width=90,
+            command=_close_dialog,
+            font=self.font_small,
+        )
+        self._style_secondary_button(cancel_button)
+        cancel_button.pack(side="left", padx=(0, 8))
+
+        save_button = customtkinter.CTkButton(
+            button_frame,
+            text="保存",
+            width=90,
+            command=_save_dialog_values,
+            font=self.font_small,
+        )
+        self._style_primary_button(save_button)
+        save_button.pack(side="left")
+
+        dialog.protocol("WM_DELETE_WINDOW", _close_dialog)
+        dialog.focus_set()
 
     def _open_log_folder(self) -> None:
         log_dir = self._run_log_artifacts.log_dir
