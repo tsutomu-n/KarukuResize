@@ -15,7 +15,7 @@ import shutil
 import time
 import argparse
 from pathlib import Path
-from typing import Optional, Union, Tuple
+from typing import Any, Optional, Union, Tuple
 from PIL import Image, UnidentifiedImageError
 from loguru import logger
 
@@ -1593,6 +1593,51 @@ def load_progress(input_file="progress.json"):
 # ----------------------------------------------------------------------
 # CLI Entry Point
 # ----------------------------------------------------------------------
+def _normalize_cli_extensions(raw: str) -> list[str]:
+    values = []
+    for item in str(raw).split(","):
+        token = item.strip().lower()
+        if not token:
+            continue
+        if not token.startswith("."):
+            token = f".{token}"
+        values.append(token)
+    unique_values = sorted(set(values))
+    if not unique_values:
+        raise ValueError("extensions が空です。例: jpg,jpeg,png")
+    return unique_values
+
+
+def _discover_cli_image_paths(
+    source_dir: Path,
+    *,
+    recursive: bool,
+    extensions: list[str],
+) -> list[Path]:
+    ext_set = set(extensions)
+    iterator = source_dir.rglob("*") if recursive else source_dir.glob("*")
+    found = [path for path in iterator if path.is_file() and path.suffix.lower() in ext_set]
+    return sorted(found, key=lambda p: str(p).lower())
+
+
+def _write_failures_file(
+    output_path: Path,
+    *,
+    source: Path,
+    dest: Path,
+    failed_files: list[dict[str, str]],
+) -> None:
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": str(source),
+        "dest": str(dest),
+        "failed_count": len(failed_files),
+        "failed_files": failed_files,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Create argument parser for CLI use."""
     p = argparse.ArgumentParser(
@@ -1606,9 +1651,71 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("-w", "--width", type=int, default=1280, help="リサイズ後の最大幅(px)")
     p.add_argument("-q", "--quality", type=int, default=85, help="JPEG/WebP 品質 (1-100)")
     p.add_argument("-f", "--format", choices=["jpeg", "png", "webp"], default="jpeg", help="出力形式")
+    p.add_argument(
+        "--recursive",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="入力フォルダーを再帰探索する（--no-recursive で直下のみ）",
+    )
+    p.add_argument(
+        "--extensions",
+        default="jpg,jpeg,png",
+        help="対象拡張子のカンマ区切り指定（例: jpg,jpeg,png,webp,avif）",
+    )
+    p.add_argument(
+        "--failures-file",
+        default="",
+        help="失敗一覧をJSON保存するパス（未指定時は保存しない）",
+    )
     p.add_argument("--dry-run", action="store_true", help="ファイルを出力せずに処理をシミュレート")
+    p.add_argument("--json", action="store_true", help="実行結果サマリをJSONで標準出力に出力")
     p.add_argument("--verbose", "-v", action="count", default=0, help="詳細ログを増やす (重ね掛け可)")
     return p
+
+
+def _build_cli_summary(
+    *,
+    status: str,
+    source: Path,
+    dest: Path,
+    total_files: int,
+    processed_count: int,
+    failed_count: int,
+    dry_run: bool,
+    output_format: str,
+    width: int,
+    quality: int,
+    recursive: bool,
+    extensions: list[str],
+    elapsed_seconds: float,
+    failed_files: Optional[list[dict[str, str]]] = None,
+    failures_file: str = "",
+    message: str = "",
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "message": message,
+        "source": str(source),
+        "dest": str(dest),
+        "total_files": total_files,
+        "processed_count": processed_count,
+        "failed_count": failed_count,
+        "options": {
+            "dry_run": dry_run,
+            "format": output_format,
+            "width": width,
+            "quality": quality,
+            "recursive": recursive,
+            "extensions": list(extensions),
+        },
+        "elapsed_seconds": round(max(0.0, elapsed_seconds), 3),
+        "failed_files": failed_files or [],
+        "failures_file": failures_file,
+    }
+
+
+def _emit_cli_summary_json(summary: dict[str, Any]) -> None:
+    print(json.dumps(summary, ensure_ascii=False))
 
 
 def main() -> None:  # noqa: D401
@@ -1627,18 +1734,97 @@ def main() -> None:  # noqa: D401
 
     src_dir = Path(args.source)
     dst_dir = Path(args.dest)
+    start_time = time.perf_counter()
+    failures_file_path = Path(args.failures_file).expanduser() if str(args.failures_file).strip() else None
+
+    try:
+        extensions = _normalize_cli_extensions(args.extensions)
+    except ValueError as e:
+        message = f"extensions 指定が無効です: {e}"
+        logger.error(message)
+        if args.json:
+            _emit_cli_summary_json(
+                _build_cli_summary(
+                    status="error",
+                    source=src_dir,
+                    dest=dst_dir,
+                    total_files=0,
+                    processed_count=0,
+                    failed_count=0,
+                    dry_run=bool(args.dry_run),
+                    output_format=str(args.format),
+                    width=int(args.width),
+                    quality=int(args.quality),
+                    recursive=bool(args.recursive),
+                    extensions=[],
+                    elapsed_seconds=time.perf_counter() - start_time,
+                    failed_files=[],
+                    failures_file=str(failures_file_path) if failures_file_path else "",
+                    message=message,
+                )
+            )
+        sys.exit(1)
 
     if not src_dir.exists() or not src_dir.is_dir():
-        logger.error(f"入力ディレクトリが存在しません: {src_dir}")
+        message = f"入力ディレクトリが存在しません: {src_dir}"
+        logger.error(message)
+        if args.json:
+            _emit_cli_summary_json(
+                _build_cli_summary(
+                    status="error",
+                    source=src_dir,
+                    dest=dst_dir,
+                    total_files=0,
+                    processed_count=0,
+                    failed_count=0,
+                    dry_run=bool(args.dry_run),
+                    output_format=str(args.format),
+                    width=int(args.width),
+                    quality=int(args.quality),
+                    recursive=bool(args.recursive),
+                    extensions=extensions,
+                    elapsed_seconds=time.perf_counter() - start_time,
+                    failed_files=[],
+                    failures_file=str(failures_file_path) if failures_file_path else "",
+                    message=message,
+                )
+            )
         sys.exit(1)
     dst_dir.mkdir(parents=True, exist_ok=True)
 
-    image_paths = find_image_files(src_dir)
+    image_paths = _discover_cli_image_paths(
+        src_dir,
+        recursive=bool(args.recursive),
+        extensions=extensions,
+    )
     if not image_paths:
-        logger.warning("画像が見つかりませんでした")
+        message = "画像が見つかりませんでした"
+        logger.warning(message)
+        if args.json:
+            _emit_cli_summary_json(
+                _build_cli_summary(
+                    status="no_images",
+                    source=src_dir,
+                    dest=dst_dir,
+                    total_files=0,
+                    processed_count=0,
+                    failed_count=0,
+                    dry_run=bool(args.dry_run),
+                    output_format=str(args.format),
+                    width=int(args.width),
+                    quality=int(args.quality),
+                    recursive=bool(args.recursive),
+                    extensions=extensions,
+                    elapsed_seconds=time.perf_counter() - start_time,
+                    failed_files=[],
+                    failures_file=str(failures_file_path) if failures_file_path else "",
+                    message=message,
+                )
+            )
         sys.exit(0)
 
     processed, remaining = [], []
+    failed_files: list[dict[str, str]] = []
     for img_path in image_paths:
         dst_path = get_destination_path(img_path, src_dir, dst_dir)
         try:
@@ -1653,13 +1839,58 @@ def main() -> None:  # noqa: D401
             processed.append(img_path)
             logger.info(f"✔ {img_path.name} → {dst_path.name}")
         except Exception as e:
-            logger.error(f"❌ {img_path.name}: {get_japanese_error_message(e)}")
+            error_detail = get_japanese_error_message(e)
+            logger.error(f"❌ {img_path.name}: {error_detail}")
             remaining.append(img_path)
+            failed_files.append(
+                {
+                    "file": str(img_path),
+                    "error": error_detail,
+                }
+            )
 
+    message = ""
     if remaining:
-        logger.warning(f"{len(remaining)} 件の画像が失敗しました")
+        message = f"{len(remaining)} 件の画像が失敗しました"
+        logger.warning(message)
     else:
-        logger.success("すべての画像を処理しました！")
+        message = "すべての画像を処理しました！"
+        logger.success(message)
+
+    if failures_file_path is not None and failed_files:
+        try:
+            _write_failures_file(
+                failures_file_path,
+                source=src_dir,
+                dest=dst_dir,
+                failed_files=failed_files,
+            )
+            logger.info("失敗一覧を保存しました: {}", failures_file_path)
+        except Exception as e:
+            logger.error(f"失敗一覧ファイルの保存に失敗しました: {e}")
+
+    if args.json:
+        status = "partial_success" if remaining else "success"
+        _emit_cli_summary_json(
+            _build_cli_summary(
+                status=status,
+                source=src_dir,
+                dest=dst_dir,
+                total_files=len(image_paths),
+                processed_count=len(processed),
+                failed_count=len(remaining),
+                dry_run=bool(args.dry_run),
+                output_format=str(args.format),
+                width=int(args.width),
+                quality=int(args.quality),
+                recursive=bool(args.recursive),
+                extensions=extensions,
+                elapsed_seconds=time.perf_counter() - start_time,
+                failed_files=failed_files,
+                failures_file=str(failures_file_path) if failures_file_path else "",
+                message=message,
+            )
+        )
 
 
 # ----------------------------------------------------------------------

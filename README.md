@@ -73,7 +73,11 @@ python -m karuku_resizer.resize_core -s 入力フォルダ -d 出力フォルダ
 | `-w, --width` | リサイズ後の最大幅 | 1280 |
 | `-q, --quality` | 画像の品質 (1-100) | 85 |
 | `-f, --format` | 出力形式 (`jpeg/png/webp`) | `jpeg` |
+| `--recursive / --no-recursive` | 再帰探索の有効/無効（無効時は直下のみ） | `--recursive` |
+| `--extensions` | 対象拡張子（カンマ区切り） | `jpg,jpeg,png` |
+| `--failures-file` | 失敗一覧をJSON保存するファイルパス | なし |
 | `--dry-run` | 実際に保存せずシミュレート | False |
+| `--json` | 実行結果サマリをJSONで標準出力に出力 | False |
 | `-v, --verbose` | 詳細ログを増やす（重ね掛け可） | 0 |
 
 ## 機能詳細
