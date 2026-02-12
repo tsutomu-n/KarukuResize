@@ -67,6 +67,11 @@ uv run karukuresize-build-exe
 - **macOS**: `dist/KarukuResize`
 - **Linux**: `dist/KarukuResize`
 
+### アイコンの変更
+
+- Windows版EXEアイコンは `assets/app.ico` を使用します。
+- 別アイコンにしたい場合は `assets/app.ico` を差し替えてから、再度 `uv run karukuresize-build-exe` を実行してください。
+
 ## GitHub Actionsでの自動ビルド
 
 プロジェクトには自動ビルド用のGitHub Actionsワークフローが含まれています。

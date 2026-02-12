@@ -41,6 +41,7 @@ except Exception:
 # ヘルプコンテンツとダイアログをインポート
 from karuku_resizer.help_content import HELP_CONTENT, STEP_DESCRIPTIONS
 from karuku_resizer.help_dialog import HelpDialog
+from karuku_resizer.operation_flow import OperationScope, OperationScopeHooks
 from karuku_resizer.gui_settings_store import GuiSettingsStore, default_gui_settings
 from karuku_resizer.processing_preset_store import (
     ProcessingPreset,
@@ -272,6 +273,7 @@ class ResizeApp(customtkinter.CTk):
         self._settings_dialog: Optional[customtkinter.CTkToplevel] = None
         self._preset_dialog: Optional[customtkinter.CTkToplevel] = None
         self._result_dialog: Optional[customtkinter.CTkToplevel] = None
+        self._operation_scope: Optional[OperationScope] = None
         self._recent_setting_buttons: List[customtkinter.CTkButton] = []
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
             app_name=LOG_APP_NAME,
@@ -2180,6 +2182,61 @@ class ResizeApp(customtkinter.CTk):
         if self.operation_stage_label.winfo_manager():
             self.operation_stage_label.pack_forget()
 
+    def _show_progress_with_cancel(
+        self,
+        cancel_text: str,
+        cancel_command: Callable[[], None],
+        initial_progress: float,
+    ) -> None:
+        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+        self.cancel_button.configure(text=cancel_text, command=cancel_command)
+        self.cancel_button.pack(side="bottom", pady=(0, 10))
+        self.progress_bar.set(max(0.0, min(1.0, initial_progress)))
+
+    def _hide_progress_with_cancel(self) -> None:
+        self.progress_bar.pack_forget()
+        self.cancel_button.pack_forget()
+        self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
+
+    def _build_operation_scope_hooks(self) -> OperationScopeHooks:
+        return OperationScopeHooks(
+            set_controls_enabled=self._set_interactive_controls_enabled,
+            show_progress_with_cancel=self._show_progress_with_cancel,
+            hide_progress_with_cancel=self._hide_progress_with_cancel,
+            show_stage=self._show_operation_stage,
+            hide_stage=self._hide_operation_stage,
+        )
+
+    def _begin_operation_scope(
+        self,
+        *,
+        stage_text: str,
+        cancel_text: str,
+        cancel_command: Callable[[], None],
+        initial_progress: float,
+    ) -> None:
+        self._end_operation_scope()
+        self._operation_scope = OperationScope(
+            hooks=self._build_operation_scope_hooks(),
+            stage_text=stage_text,
+            cancel_text=cancel_text,
+            cancel_command=cancel_command,
+            initial_progress=initial_progress,
+        )
+        self._operation_scope.begin()
+
+    def _set_operation_stage(self, stage_text: str) -> None:
+        if self._operation_scope is not None and self._operation_scope.active:
+            self._operation_scope.set_stage(stage_text)
+            return
+        self._show_operation_stage(stage_text)
+
+    def _end_operation_scope(self) -> None:
+        if self._operation_scope is None:
+            return
+        self._operation_scope.close()
+        self._operation_scope = None
+
     def _setup_left_panel(self):
         """左側のパネル（ファイルリスト）をセットアップ"""
         # Create main content frame
@@ -3275,15 +3332,12 @@ class ResizeApp(customtkinter.CTk):
         self._file_load_mode_label = mode_label
         self._file_load_root_dir = root_dir
 
-        self._set_interactive_controls_enabled(False)
-        self._prepare_file_loading_ui()
-        self._show_operation_stage("探索中")
-
-    def _prepare_file_loading_ui(self) -> None:
-        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-        self.cancel_button.configure(text="読み込み中止", command=self._cancel_file_loading)
-        self.cancel_button.pack(side="bottom", pady=(0, 10))
-        self.progress_bar.set(0.05)
+        self._begin_operation_scope(
+            stage_text="探索中",
+            cancel_text="読み込み中止",
+            cancel_command=self._cancel_file_loading,
+            initial_progress=0.05,
+        )
 
     def _set_interactive_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -3492,7 +3546,7 @@ class ResizeApp(customtkinter.CTk):
         if msg_type == "scan_done":
             self._file_load_total_candidates = int(message.get("total", 0))
             self._file_load_started_at = time.monotonic()
-            self._show_operation_stage("読込中")
+            self._set_operation_stage("読込中")
             if self._file_load_total_candidates == 0:
                 self.progress_bar.set(1.0)
                 self.status_var.set(
@@ -3555,11 +3609,7 @@ class ResizeApp(customtkinter.CTk):
                 pass
             self._file_load_after_id = None
 
-        self.progress_bar.pack_forget()
-        self.cancel_button.pack_forget()
-        self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
-        self._set_interactive_controls_enabled(True)
-        self._hide_operation_stage()
+        self._end_operation_scope()
 
         if self.jobs:
             self._populate_listbox()
@@ -3591,7 +3641,7 @@ class ResizeApp(customtkinter.CTk):
         if not self._is_loading_files:
             return
         self._file_load_cancel_event.set()
-        self._show_operation_stage("キャンセル中")
+        self._set_operation_stage("キャンセル中")
         self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
 
     def _copy_text_to_clipboard(self, text: str) -> bool:
@@ -4031,13 +4081,13 @@ class ResizeApp(customtkinter.CTk):
         return Path(output_dir_str)
 
     def _prepare_batch_ui(self) -> None:
-        self._set_interactive_controls_enabled(False)
-        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-        self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
-        self.cancel_button.pack(side="bottom", pady=(0, 10))
-        self.progress_bar.set(0)
         self._cancel_batch = False
-        self._show_operation_stage("保存中")
+        self._begin_operation_scope(
+            stage_text="保存中",
+            cancel_text="キャンセル",
+            cancel_command=self._cancel_active_operation,
+            initial_progress=0.0,
+        )
 
     def _process_single_batch_job(
         self,
@@ -4106,10 +4156,7 @@ class ResizeApp(customtkinter.CTk):
                     stats.record_failure(job.path.name, f"例外 {e}")
                     logging.exception("Unexpected error during batch save: %s", job.path)
         finally:
-            self.progress_bar.pack_forget()
-            self.cancel_button.pack_forget()
-            self._set_interactive_controls_enabled(True)
-            self._hide_operation_stage()
+            self._end_operation_scope()
 
         return stats
 
@@ -4250,7 +4297,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _cancel_batch_save(self):
         self._cancel_batch = True
-        self._show_operation_stage("キャンセル中")
+        self._set_operation_stage("キャンセル中")
 
     def _cancel_active_operation(self):
         if self._is_loading_files:

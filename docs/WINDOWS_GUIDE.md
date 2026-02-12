@@ -57,6 +57,10 @@ uv run karukuresize-build-exe
 生成物:
 - `dist\KarukuResize.exe`
 
+アイコン設定:
+- EXEアイコンは `assets\app.ico` が自動で使われます。
+- アイコンを変更したい場合は `assets\app.ico` を差し替えてから再ビルドしてください。
+
 ## 6. ビルド後の最小確認
 
 1. `KarukuResize.exe` が起動する
