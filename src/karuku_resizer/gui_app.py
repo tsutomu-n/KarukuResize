@@ -444,9 +444,10 @@ class ResizeApp(customtkinter.CTk):
         self._apply_appearance_mode(self._appearance_mode_id(), redraw=True)
         self._update_settings_summary()
 
-    def _apply_appearance_mode(self, mode_id: str, redraw: bool):
+    def _apply_appearance_mode(self, mode_id: str, redraw: bool = False):
         normalized = self._normalize_appearance_mode(mode_id)
-        customtkinter.set_appearance_mode(normalized)
+        # Keep CTk's internal appearance propagation behavior compatible.
+        super()._apply_appearance_mode(normalized)
         self.configure(fg_color=METALLIC_COLORS["bg_primary"])
 
         if hasattr(self, "canvas_org") and self.canvas_org.winfo_exists():
