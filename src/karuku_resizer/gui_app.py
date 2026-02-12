@@ -127,6 +127,12 @@ SELECTABLE_INPUT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
 FILE_LOAD_FAILURE_PREVIEW_LIMIT = 20
 RECENT_SETTINGS_MAX = 6
 OPERATION_ONLY_CANCEL_HINT = "中止のみ可能"
+FILE_FILTER_LABEL_TO_ID = {
+    "全件": "all",
+    "失敗": "failed",
+    "未処理": "unprocessed",
+}
+FILE_FILTER_ID_TO_LABEL = {v: k for k, v in FILE_FILTER_LABEL_TO_ID.items()}
 
 FORMAT_LABEL_TO_ID = {
     "自動": "auto",
@@ -196,6 +202,8 @@ class ImageJob:
     metadata_loaded: bool = False
     metadata_text: str = ""
     metadata_error: Optional[str] = None
+    last_process_state: str = "unprocessed"  # unprocessed / success / failed
+    last_error_detail: Optional[str] = None
 
 
 @dataclass
@@ -207,6 +215,7 @@ class BatchSaveStats:
     exif_fallback_count: int = 0
     gps_removed_count: int = 0
     failed_details: List[str] = field(default_factory=list)
+    failed_paths: List[Path] = field(default_factory=list)
 
     def record_success(self, result: SaveResult) -> None:
         self.processed_count += 1
@@ -219,9 +228,11 @@ class BatchSaveStats:
         if result.gps_removed:
             self.gps_removed_count += 1
 
-    def record_failure(self, file_name: str, detail: str) -> None:
+    def record_failure(self, file_name: str, detail: str, file_path: Optional[Path] = None) -> None:
         self.failed_count += 1
         self.failed_details.append(f"{file_name}: {detail}")
+        if file_path is not None:
+            self.failed_paths.append(file_path)
 
 
 DEBUG = False
@@ -272,6 +283,7 @@ class ResizeApp(customtkinter.CTk):
 
         self.jobs: List[ImageJob] = []
         self.current_index: Optional[int] = None
+        self._visible_job_indices: List[int] = []
         self._cancel_batch = False
         self._is_loading_files = False
         self._file_load_cancel_event = threading.Event()
@@ -291,6 +303,7 @@ class ResizeApp(customtkinter.CTk):
         self._preset_dialog: Optional[customtkinter.CTkToplevel] = None
         self._result_dialog: Optional[customtkinter.CTkToplevel] = None
         self._operation_scope: Optional[OperationScope] = None
+        self._action_hint_reason = ""
         self._recent_setting_buttons: List[customtkinter.CTkButton] = []
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
             app_name=LOG_APP_NAME,
@@ -302,6 +315,7 @@ class ResizeApp(customtkinter.CTk):
 
         self._setup_ui()
         self._setup_tooltips()
+        self._setup_keyboard_shortcuts()
         self._setup_drag_and_drop()
         self._refresh_preset_menu(selected_preset_id=self.settings.get("default_preset_id", ""))
         self._restore_settings()
@@ -310,6 +324,8 @@ class ResizeApp(customtkinter.CTk):
         self._write_run_summary_safe()
 
         self.after(0, self._update_mode)  # set initial enable states
+        self.after(0, self._update_action_hint)
+        self.after(0, self._update_session_summary)
         logging.info("ResizeApp initialized")
         logging.info("Run log: %s", self._run_log_artifacts.run_log_path)
         logging.info("Run summary: %s", self._run_log_artifacts.summary_path)
@@ -459,6 +475,21 @@ class ResizeApp(customtkinter.CTk):
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _setup_keyboard_shortcuts(self) -> None:
+        self.bind_all("<Control-p>", lambda event: self._handle_shortcut_action(event, self._preview_current))
+        self.bind_all("<Control-s>", lambda event: self._handle_shortcut_action(event, self._save_current))
+        self.bind_all("<Control-Shift-S>", lambda event: self._handle_shortcut_action(event, self._batch_save))
+
+    def _handle_shortcut_action(self, _event: Any, action: Callable[[], None]) -> str:
+        if self._is_modal_dialog_open():
+            return "break"
+        action()
+        return "break"
+
+    def _is_modal_dialog_open(self) -> bool:
+        dialogs = [self._settings_dialog, self._preset_dialog, self._result_dialog]
+        return any(dialog is not None and dialog.winfo_exists() for dialog in dialogs)
 
     def _register_tooltip(self, widget: Any, text: str) -> None:
         if widget is None:
@@ -1633,6 +1664,7 @@ class ResizeApp(customtkinter.CTk):
             f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
         )
         self.settings_summary_var.set(summary)
+        self._update_session_summary()
 
     def _empty_state_text(self) -> str:
         lines = [
@@ -1797,21 +1829,21 @@ class ResizeApp(customtkinter.CTk):
     def _setup_action_buttons(self, parent):
         """アクションボタンをセットアップ"""
         self.preview_button = customtkinter.CTkButton(
-            parent, text="🔄 プレビュー", width=110, command=self._preview_current,
+            parent, text="🔄 プレビュー", width=118, command=self._preview_current,
             font=self.font_default
         )
         self._style_primary_button(self.preview_button)
         self.preview_button.pack(side="left", padx=(0, 8), pady=8)
         
         self.save_button = customtkinter.CTkButton(
-            parent, text="💾 保存", width=90, command=self._save_current,
+            parent, text="💾 保存", width=118, command=self._save_current,
             font=self.font_default
         )
         self._style_primary_button(self.save_button)
         self.save_button.pack(side="left", pady=8)
         
         self.batch_button = customtkinter.CTkButton(
-            parent, text="📁 一括適用保存", width=120, command=self._batch_save,
+            parent, text="📁 一括適用保存", width=118, command=self._batch_save,
             font=self.font_default
         )
         self._style_primary_button(self.batch_button)
@@ -2277,6 +2309,32 @@ class ResizeApp(customtkinter.CTk):
         )
         self.operation_stage_label.pack_forget()
 
+        self.action_hint_var = customtkinter.StringVar(value="")
+        self.action_hint_label = customtkinter.CTkLabel(
+            self,
+            textvariable=self.action_hint_var,
+            anchor="w",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["warning"],
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            corner_radius=10,
+            padx=10,
+        )
+        self.action_hint_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+
+        self.session_summary_var = customtkinter.StringVar(value="")
+        self.session_summary_label = customtkinter.CTkLabel(
+            self,
+            textvariable=self.session_summary_var,
+            anchor="w",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_tertiary"],
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            corner_radius=10,
+            padx=10,
+        )
+        self.session_summary_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+
         self.status_var = customtkinter.StringVar(value="準備完了")
         self.status_label = customtkinter.CTkLabel(
             self,
@@ -2301,6 +2359,56 @@ class ResizeApp(customtkinter.CTk):
         self.operation_stage_var.set("")
         if self.operation_stage_label.winfo_manager():
             self.operation_stage_label.pack_forget()
+
+    @staticmethod
+    def _shorten_path_for_summary(path_text: str, max_len: int = 46) -> str:
+        value = str(path_text).strip()
+        if len(value) <= max_len:
+            return value
+        head = max_len // 2 - 1
+        tail = max_len - head - 1
+        return f"{value[:head]}…{value[-tail:]}"
+
+    def _session_status_text(self) -> str:
+        mode = self.ui_mode_var.get() if hasattr(self, "ui_mode_var") else "簡易"
+        dry_run = "ON" if (hasattr(self, "dry_run_var") and self.dry_run_var.get()) else "OFF"
+        total = len(self.jobs)
+        failed = sum(1 for job in self.jobs if job.last_process_state == "failed")
+        unprocessed = sum(1 for job in self.jobs if job.last_process_state == "unprocessed")
+        visible = len(self._visible_job_indices) if self._visible_job_indices else total
+        if hasattr(self, "file_filter_var"):
+            filter_label_value = self.file_filter_var.get()
+        else:
+            filter_label_value = "全件"
+        filter_id = FILE_FILTER_LABEL_TO_ID.get(filter_label_value, "all")
+        filter_label = FILE_FILTER_ID_TO_LABEL.get(filter_id, filter_label_value)
+        output_dir = str(self.settings.get("last_output_dir") or self.settings.get("default_output_dir") or "-")
+        output_dir = self._shorten_path_for_summary(output_dir)
+        return (
+            f"セッション: モード {mode} / 表示 {visible}/{total} ({filter_label}) / "
+            f"未処理 {unprocessed} / 失敗 {failed} / ドライラン {dry_run} / 保存先 {output_dir}"
+        )
+
+    def _update_session_summary(self) -> None:
+        if not hasattr(self, "session_summary_var"):
+            return
+        self.session_summary_var.set(self._session_status_text())
+
+    def _update_action_hint(self) -> None:
+        if not hasattr(self, "action_hint_var"):
+            return
+        if self._is_loading_files:
+            reason = "読み込み中です。完了または中止後に操作できます。"
+        elif self._operation_scope is not None and self._operation_scope.active:
+            reason = "処理中です。キャンセル以外の操作はできません。"
+        elif not self.jobs:
+            reason = "画像が未選択です。まず画像を読み込んでください。"
+        elif self.current_index is None:
+            reason = "左の一覧から対象画像を選択してください。"
+        else:
+            reason = "準備完了です。プレビュー・保存を実行できます。"
+        self._action_hint_reason = reason
+        self.action_hint_var.set(f"操作ガイド: {reason}")
 
     def _show_progress_with_cancel(
         self,
@@ -2376,6 +2484,22 @@ class ResizeApp(customtkinter.CTk):
             corner_radius=12,
         )
         self.file_list_frame.pack(side="left", fill="y", padx=(0, 6))
+        self.file_filter_var = customtkinter.StringVar(value="全件")
+        self.file_filter_segment = customtkinter.CTkSegmentedButton(
+            self.file_list_frame,
+            values=list(FILE_FILTER_LABEL_TO_ID.keys()),
+            variable=self.file_filter_var,
+            command=self._on_file_filter_changed,
+            width=220,
+            font=self.font_small,
+            selected_color=METALLIC_COLORS["primary"],
+            selected_hover_color=METALLIC_COLORS["hover"],
+            unselected_color=METALLIC_COLORS["bg_tertiary"],
+            unselected_hover_color=METALLIC_COLORS["accent_soft"],
+            text_color=METALLIC_COLORS["text_primary"],
+        )
+        self.file_filter_segment.pack(fill="x", padx=8, pady=(8, 4))
+        self._register_tooltip(self.file_filter_segment, "一覧表示を全件・失敗・未処理で切り替えます。")
         self.file_buttons: List[customtkinter.CTkButton] = []
         self.empty_state_label = customtkinter.CTkLabel(
             self.file_list_frame,
@@ -3474,6 +3598,8 @@ class ResizeApp(customtkinter.CTk):
             cancel_command=self._cancel_file_loading,
             initial_progress=0.05,
         )
+        self._update_action_hint()
+        self._update_session_summary()
 
     def _set_interactive_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -3503,6 +3629,7 @@ class ResizeApp(customtkinter.CTk):
             self.webp_lossless_check,
             self.avif_speed_menu,
             self.zoom_cb,
+            self.file_filter_segment,
         ]
         widgets.extend(self.mode_radio_buttons)
         widgets.extend(self.file_buttons)
@@ -3530,6 +3657,8 @@ class ResizeApp(customtkinter.CTk):
             self._toggle_exif_edit_fields()
             self._update_settings_summary()
             self._refresh_recent_settings_buttons()
+        self._update_action_hint()
+        self._update_session_summary()
 
     @staticmethod
     def _scan_and_load_images_worker(
@@ -3633,18 +3762,20 @@ class ResizeApp(customtkinter.CTk):
             path_text = self._format_path_for_display(latest_path)
 
         remaining_text = "算出中"
+        speed_text = "速度算出中"
         if self._file_load_started_at > 0 and total > 0 and done_count > 0:
             elapsed = max(0.001, time.monotonic() - self._file_load_started_at)
             speed = done_count / elapsed
             if speed > 0:
                 remaining_sec = max(0.0, (total - done_count) / speed)
                 remaining_text = self._format_duration(remaining_sec)
+                speed_text = f"{speed:.1f}件/秒"
 
         prefix = f"{self._file_load_mode_label}: 読込中 {done_count}/{total} (成功{loaded} 失敗{failed_count})"
         if path_text:
             action = "失敗" if failed else "処理"
             prefix += f" / {action}: {path_text}"
-        return f"{prefix} / 残り約{remaining_text} / {self._loading_hint_text()}"
+        return f"{prefix} / 残り約{remaining_text} / {speed_text} / {self._loading_hint_text()}"
 
     def _poll_file_load_queue(self) -> None:
         if not self._is_loading_files:
@@ -3772,6 +3903,8 @@ class ResizeApp(customtkinter.CTk):
             failed_details=self._file_load_failed_details,
             retry_callback=retry_callback,
         )
+        self._update_action_hint()
+        self._update_session_summary()
 
     def _cancel_file_loading(self) -> None:
         if not self._is_loading_files:
@@ -3779,6 +3912,7 @@ class ResizeApp(customtkinter.CTk):
         self._file_load_cancel_event.set()
         self._set_operation_stage("キャンセル中")
         self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
+        self._update_action_hint()
 
     def _copy_text_to_clipboard(self, text: str) -> bool:
         try:
@@ -3803,6 +3937,44 @@ class ResizeApp(customtkinter.CTk):
             lines.append("")
             lines.append(f"失敗一覧 ({len(failed_details)}件):")
             lines.extend(f"- {detail}" for detail in failed_details)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _failure_reason_group(detail_text: str) -> str:
+        lower = detail_text.lower()
+        if any(token in lower for token in ("permission", "アクセス拒否", "access denied", "readonly")):
+            return "権限"
+        if any(token in lower for token in ("no such file", "見つかり", "not found", "path")):
+            return "パス/存在"
+        if any(token in lower for token in ("cannot identify image", "format", "unsupported", "decode", "壊れ", "破損")):
+            return "形式/破損"
+        if any(token in lower for token in ("memory", "メモリ", "resource", "リソース")):
+            return "リソース"
+        return "その他"
+
+    @classmethod
+    def _group_failure_details(cls, failed_details: List[str]) -> Dict[str, int]:
+        grouped: Dict[str, int] = {}
+        for detail in failed_details:
+            key = cls._failure_reason_group(detail)
+            grouped[key] = grouped.get(key, 0) + 1
+        return dict(sorted(grouped.items(), key=lambda item: (-item[1], item[0])))
+
+    @classmethod
+    def _failure_center_text(cls, failed_details: List[str]) -> str:
+        if not failed_details:
+            return "失敗はありません。"
+        grouped = cls._group_failure_details(failed_details)
+        lines: List[str] = ["原因別サマリー:"]
+        for group_name, count in grouped.items():
+            lines.append(f"- {group_name}: {count}件")
+        lines.append("")
+        lines.append("失敗一覧:")
+        preview = failed_details[:FILE_LOAD_FAILURE_PREVIEW_LIMIT]
+        lines.extend(f"- {detail}" for detail in preview)
+        remaining = len(failed_details) - len(preview)
+        if remaining > 0:
+            lines.append(f"...ほか {remaining} 件")
         return "\n".join(lines)
 
     def _show_operation_result_dialog(
@@ -3848,12 +4020,7 @@ class ResizeApp(customtkinter.CTk):
             wraplength=720,
         ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
 
-        failed_preview = "\n".join(failed_details[:FILE_LOAD_FAILURE_PREVIEW_LIMIT]) if failed_details else ""
-        details_text = failed_preview
-        if failed_details and len(failed_details) > FILE_LOAD_FAILURE_PREVIEW_LIMIT:
-            details_text += f"\n...ほか {len(failed_details) - FILE_LOAD_FAILURE_PREVIEW_LIMIT} 件"
-        if not details_text:
-            details_text = "失敗はありません。"
+        details_text = self._failure_center_text(failed_details)
 
         details_box = customtkinter.CTkTextbox(
             dialog,
@@ -3927,6 +4094,7 @@ class ResizeApp(customtkinter.CTk):
     def _reset_loaded_jobs(self) -> None:
         self.jobs.clear()
         self.current_index = None
+        self._visible_job_indices = []
         for button in self.file_buttons:
             button.destroy()
         self.file_buttons = []
@@ -3963,20 +4131,46 @@ class ResizeApp(customtkinter.CTk):
                 continue
             self.jobs.append(ImageJob(path, img))
 
+    def _on_file_filter_changed(self, _value: str) -> None:
+        self._populate_listbox()
+        self._update_session_summary()
+
+    def _job_passes_file_filter(self, job: ImageJob) -> bool:
+        filter_label = self.file_filter_var.get() if hasattr(self, "file_filter_var") else "全件"
+        filter_id = FILE_FILTER_LABEL_TO_ID.get(filter_label, "all")
+        if filter_id == "failed":
+            return job.last_process_state == "failed"
+        if filter_id == "unprocessed":
+            return job.last_process_state == "unprocessed"
+        return True
+
+    @staticmethod
+    def _file_button_label(job: ImageJob) -> str:
+        if job.last_process_state == "failed":
+            return f"⚠ {job.path.name}"
+        if job.last_process_state == "success":
+            return f"✓ {job.path.name}"
+        return job.path.name
+
     def _populate_listbox(self):
         for button in self.file_buttons:
             button.destroy()
         self.file_buttons = []
+        self._visible_job_indices = []
         if not self.jobs:
             self._clear_preview_panels()
             self.status_var.set("有効な画像を読み込めませんでした")
             self._update_empty_state_hint()
+            self._update_action_hint()
+            self._update_session_summary()
             return
 
         for i, job in enumerate(self.jobs):
+            if not self._job_passes_file_filter(job):
+                continue
             button = customtkinter.CTkButton(
                 self.file_list_frame, 
-                text=job.path.name, 
+                text=self._file_button_label(job),
                 command=lambda idx=i: self._on_select_change(idx),
                 fg_color=METALLIC_COLORS["bg_tertiary"],
                 hover_color=METALLIC_COLORS["accent_soft"],
@@ -3988,9 +4182,20 @@ class ResizeApp(customtkinter.CTk):
             button.pack(fill="x", padx=8, pady=4)
             self._register_tooltip(button, f"この画像を選択します。\n{job.path}")
             self.file_buttons.append(button)
+            self._visible_job_indices.append(i)
         self._update_empty_state_hint()
-        if self.jobs:
-            self._on_select_change(0)
+        if self._visible_job_indices:
+            if self.current_index in self._visible_job_indices:
+                self._on_select_change(self.current_index, force=True)
+            else:
+                self._on_select_change(self._visible_job_indices[0])
+        else:
+            self.status_var.set("フィルタ条件に一致する画像がありません。")
+            self.empty_state_label.configure(text="フィルタ条件に一致する画像がありません。")
+            if self.empty_state_label.winfo_manager() != "pack":
+                self.empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
+        self._update_action_hint()
+        self._update_session_summary()
 
     def _clear_preview_panels(self):
         self.current_index = None
@@ -4002,28 +4207,54 @@ class ResizeApp(customtkinter.CTk):
         self.info_resized_var.set("--- x ---  ---  (---)")
         self.resized_title_label.configure(text="リサイズ後")
         self._update_metadata_preview(None)
+        self._update_action_hint()
+        self._update_session_summary()
 
-    def _on_select_change(self, idx: Optional[int] = None) -> None:
+    def _visible_button_pos_for_job_index(self, job_index: Optional[int]) -> Optional[int]:
+        if job_index is None:
+            return None
+        try:
+            return self._visible_job_indices.index(job_index)
+        except ValueError:
+            return None
+
+    def _on_select_change(self, idx: Optional[int] = None, force: bool = False) -> None:
         """Handle file selection change."""
         if idx is None:
-            idx = 0
-        if self.current_index == idx or idx >= len(self.jobs):
+            if self._visible_job_indices:
+                idx = self._visible_job_indices[0]
+            else:
+                idx = 0
+        if idx >= len(self.jobs):
+            return
+        if self._visible_job_indices and idx not in self._visible_job_indices:
+            return
+        if (self.current_index == idx) and (not force):
             return
 
         # Update button highlights
-        if self.current_index is not None and self.current_index < len(self.file_buttons):
-            self.file_buttons[self.current_index].configure(
+        previous_pos = self._visible_button_pos_for_job_index(self.current_index)
+        if previous_pos is not None and previous_pos < len(self.file_buttons):
+            self.file_buttons[previous_pos].configure(
                 fg_color=METALLIC_COLORS["bg_tertiary"],
                 border_color=METALLIC_COLORS["border_light"],
                 text_color=METALLIC_COLORS["text_primary"],
             )
         
         self.current_index = idx
-        self.file_buttons[idx].configure(
+        current_pos = self._visible_button_pos_for_job_index(idx)
+        if current_pos is not None and current_pos < len(self.file_buttons):
+            self.file_buttons[current_pos].configure(
+                fg_color=METALLIC_COLORS["accent_soft"],
+                border_color=METALLIC_COLORS["primary"],
+                text_color=METALLIC_COLORS["text_primary"],
+            )
+        elif self.file_buttons and idx < len(self.file_buttons):
+            self.file_buttons[idx].configure(
             fg_color=METALLIC_COLORS["accent_soft"],
             border_color=METALLIC_COLORS["primary"],
             text_color=METALLIC_COLORS["text_primary"],
-        )
+            )
 
         # Update previews and info
         job = self.jobs[idx]
@@ -4034,6 +4265,8 @@ class ResizeApp(customtkinter.CTk):
         self._reset_zoom()
         self._draw_previews(job)
         self._update_metadata_preview(job)
+        self._update_action_hint()
+        self._update_session_summary()
 
     # -------------------- size calculation -----------------------------
     # サイズ計算に関する関数
@@ -4162,15 +4395,21 @@ class ResizeApp(customtkinter.CTk):
         )
 
         if not result.success:
+            job.last_process_state = "failed"
+            job.last_error_detail = result.error or "保存失敗"
+            self._populate_listbox()
             messagebox.showerror("保存エラー", f"ファイルの保存に失敗しました:\n{result.error}")
             return
 
+        job.last_process_state = "success"
+        job.last_error_detail = None
         if result.dry_run:
             msg = f"ドライラン完了: {result.output_path.name} を生成予定です"
         else:
             msg = f"{result.output_path.name} を保存しました"
         msg = f"{msg}\n{self._exif_status_text(result)}"
         self._register_recent_setting_from_current()
+        self._populate_listbox()
         self.status_var.set(msg)
         messagebox.showinfo("保存結果", msg)
 
@@ -4189,20 +4428,44 @@ class ResizeApp(customtkinter.CTk):
     def _batch_run_mode_text(batch_options: SaveOptions) -> str:
         return "ドライラン（実ファイルは作成しません）" if batch_options.dry_run else "保存"
 
+    def _batch_progress_status_text(
+        self,
+        *,
+        done_count: int,
+        total_count: int,
+        processed_count: int,
+        failed_count: int,
+        elapsed_sec: float,
+        current_file_name: str,
+    ) -> str:
+        if done_count <= 0 or total_count <= 0:
+            return f"保存中: 0/{total_count}"
+        speed = done_count / max(0.001, elapsed_sec)
+        remaining_sec = max(0.0, (total_count - done_count) / max(speed, 0.001))
+        remaining_text = self._format_duration(remaining_sec)
+        return (
+            f"保存中 {done_count}/{total_count} (成功{processed_count} 失敗{failed_count}) "
+            f"/ 対象: {current_file_name} / 残り約{remaining_text} / {speed:.1f}件/秒"
+        )
+
     def _confirm_batch_save(
         self,
         reference_job: ImageJob,
         reference_target: Tuple[int, int],
         reference_format_label: str,
         batch_options: SaveOptions,
+        output_dir: Path,
     ) -> bool:
         return messagebox.askokcancel(
             "一括適用保存の確認",
             f"基準画像: {reference_job.path.name}\n"
             f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
             f"出力形式: {reference_format_label}\n"
-            f"モード: {self._batch_run_mode_text(batch_options)}\n\n"
-            f"読み込み中の {len(self.jobs)} 枚すべてに同じ設定を適用して処理します。",
+            f"モード: {self._batch_run_mode_text(batch_options)}\n"
+            f"EXIF: {self.exif_mode_var.get()} / GPS削除: {'ON' if self.remove_gps_var.get() else 'OFF'}\n"
+            f"保存先: {output_dir}\n"
+            f"対象枚数: {len(self.jobs)}枚\n\n"
+            "読み込み済み全画像に同じ設定を適用して処理します。",
         )
 
     def _select_batch_output_dir(self) -> Optional[Path]:
@@ -4225,6 +4488,8 @@ class ResizeApp(customtkinter.CTk):
             cancel_command=self._cancel_active_operation,
             initial_progress=0.0,
         )
+        self._update_action_hint()
+        self._update_session_summary()
 
     def _process_single_batch_job(
         self,
@@ -4237,7 +4502,9 @@ class ResizeApp(customtkinter.CTk):
     ) -> None:
         resized_img = self._resize_image_to_target(job.image, reference_target)
         if not resized_img:
-            stats.record_failure(job.path.name, "リサイズ失敗")
+            job.last_process_state = "failed"
+            job.last_error_detail = "リサイズ失敗"
+            stats.record_failure(job.path.name, "リサイズ失敗", file_path=job.path)
             return
 
         out_base = self._build_unique_batch_base_path(
@@ -4253,11 +4520,15 @@ class ResizeApp(customtkinter.CTk):
             options=batch_options,
         )
         if result.success:
+            job.last_process_state = "success"
+            job.last_error_detail = None
             stats.record_success(result)
             return
 
         error_detail = result.error or "保存処理で不明なエラー"
-        stats.record_failure(job.path.name, error_detail)
+        job.last_process_state = "failed"
+        job.last_error_detail = error_detail
+        stats.record_failure(job.path.name, error_detail, file_path=job.path)
         logging.error(f"Failed to save {result.output_path}: {result.error}")
 
     def _run_batch_save(
@@ -4266,19 +4537,21 @@ class ResizeApp(customtkinter.CTk):
         reference_target: Tuple[int, int],
         reference_output_format: str,
         batch_options: SaveOptions,
+        target_jobs: Optional[List[ImageJob]] = None,
     ) -> BatchSaveStats:
         stats = BatchSaveStats()
-        total_files = len(self.jobs)
+        jobs_to_process = list(target_jobs) if target_jobs is not None else list(self.jobs)
+        total_files = len(jobs_to_process)
+        for job in jobs_to_process:
+            job.last_process_state = "unprocessed"
+            job.last_error_detail = None
         self._prepare_batch_ui()
+        started_at = time.monotonic()
 
         try:
-            for i, job in enumerate(self.jobs):
+            for i, job in enumerate(jobs_to_process):
                 if self._cancel_batch:
                     break
-
-                self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
-                self.progress_bar.set((i + 1) / total_files)
-                self.update_idletasks()
 
                 try:
                     self._process_single_batch_job(
@@ -4290,10 +4563,29 @@ class ResizeApp(customtkinter.CTk):
                         stats=stats,
                     )
                 except Exception as e:
-                    stats.record_failure(job.path.name, f"例外 {e}")
+                    job.last_process_state = "failed"
+                    job.last_error_detail = f"例外 {e}"
+                    stats.record_failure(job.path.name, f"例外 {e}", file_path=job.path)
                     logging.exception("Unexpected error during batch save: %s", job.path)
+                finally:
+                    done = i + 1
+                    self.progress_bar.set(done / total_files if total_files > 0 else 1.0)
+                    self.status_var.set(
+                        self._batch_progress_status_text(
+                            done_count=done,
+                            total_count=total_files,
+                            processed_count=stats.processed_count,
+                            failed_count=stats.failed_count,
+                            elapsed_sec=time.monotonic() - started_at,
+                            current_file_name=job.path.name,
+                        )
+                    )
+                    self.update_idletasks()
         finally:
             self._end_operation_scope()
+            self._populate_listbox()
+            self._update_action_hint()
+            self._update_session_summary()
 
         return stats
 
@@ -4388,18 +4680,19 @@ class ResizeApp(customtkinter.CTk):
         if batch_options is None:
             return
 
+        output_dir = self._select_batch_output_dir()
+        if output_dir is None:
+            return
+        self.settings["last_output_dir"] = str(output_dir)
+
         if not self._confirm_batch_save(
             reference_job=reference_job,
             reference_target=reference_target,
             reference_format_label=reference_format_label,
             batch_options=batch_options,
+            output_dir=output_dir,
         ):
             return
-
-        output_dir = self._select_batch_output_dir()
-        if output_dir is None:
-            return
-        self.settings["last_output_dir"] = str(output_dir)
 
         stats = self._run_batch_save(
             output_dir=output_dir,
@@ -4425,11 +4718,40 @@ class ResizeApp(customtkinter.CTk):
         if stats.processed_count > 0:
             self._register_recent_setting_from_current()
         self.status_var.set(msg)
+        retry_callback: Optional[Callable[[], None]] = None
+        if stats.failed_paths and not self._cancel_batch:
+            failed_path_set = {path for path in stats.failed_paths}
+
+            def _retry_failed_batch_only() -> None:
+                retry_jobs = [job for job in self.jobs if job.path in failed_path_set]
+                if not retry_jobs:
+                    messagebox.showinfo("再試行", "再試行対象の失敗ファイルが見つかりません。")
+                    return
+                retry_stats = self._run_batch_save(
+                    output_dir=output_dir,
+                    reference_target=reference_target,
+                    reference_output_format=reference_output_format,
+                    batch_options=batch_options,
+                    target_jobs=retry_jobs,
+                )
+                retry_msg = (
+                    f"失敗再試行完了。成功: {retry_stats.processed_count}件 / "
+                    f"失敗: {retry_stats.failed_count}件 / 対象: {len(retry_jobs)}件"
+                )
+                self.status_var.set(retry_msg)
+                self._show_operation_result_dialog(
+                    title="失敗再試行結果",
+                    summary_text=retry_msg,
+                    failed_details=retry_stats.failed_details,
+                    retry_callback=None,
+                )
+
+            retry_callback = _retry_failed_batch_only
         self._show_operation_result_dialog(
             title="一括処理結果",
             summary_text=msg,
             failed_details=stats.failed_details,
-            retry_callback=None,
+            retry_callback=retry_callback,
         )
 
     def _cancel_batch_save(self):
