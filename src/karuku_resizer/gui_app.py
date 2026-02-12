@@ -2015,12 +2015,22 @@ class ResizeApp(customtkinter.CTk):
             reference_output_format, reference_output_format.upper()
         )
 
+        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
+        batch_exif_edit_values = (
+            self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
+        )
+        batch_options = self._build_save_options(
+            reference_output_format, exif_edit_values=batch_exif_edit_values
+        )
+        run_mode_text = "ドライラン（実ファイルは作成しません）" if batch_options.dry_run else "保存"
+
         if not messagebox.askokcancel(
             "一括適用保存の確認",
             f"基準画像: {reference_job.path.name}\n"
             f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
-            f"出力形式: {reference_format_label}\n\n"
-            f"読み込み中の {len(self.jobs)} 枚すべてに同じ設定を適用して保存します。",
+            f"出力形式: {reference_format_label}\n"
+            f"モード: {run_mode_text}\n\n"
+            f"読み込み中の {len(self.jobs)} 枚すべてに同じ設定を適用して処理します。",
         ):
             return
 
@@ -2044,54 +2054,58 @@ class ResizeApp(customtkinter.CTk):
         exif_fallback_count = 0
         gps_removed_count = 0
         total_files = len(self.jobs)
-        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
-        batch_exif_edit_values = (
-            self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
-        )
-        batch_options = self._build_save_options(
-            reference_output_format, exif_edit_values=batch_exif_edit_values
-        )
+        failed_details: List[str] = []
 
-        for i, job in enumerate(self.jobs):
-            if self._cancel_batch:
-                break
+        try:
+            for i, job in enumerate(self.jobs):
+                if self._cancel_batch:
+                    break
 
-            self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
-            self.progress_bar.set((i + 1) / total_files)
-            self.update_idletasks()
+                self.status_var.set(f"処理中: {i+1}/{total_files} - {job.path.name}")
+                self.progress_bar.set((i + 1) / total_files)
+                self.update_idletasks()
 
-            resized_img = self._resize_image_to_target(job.image, reference_target)
-            if resized_img:
-                out_base = self._build_unique_batch_base_path(
-                    output_dir=output_dir,
-                    stem=job.path.stem,
-                    output_format=reference_output_format,
-                    dry_run=batch_options.dry_run,
-                )
-                result = save_image(
-                    source_image=job.image,
-                    resized_image=resized_img,
-                    output_path=out_base,
-                    options=batch_options,
-                )
-                if result.success:
-                    processed_count += 1
-                    if result.dry_run:
-                        dry_run_count += 1
-                    if result.exif_attached:
-                        exif_applied_count += 1
-                    if result.exif_fallback_without_metadata:
-                        exif_fallback_count += 1
-                    if result.gps_removed:
-                        gps_removed_count += 1
-                else:
+                try:
+                    resized_img = self._resize_image_to_target(job.image, reference_target)
+                    if not resized_img:
+                        failed_count += 1
+                        failed_details.append(f"{job.path.name}: リサイズ失敗")
+                        continue
+
+                    out_base = self._build_unique_batch_base_path(
+                        output_dir=output_dir,
+                        stem=job.path.stem,
+                        output_format=reference_output_format,
+                        dry_run=batch_options.dry_run,
+                    )
+                    result = save_image(
+                        source_image=job.image,
+                        resized_image=resized_img,
+                        output_path=out_base,
+                        options=batch_options,
+                    )
+                    if result.success:
+                        processed_count += 1
+                        if result.dry_run:
+                            dry_run_count += 1
+                        if result.exif_attached:
+                            exif_applied_count += 1
+                        if result.exif_fallback_without_metadata:
+                            exif_fallback_count += 1
+                        if result.gps_removed:
+                            gps_removed_count += 1
+                    else:
+                        failed_count += 1
+                        error_detail = result.error or "保存処理で不明なエラー"
+                        failed_details.append(f"{job.path.name}: {error_detail}")
+                        logging.error(f"Failed to save {result.output_path}: {result.error}")
+                except Exception as e:
                     failed_count += 1
-                    logging.error(f"Failed to save {result.output_path}: {result.error}")
-            else:
-                failed_count += 1
-
-        self.progress_bar.pack_forget()
-        self.cancel_button.pack_forget()
+                    failed_details.append(f"{job.path.name}: 例外 {e}")
+                    logging.exception("Unexpected error during batch save: %s", job.path)
+        finally:
+            self.progress_bar.pack_forget()
+            self.cancel_button.pack_forget()
 
         if self._cancel_batch:
             msg = (
@@ -2110,6 +2124,15 @@ class ResizeApp(customtkinter.CTk):
             )
             if batch_options.dry_run:
                 msg += f"\nドライラン件数: {dry_run_count}件"
+                msg += "\nドライランのため、実ファイルは作成していません。"
+
+        if failed_details:
+            preview_lines = failed_details[:5]
+            msg += "\n失敗詳細:"
+            for detail in preview_lines:
+                msg += f"\n- {detail}"
+            if len(failed_details) > len(preview_lines):
+                msg += f"\n- ...ほか {len(failed_details) - len(preview_lines)} 件"
         self.status_var.set(msg)
         messagebox.showinfo("完了", msg)
 
