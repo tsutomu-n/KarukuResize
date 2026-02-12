@@ -35,6 +35,7 @@ DIST_DIR = PROJECT_ROOT / "dist"
 NAME = "KarukuResize"
 MODULE = "karuku_resizer.gui_app"
 ICON_PATH = PROJECT_ROOT / "assets" / "app.ico"  # optional icon
+DATA_SEP = ";" if os.name == "nt" else ":"
 
 # Base arguments
 PYINSTALLER_ARGS: list[str] = [
@@ -48,6 +49,8 @@ PYINSTALLER_ARGS: list[str] = [
 # Add icon if it exists
 if ICON_PATH.is_file():
     PYINSTALLER_ARGS.extend(["--icon", str(ICON_PATH)])
+    # 実行時に Tk 側で iconbitmap/iconphoto に使えるよう、ICO 自体も同梱する。
+    PYINSTALLER_ARGS.extend(["--add-data", f"{ICON_PATH}{DATA_SEP}assets"])
 
 # Entry point script path
 SCRIPT_PATH = PROJECT_ROOT / "src" / "karuku_resizer" / "gui_app.py"

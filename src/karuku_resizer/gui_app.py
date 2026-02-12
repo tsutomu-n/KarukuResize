@@ -18,6 +18,7 @@ import os
 import platform
 import queue
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -246,6 +247,8 @@ class ResizeApp(customtkinter.CTk):
         self.font_bold = customtkinter.CTkFont(family=system_font, size=14, weight="bold")
 
         self.title("画像リサイズツール (DEBUG)" if DEBUG else "画像リサイズツール")
+        self._window_icon_image: Optional[ImageTk.PhotoImage] = None
+        self._apply_window_icon()
 
         # 例外を握りつぶさず、GUI上で明示してログへ残す
         self.report_callback_exception = self._report_callback_exception
@@ -379,6 +382,39 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_light"],
             corner_radius=10,
         )
+
+    @staticmethod
+    def _runtime_base_dir() -> Path:
+        # PyInstaller onefile展開先では sys._MEIPASS を優先する。
+        if getattr(sys, "frozen", False):
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                return Path(str(meipass))
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parents[2]
+
+    @classmethod
+    def _resolve_icon_paths(cls) -> Tuple[Optional[Path], Optional[Path]]:
+        base = cls._runtime_base_dir()
+        ico = base / "assets" / "app.ico"
+        png = base / "img" / "karuku.png"
+        return (ico if ico.is_file() else None, png if png.is_file() else None)
+
+    def _apply_window_icon(self) -> None:
+        ico_path, png_path = self._resolve_icon_paths()
+
+        if platform.system() == "Windows" and ico_path is not None:
+            try:
+                self.iconbitmap(default=str(ico_path))
+            except Exception:
+                logging.exception("Failed to set Windows window icon via iconbitmap: %s", ico_path)
+
+        if png_path is not None:
+            try:
+                self._window_icon_image = ImageTk.PhotoImage(file=str(png_path))
+                self.iconphoto(True, self._window_icon_image)
+            except Exception:
+                logging.exception("Failed to set window icon via iconphoto: %s", png_path)
 
     def _style_card_frame(self, frame: customtkinter.CTkFrame, corner_radius: int = 12) -> None:
         frame.configure(
@@ -4769,8 +4805,20 @@ class ResizeApp(customtkinter.CTk):
 
 # ----------------------------------------------------------------------
 
+def _set_windows_app_user_model_id() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("tn.KarukuResize")  # type: ignore[attr-defined]
+    except Exception:
+        logging.exception("Failed to set Windows AppUserModelID")
+
+
 def main():
     """Package entry point (CLI script)."""
+    _set_windows_app_user_model_id()
     app = ResizeApp()
     app.mainloop()
 
