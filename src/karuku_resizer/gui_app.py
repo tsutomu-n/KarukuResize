@@ -441,13 +441,12 @@ class ResizeApp(customtkinter.CTk):
         return APPEARANCE_LABEL_TO_ID.get(self.appearance_mode_var.get(), "system")
 
     def _on_appearance_mode_changed(self, _value: str):
-        self._apply_appearance_mode(self._appearance_mode_id(), redraw=True)
+        self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
         self._update_settings_summary()
 
-    def _apply_appearance_mode(self, mode_id: str, redraw: bool = False):
+    def _apply_user_appearance_mode(self, mode_id: str, redraw: bool = False):
         normalized = self._normalize_appearance_mode(mode_id)
-        # Keep CTk's internal appearance propagation behavior compatible.
-        super()._apply_appearance_mode(normalized)
+        customtkinter.set_appearance_mode(normalized)
         self.configure(fg_color=METALLIC_COLORS["bg_primary"])
 
         if hasattr(self, "canvas_org") and self.canvas_org.winfo_exists():
@@ -1460,7 +1459,7 @@ class ResizeApp(customtkinter.CTk):
         # ズーム設定復元
         self.zoom_var.set(self.settings["zoom_preference"])
         self._set_metadata_panel_expanded(metadata_panel_expanded)
-        self._apply_appearance_mode(saved_appearance, redraw=False)
+        self._apply_user_appearance_mode(saved_appearance, redraw=False)
         self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
         self._update_settings_summary()
