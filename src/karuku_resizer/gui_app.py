@@ -665,7 +665,7 @@ class ResizeApp(customtkinter.CTk):
         self.save_button.pack(side="left", pady=8)
         
         self.batch_button = customtkinter.CTkButton(
-            parent, text="📁 一括保存", width=100, command=self._batch_save,
+            parent, text="📁 一括適用保存", width=120, command=self._batch_save,
             font=self.font_default
         )
         self._style_primary_button(self.batch_button)
@@ -1916,6 +1916,35 @@ class ResizeApp(customtkinter.CTk):
 
         return img.resize(target_size, Resampling.LANCZOS)
 
+    @staticmethod
+    def _resize_image_to_target(img: Image.Image, target_size: Tuple[int, int]) -> Optional[Image.Image]:
+        """Resize image to the explicit target size used for batch-apply saves."""
+        tw, th = target_size
+        if tw <= 0 or th <= 0:
+            return None
+        return img.resize((tw, th), Resampling.LANCZOS)
+
+    def _resolve_batch_reference(self) -> Optional[Tuple[ImageJob, Tuple[int, int], str]]:
+        """Resolve selected image as batch reference and freeze output params."""
+        if not self.jobs:
+            return None
+
+        ref_index = self.current_index if self.current_index is not None else 0
+        if ref_index >= len(self.jobs):
+            ref_index = 0
+        reference_job = self.jobs[ref_index]
+
+        target_size = self._get_target(reference_job.image.size)
+        if not target_size:
+            self.status_var.set("基準画像のリサイズ設定が無効です")
+            return None
+        if any(d <= 0 for d in target_size):
+            self.status_var.set("基準画像のリサイズ後サイズが0以下になります")
+            return None
+
+        output_format = self._resolve_output_format_for_image(reference_job.image)
+        return reference_job, target_size, output_format
+
     def _preview_current(self):
         if self.current_index is None:
             messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
@@ -1977,9 +2006,22 @@ class ResizeApp(customtkinter.CTk):
             messagebox.showwarning("ファイル未選択", "ファイルが選択されていません")
             return
 
-        _, _, target = self._get_settings_summary()
-        if not target:
-            messagebox.showwarning("設定エラー", "リサイズ設定が無効です")
+        reference = self._resolve_batch_reference()
+        if reference is None:
+            messagebox.showwarning("設定エラー", "基準画像の設定が無効です")
+            return
+        reference_job, reference_target, reference_output_format = reference
+        reference_format_label = FORMAT_ID_TO_LABEL.get(
+            reference_output_format, reference_output_format.upper()
+        )
+
+        if not messagebox.askokcancel(
+            "一括適用保存の確認",
+            f"基準画像: {reference_job.path.name}\n"
+            f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
+            f"出力形式: {reference_format_label}\n\n"
+            f"読み込み中の {len(self.jobs)} 枚すべてに同じ設定を適用して保存します。",
+        ):
             return
 
         initial_dir = self.settings.get("last_output_dir") or self.settings.get("last_input_dir") or Path.home()
@@ -2006,6 +2048,9 @@ class ResizeApp(customtkinter.CTk):
         batch_exif_edit_values = (
             self._current_exif_edit_values(show_warning=True) if exif_mode == "edit" else None
         )
+        batch_options = self._build_save_options(
+            reference_output_format, exif_edit_values=batch_exif_edit_values
+        )
 
         for i, job in enumerate(self.jobs):
             if self._cancel_batch:
@@ -2015,21 +2060,19 @@ class ResizeApp(customtkinter.CTk):
             self.progress_bar.set((i + 1) / total_files)
             self.update_idletasks()
 
-            resized_img = self._process_image(job.image)
+            resized_img = self._resize_image_to_target(job.image, reference_target)
             if resized_img:
-                output_format = self._resolve_output_format_for_image(job.image)
-                options = self._build_save_options(output_format, exif_edit_values=batch_exif_edit_values)
                 out_base = self._build_unique_batch_base_path(
                     output_dir=output_dir,
                     stem=job.path.stem,
-                    output_format=output_format,
-                    dry_run=options.dry_run,
+                    output_format=reference_output_format,
+                    dry_run=batch_options.dry_run,
                 )
                 result = save_image(
                     source_image=job.image,
                     resized_image=resized_img,
                     output_path=out_base,
-                    options=options,
+                    options=batch_options,
                 )
                 if result.success:
                     processed_count += 1
@@ -2056,12 +2099,16 @@ class ResizeApp(customtkinter.CTk):
                 f"({processed_count}/{total_files}件完了)"
             )
         else:
-            mode_text = "ドライラン" if self.dry_run_var.get() else "保存"
+            mode_text = "ドライラン" if batch_options.dry_run else "保存"
             msg = (
                 f"一括処理完了。{processed_count}/{total_files}件を{mode_text}しました。"
                 f"\n失敗: {failed_count}件 / EXIF付与: {exif_applied_count}件 / EXIFフォールバック: {exif_fallback_count}件 / GPS削除: {gps_removed_count}件"
             )
-            if self.dry_run_var.get():
+            msg += (
+                f"\n基準: {reference_job.path.name} / "
+                f"{reference_target[0]}x{reference_target[1]} / {reference_format_label}"
+            )
+            if batch_options.dry_run:
                 msg += f"\nドライラン件数: {dry_run_count}件"
         self.status_var.set(msg)
         messagebox.showinfo("完了", msg)
