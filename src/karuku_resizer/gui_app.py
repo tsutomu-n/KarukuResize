@@ -50,6 +50,7 @@ from karuku_resizer.processing_preset_store import (
     ProcessingPresetStore,
     merge_processing_values,
 )
+from karuku_resizer.icon_loader import load_icon
 from karuku_resizer.image_save_pipeline import (
     ExifEditValues,
     SaveOptions,
@@ -435,7 +436,7 @@ class ResizeApp(customtkinter.CTk):
             fg_color=METALLIC_COLORS["primary"],
             hover_color=METALLIC_COLORS["hover"],
             text_color=METALLIC_COLORS["text_primary"],
-            corner_radius=10,
+            corner_radius=8,
             border_width=0,
         )
 
@@ -446,7 +447,7 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             border_width=1,
             border_color=METALLIC_COLORS["border_light"],
-            corner_radius=10,
+            corner_radius=8,
         )
 
     @staticmethod
@@ -1268,27 +1269,36 @@ class ResizeApp(customtkinter.CTk):
         top_row_secondary.pack(side="top", fill="x", padx=8, pady=(2, 6))
         topbar_widths = TOPBAR_WIDTHS["normal"]
 
+        self._icon_folder_open = load_icon("folder-open", 16)
         self.select_button = customtkinter.CTkButton(
             top_row_primary,
-            text="📂 画像を選択",
+            text="画像を選択",
+            image=self._icon_folder_open,
+            compound="left",
             width=topbar_widths["select"],
             command=self._select_files,
             font=self.font_default,
         )
         self._style_primary_button(self.select_button)
         self.select_button.pack(side="left", padx=(0, 6), pady=4)
+        self._icon_circle_help = load_icon("circle-help", 16)
         self.help_button = customtkinter.CTkButton(
             top_row_primary,
-            text="❓ 使い方",
+            text="使い方",
+            image=self._icon_circle_help,
+            compound="left",
             width=topbar_widths["help"],
             command=self._show_help,
             font=self.font_default,
         )
         self._style_secondary_button(self.help_button)
         self.help_button.pack(side="left", padx=(0, 8), pady=4)
+        self._icon_settings = load_icon("settings", 16)
         self.settings_button = customtkinter.CTkButton(
             top_row_primary,
-            text="⚙ 設定",
+            text="設定",
+            image=self._icon_settings,
+            compound="left",
             width=topbar_widths["settings"],
             command=self._open_settings_dialog,
             font=self.font_default,
@@ -1381,8 +1391,8 @@ class ResizeApp(customtkinter.CTk):
         action_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
         action_controls_frame.pack(side="right")
         self._setup_action_buttons(action_controls_frame)
-        self._refresh_topbar_density()
         self._setup_settings_layers()
+        self._refresh_topbar_density()
         self._setup_main_layout()
 
     def _setup_settings_layers(self):
@@ -1639,14 +1649,14 @@ class ResizeApp(customtkinter.CTk):
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
-        return "📁 一括保存" if density == "compact" else "📁 一括適用保存"
+        return "一括保存" if density == "compact" else "一括適用保存"
 
     def _select_button_text_for_state(self) -> str:
         if self._is_pro_mode():
             if self._topbar_density == "compact":
-                return "📂 画像/フォルダ選択"
-            return "📂 画像/フォルダを選択"
-        return "📂 画像を選択"
+                return "画像/フォルダ選択"
+            return "画像/フォルダを選択"
+        return "画像を選択"
 
     def _apply_topbar_density(self, window_width: int) -> None:
         density = self._topbar_density_for_width(window_width)
@@ -1923,9 +1933,12 @@ class ResizeApp(customtkinter.CTk):
     def _setup_action_buttons(self, parent):
         """アクションボタンをセットアップ"""
         topbar_widths = TOPBAR_WIDTHS["normal"]
+        self._icon_refresh = load_icon("refresh-cw", 16)
         self.preview_button = customtkinter.CTkButton(
             parent,
-            text="🔄 プレビュー",
+            text="プレビュー",
+            image=self._icon_refresh,
+            compound="left",
             width=topbar_widths["preview"],
             command=self._preview_current,
             font=self.font_default
@@ -1933,9 +1946,12 @@ class ResizeApp(customtkinter.CTk):
         self._style_primary_button(self.preview_button)
         self.preview_button.pack(side="left", padx=(0, 8), pady=8)
         
+        self._icon_save = load_icon("save", 16)
         self.save_button = customtkinter.CTkButton(
             parent,
-            text="💾 保存",
+            text="保存",
+            image=self._icon_save,
+            compound="left",
             width=topbar_widths["save"],
             command=self._save_current,
             font=self.font_default
@@ -1943,9 +1959,12 @@ class ResizeApp(customtkinter.CTk):
         self._style_primary_button(self.save_button)
         self.save_button.pack(side="left", pady=8)
         
+        self._icon_folder = load_icon("folder", 16)
         self.batch_button = customtkinter.CTkButton(
             parent,
             text=self._batch_button_text_for_density(self._topbar_density),
+            image=self._icon_folder,
+            compound="left",
             width=topbar_widths["batch"],
             command=self._batch_save,
             font=self.font_default

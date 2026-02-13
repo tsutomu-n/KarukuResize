@@ -77,3 +77,5 @@ KarukuResize.exe
 .oldfiles
 .ai_memory/
 2app.ico
+# zsh-auto-uvによって追加されました。
+.autoenv_approved

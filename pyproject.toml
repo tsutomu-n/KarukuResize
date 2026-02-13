@@ -72,6 +72,7 @@ dev = [
     "black>=25.1.0",
     "ruff>=0.4.4",
     "pyinstaller>=6.6.0",
+    "cairosvg>=2.7.0",
 ]
 
 [tool.ruff]
