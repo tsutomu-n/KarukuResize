@@ -493,7 +493,10 @@ class ResizeApp(customtkinter.CTk):
     def _register_tooltip(self, widget: Any, text: str) -> None:
         if widget is None:
             return
-        self._tooltip_manager.register(widget, text)
+        try:
+            self._tooltip_manager.register(widget, text)
+        except Exception:
+            logging.exception("Tooltip registration failed for widget %s", widget)
 
     @staticmethod
     def _recent_setting_tooltip_text(entry: Mapping[str, Any]) -> str:

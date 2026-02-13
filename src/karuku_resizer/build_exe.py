@@ -42,6 +42,7 @@ PYINSTALLER_ARGS: list[str] = [
     "--name",
     NAME,
     "--noconfirm",
+    "--clean",
     "--windowed",
     "--onefile",
 ]

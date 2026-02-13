@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional, Set
 
 
 class TooltipManager:
@@ -23,6 +23,7 @@ class TooltipManager:
         self.wraplength = max(120, int(wraplength))
 
         self._texts: Dict[tk.Misc, str] = {}
+        self._bound_widgets: Set[tk.Misc] = set()
         self._after_id: Optional[str] = None
         self._pending_widget: Optional[tk.Misc] = None
         self._pending_via_focus = False
@@ -36,13 +37,22 @@ class TooltipManager:
         if not clean_text:
             return
         self._texts[widget] = clean_text
+        try:
+            is_bound = self._bind_tooltip_events(widget)
+        except Exception:
+            is_bound = False
+        if is_bound:
+            return
 
-        widget.bind("<Enter>", lambda _e, w=widget: self._schedule_show(w, via_focus=False), add="+")
-        widget.bind("<Leave>", lambda _e, w=widget: self._hide_if_for_widget(w), add="+")
-        widget.bind("<FocusIn>", lambda _e, w=widget: self._schedule_show(w, via_focus=True), add="+")
-        widget.bind("<FocusOut>", lambda _e, w=widget: self._hide_if_for_widget(w), add="+")
-        widget.bind("<ButtonPress>", lambda _e: self.hide(), add="+")
-        widget.bind("<Destroy>", lambda _e, w=widget: self._unregister_widget(w), add="+")
+        self._texts.pop(widget, None)
+        for child in self._iter_descendant_widgets(widget):
+            self._texts[child] = clean_text
+            try:
+                child_bound = self._bind_tooltip_events(child)
+            except Exception:
+                child_bound = False
+            if not child_bound:
+                self._texts.pop(child, None)
 
     def hide(self) -> None:
         """Hide tooltip immediately."""
@@ -53,10 +63,56 @@ class TooltipManager:
 
     def _unregister_widget(self, widget: tk.Misc) -> None:
         self._texts.pop(widget, None)
+        self._bound_widgets.discard(widget)
         if self._pending_widget is widget:
             self._cancel_pending()
         if self._visible_for is widget:
             self.hide()
+
+    def _bind_tooltip_events(self, widget: tk.Misc) -> bool:
+        if widget in self._bound_widgets:
+            return True
+        try:
+            widget.bind("<Enter>", lambda _e, w=widget: self._schedule_show(w, via_focus=False), add="+")
+            widget.bind("<Leave>", lambda _e, w=widget: self._hide_if_for_widget(w), add="+")
+            widget.bind("<FocusIn>", lambda _e, w=widget: self._schedule_show(w, via_focus=True), add="+")
+            widget.bind("<FocusOut>", lambda _e, w=widget: self._hide_if_for_widget(w), add="+")
+            widget.bind("<ButtonPress>", lambda _e: self.hide(), add="+")
+            widget.bind("<Destroy>", lambda _e, w=widget: self._unregister_widget(w), add="+")
+        except (NotImplementedError, AttributeError, tk.TclError):
+            return False
+        self._bound_widgets.add(widget)
+        return True
+
+    @staticmethod
+    def _iter_descendant_widgets(widget: tk.Misc) -> List[tk.Misc]:
+        descendants: List[tk.Misc] = []
+        seen: Set[tk.Misc] = set()
+
+        buttons_dict = getattr(widget, "_buttons_dict", None)
+        if isinstance(buttons_dict, dict):
+            for maybe_widget in buttons_dict.values():
+                if maybe_widget is None or maybe_widget in seen:
+                    continue
+                seen.add(maybe_widget)
+                descendants.append(maybe_widget)
+
+        try:
+            queue: List[tk.Misc] = list(widget.winfo_children())
+        except Exception:
+            return descendants
+
+        while queue:
+            child = queue.pop(0)
+            if child in seen:
+                continue
+            seen.add(child)
+            descendants.append(child)
+            try:
+                queue.extend(child.winfo_children())
+            except Exception:
+                continue
+        return descendants
 
     def _schedule_show(self, widget: tk.Misc, *, via_focus: bool) -> None:
         if not self.enabled_provider():
