@@ -99,6 +99,31 @@ MIN_WINDOW_WIDTH = 1200
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
+TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1310
+TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
+    "normal": {
+        "select": 128,
+        "help": 108,
+        "settings": 90,
+        "preset_menu": 180,
+        "preset_action": 72,
+        "preview": 118,
+        "save": 118,
+        "batch": 118,
+        "zoom": 140,
+    },
+    "compact": {
+        "select": 118,
+        "help": 94,
+        "settings": 82,
+        "preset_menu": 156,
+        "preset_action": 64,
+        "preview": 108,
+        "save": 96,
+        "batch": 106,
+        "zoom": 126,
+    },
+}
 
 # -------------------- UI color constants --------------------
 METALLIC_COLORS = {
@@ -322,6 +347,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self._run_summary_payload = self._create_initial_run_summary()
         self._run_summary_finalized = False
+        self._topbar_density = "normal"
 
         self._setup_ui()
         self._setup_tooltips()
@@ -1240,19 +1266,32 @@ class ResizeApp(customtkinter.CTk):
 
         top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
         top_row_secondary.pack(side="top", fill="x", padx=8, pady=(2, 6))
+        topbar_widths = TOPBAR_WIDTHS["normal"]
 
         self.select_button = customtkinter.CTkButton(
-            top_row_primary, text="📂 画像を選択", width=128, command=self._select_files, font=self.font_default
+            top_row_primary,
+            text="📂 画像を選択",
+            width=topbar_widths["select"],
+            command=self._select_files,
+            font=self.font_default,
         )
         self._style_primary_button(self.select_button)
         self.select_button.pack(side="left", padx=(0, 6), pady=4)
         self.help_button = customtkinter.CTkButton(
-            top_row_primary, text="❓ 使い方", width=108, command=self._show_help, font=self.font_default
+            top_row_primary,
+            text="❓ 使い方",
+            width=topbar_widths["help"],
+            command=self._show_help,
+            font=self.font_default,
         )
         self._style_secondary_button(self.help_button)
         self.help_button.pack(side="left", padx=(0, 8), pady=4)
         self.settings_button = customtkinter.CTkButton(
-            top_row_primary, text="⚙ 設定", width=90, command=self._open_settings_dialog, font=self.font_default
+            top_row_primary,
+            text="⚙ 設定",
+            width=topbar_widths["settings"],
+            command=self._open_settings_dialog,
+            font=self.font_default,
         )
         self._style_secondary_button(self.settings_button)
         self.settings_button.pack(side="left", padx=(0, 8), pady=4)
@@ -1271,7 +1310,7 @@ class ResizeApp(customtkinter.CTk):
             top_row_primary,
             variable=self.preset_var,
             values=[PRESET_NONE_LABEL],
-            width=180,
+            width=topbar_widths["preset_menu"],
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
             button_color=METALLIC_COLORS["primary"],
@@ -1284,7 +1323,7 @@ class ResizeApp(customtkinter.CTk):
         self.preset_apply_button = customtkinter.CTkButton(
             top_row_primary,
             text="適用",
-            width=72,
+            width=topbar_widths["preset_action"],
             command=self._apply_selected_preset,
             font=self.font_small,
         )
@@ -1293,7 +1332,7 @@ class ResizeApp(customtkinter.CTk):
         self.preset_save_button = customtkinter.CTkButton(
             top_row_primary,
             text="保存",
-            width=72,
+            width=topbar_widths["preset_action"],
             command=self._save_current_as_preset,
             font=self.font_small,
         )
@@ -1302,7 +1341,7 @@ class ResizeApp(customtkinter.CTk):
         self.preset_manage_button = customtkinter.CTkButton(
             top_row_primary,
             text="管理",
-            width=72,
+            width=topbar_widths["preset_action"],
             command=self._open_preset_manager_dialog,
             font=self.font_small,
         )
@@ -1342,6 +1381,7 @@ class ResizeApp(customtkinter.CTk):
         action_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
         action_controls_frame.pack(side="right")
         self._setup_action_buttons(action_controls_frame)
+        self._refresh_topbar_density()
         self._setup_settings_layers()
         self._setup_main_layout()
 
@@ -1593,6 +1633,48 @@ class ResizeApp(customtkinter.CTk):
         self._save_current_settings()
         self._refresh_recent_settings_buttons()
 
+    @staticmethod
+    def _topbar_density_for_width(window_width: int) -> str:
+        return "compact" if window_width <= TOPBAR_DENSITY_COMPACT_MAX_WIDTH else "normal"
+
+    @staticmethod
+    def _batch_button_text_for_density(density: str) -> str:
+        return "📁 一括保存" if density == "compact" else "📁 一括適用保存"
+
+    def _select_button_text_for_state(self) -> str:
+        if self._is_pro_mode():
+            if self._topbar_density == "compact":
+                return "📂 画像/フォルダ選択"
+            return "📂 画像/フォルダを選択"
+        return "📂 画像を選択"
+
+    def _apply_topbar_density(self, window_width: int) -> None:
+        density = self._topbar_density_for_width(window_width)
+        if density == self._topbar_density:
+            return
+        self._topbar_density = density
+        widths = TOPBAR_WIDTHS[density]
+
+        self.select_button.configure(width=widths["select"])
+        self.help_button.configure(width=widths["help"])
+        self.settings_button.configure(width=widths["settings"])
+        self.preset_menu.configure(width=widths["preset_menu"])
+        self.preset_apply_button.configure(width=widths["preset_action"])
+        self.preset_save_button.configure(width=widths["preset_action"])
+        self.preset_manage_button.configure(width=widths["preset_action"])
+        self.preview_button.configure(width=widths["preview"])
+        self.save_button.configure(width=widths["save"])
+        self.batch_button.configure(
+            width=widths["batch"],
+            text=self._batch_button_text_for_density(density),
+        )
+        self.zoom_cb.configure(width=widths["zoom"])
+        self.select_button.configure(text=self._select_button_text_for_state())
+
+    def _refresh_topbar_density(self) -> None:
+        width = max(self.winfo_width(), MIN_WINDOW_WIDTH)
+        self._apply_topbar_density(width)
+
     def _ui_mode_id(self) -> str:
         return UI_MODE_LABEL_TO_ID.get(self.ui_mode_var.get(), "simple")
 
@@ -1637,9 +1719,7 @@ class ResizeApp(customtkinter.CTk):
     def _apply_ui_mode(self):
         pro_mode = self._is_pro_mode()
         self._update_exif_mode_options_for_ui_mode()
-        self.select_button.configure(
-            text="📂 画像/フォルダを選択" if pro_mode else "📂 画像を選択"
-        )
+        self.select_button.configure(text=self._select_button_text_for_state())
         if self._is_loading_files:
             self.select_button.configure(state="disabled")
 
@@ -1842,22 +1922,32 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_action_buttons(self, parent):
         """アクションボタンをセットアップ"""
+        topbar_widths = TOPBAR_WIDTHS["normal"]
         self.preview_button = customtkinter.CTkButton(
-            parent, text="🔄 プレビュー", width=118, command=self._preview_current,
+            parent,
+            text="🔄 プレビュー",
+            width=topbar_widths["preview"],
+            command=self._preview_current,
             font=self.font_default
         )
         self._style_primary_button(self.preview_button)
         self.preview_button.pack(side="left", padx=(0, 8), pady=8)
         
         self.save_button = customtkinter.CTkButton(
-            parent, text="💾 保存", width=118, command=self._save_current,
+            parent,
+            text="💾 保存",
+            width=topbar_widths["save"],
+            command=self._save_current,
             font=self.font_default
         )
         self._style_primary_button(self.save_button)
         self.save_button.pack(side="left", pady=8)
         
         self.batch_button = customtkinter.CTkButton(
-            parent, text="📁 一括適用保存", width=118, command=self._batch_save,
+            parent,
+            text=self._batch_button_text_for_density(self._topbar_density),
+            width=topbar_widths["batch"],
+            command=self._batch_save,
             font=self.font_default
         )
         self._style_primary_button(self.batch_button)
@@ -1869,7 +1959,7 @@ class ResizeApp(customtkinter.CTk):
             parent,
             variable=self.zoom_var,
             values=["画面に合わせる", "100%", "200%", "300%"],
-            width=140,
+            width=topbar_widths["zoom"],
             state="readonly",
             command=self._apply_zoom_selection,
             font=self.font_default,
@@ -2844,6 +2934,7 @@ class ResizeApp(customtkinter.CTk):
         self._apply_user_appearance_mode(saved_appearance, redraw=False)
         self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
+        self._refresh_topbar_density()
         self._refresh_recent_settings_buttons()
         self._update_empty_state_hint()
         self._update_settings_summary()
@@ -5280,6 +5371,7 @@ class ResizeApp(customtkinter.CTk):
         self._draw_previews(self.jobs[self.current_index])
 
     def _on_root_resize(self, _e):
+        self._refresh_topbar_density()
         # redraw previews if zoom is 'Fit'
         if self._zoom_org is None or self._zoom_resz is None:
             if self.current_index is not None:

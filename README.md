@@ -101,6 +101,7 @@ uv run karukuresize-build-exe
 
 - 生成物: `dist\KarukuResize.exe`
 - EXEアイコンは `assets\app.ico` を使用
+- UI確認の推奨ターゲット: Windows 100% / 125% / 150% DPI（200%は任意）
 
 詳細は `docs/WINDOWS_GUIDE.md` と `docs/BUILDING.md` を参照してください。
 
