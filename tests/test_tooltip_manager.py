@@ -73,3 +73,21 @@ def test_register_uses_buttons_dict_when_available() -> None:
 
     assert internal_button.bound_sequences
     assert any(item.startswith("<Enter>") for item in internal_button.bound_sequences)
+
+
+def test_register_does_not_raise_when_bind_is_unsupported_and_no_children() -> None:
+    manager = TooltipManager(DummyRoot(), enabled_provider=lambda: True)
+    unsupported_widget = DummyWidget(bind_mode="not_impl")
+
+    manager.register(unsupported_widget, "sample")
+
+
+def test_register_binds_child_widgets_even_if_parent_bind_is_supported() -> None:
+    manager = TooltipManager(DummyRoot(), enabled_provider=lambda: True)
+    child = DummyWidget()
+    parent = DummyWidget(bind_mode="ok", children=[child])
+
+    manager.register(parent, "sample")
+
+    assert parent.bound_sequences
+    assert child.bound_sequences

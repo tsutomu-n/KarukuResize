@@ -73,6 +73,15 @@ from karuku_resizer.runtime_logging import (
     write_run_summary,
 )
 from karuku_resizer.tools.tooltip_manager import TooltipManager
+from karuku_resizer.ui_tooltip_content import (
+    ADVANCED_CONTROL_TOOLTIPS,
+    APPEARANCE_VALUE_TOOLTIPS,
+    ENTRY_AND_ACTION_TOOLTIPS,
+    FILE_FILTER_VALUE_TOOLTIPS,
+    SIZE_MODE_TOOLTIPS,
+    TOP_AND_PRESET_TOOLTIPS,
+    UI_MODE_VALUE_TOOLTIPS,
+)
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -498,6 +507,24 @@ class ResizeApp(customtkinter.CTk):
         except Exception:
             logging.exception("Tooltip registration failed for widget %s", widget)
 
+    def _register_segmented_value_tooltips(
+        self,
+        segmented: Any,
+        text_by_value: Mapping[str, str],
+    ) -> None:
+        buttons_dict = getattr(segmented, "_buttons_dict", None)
+        if not isinstance(buttons_dict, dict):
+            return
+        for value, text in text_by_value.items():
+            button = buttons_dict.get(value)
+            if button is None:
+                continue
+            self._register_tooltip(button, text)
+
+    def _register_tooltip_by_name(self, attr_name: str, text: str) -> None:
+        widget = getattr(self, attr_name, None)
+        self._register_tooltip(widget, text)
+
     @staticmethod
     def _recent_setting_tooltip_text(entry: Mapping[str, Any]) -> str:
         used_at = str(entry.get("used_at", "")).strip()
@@ -509,57 +536,30 @@ class ResizeApp(customtkinter.CTk):
         return "この設定を再適用します。"
 
     def _setup_tooltips(self) -> None:
-        # Top bar and preset controls
-        self._register_tooltip(
-            self.select_button,
-            "画像を読み込みます。プロは再帰読込できます。",
-        )
-        self._register_tooltip(self.help_button, "使い方を表示します。")
-        self._register_tooltip(self.settings_button, "設定画面を開きます。")
-        self._register_tooltip(self.preset_menu, "プリセットを選択します。")
-        self._register_tooltip(self.preset_apply_button, "プリセットを適用します。")
-        self._register_tooltip(self.preset_save_button, "現在設定を保存します。")
-        self._register_tooltip(self.preset_manage_button, "プリセットを管理します。")
+        for attr_name, text in TOP_AND_PRESET_TOOLTIPS.items():
+            self._register_tooltip_by_name(attr_name, text)
 
-        mode_tooltips = [
-            "比率(%)で拡大縮小します。",
-            "幅(px)を固定して変換します。",
-            "高さ(px)を固定して変換します。",
-            "幅と高さを固定して変換します。",
-        ]
-        for button, text in zip(self.mode_radio_buttons, mode_tooltips):
+        for button, text in zip(self.mode_radio_buttons, SIZE_MODE_TOOLTIPS):
             self._register_tooltip(button, text)
 
-        self._register_tooltip(self.ratio_entry, "比率(%)を入力します。")
-        self._register_tooltip(self.entry_w_single, "幅(px)を入力します。")
-        self._register_tooltip(self.entry_h_single, "高さ(px)を入力します。")
-        self._register_tooltip(self.entry_w_fixed, "固定幅(px)を入力します。")
-        self._register_tooltip(self.entry_h_fixed, "固定高(px)を入力します。")
+        for attr_name, text in ENTRY_AND_ACTION_TOOLTIPS.items():
+            self._register_tooltip_by_name(attr_name, text)
 
-        self._register_tooltip(self.preview_button, "選択画像のプレビューを更新します。")
-        self._register_tooltip(self.save_button, "選択中の1枚を保存します。")
-        self._register_tooltip(
-            self.batch_button,
-            "現在設定を全画像へ一括適用します。",
+        for attr_name, text in ADVANCED_CONTROL_TOOLTIPS.items():
+            self._register_tooltip_by_name(attr_name, text)
+
+        self._register_segmented_value_tooltips(
+            self.ui_mode_segment,
+            UI_MODE_VALUE_TOOLTIPS,
         )
-        self._register_tooltip(self.zoom_cb, "プレビュー倍率を切り替えます。")
-
-        self._register_tooltip(self.ui_mode_segment, "簡易/プロを切り替えます。")
-        self._register_tooltip(self.appearance_mode_segment, "テーマを切り替えます。")
-        self._register_tooltip(self.details_toggle_button, "詳細設定の表示を切り替えます。")
-        self._register_tooltip(self.metadata_toggle_button, "メタデータ表示を切り替えます。")
-        self._register_tooltip(self.output_format_menu, "出力形式を選択します。")
-        self._register_tooltip(self.quality_menu, "圧縮品質を選択します。")
-        self._register_tooltip(self.exif_mode_menu, "EXIFの扱いを選択します。")
-        self._register_tooltip(self.remove_gps_check, "EXIF内のGPS情報を削除します。")
-        self._register_tooltip(self.dry_run_check, "保存せずに処理結果を確認します。")
-        self._register_tooltip(self.verbose_log_check, "詳細ログを有効化します。")
-        self._register_tooltip(self.exif_preview_button, "EXIF変更内容を確認します。")
-        self._register_tooltip(self.open_log_folder_button, "ログ保存フォルダを開きます。")
-        self._register_tooltip(self.webp_method_menu, "WEBP方式を選択します。")
-        self._register_tooltip(self.webp_lossless_check, "WEBPを可逆圧縮で保存します。")
-        self._register_tooltip(self.avif_speed_menu, "AVIF速度を選択します。")
-        self._register_tooltip(self.cancel_button, "実行中の処理を中断します。")
+        self._register_segmented_value_tooltips(
+            self.appearance_mode_segment,
+            APPEARANCE_VALUE_TOOLTIPS,
+        )
+        self._register_segmented_value_tooltips(
+            self.file_filter_segment,
+            FILE_FILTER_VALUE_TOOLTIPS,
+        )
 
     def _refresh_preset_menu(self, selected_preset_id: Optional[str] = None) -> None:
         label_to_id: Dict[str, str] = {}

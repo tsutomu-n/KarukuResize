@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KarukuResize — 現状 vs 改善案</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0e1117;--bg1:#12161d;--bg2:#171c24;--bg3:#202835;
+  --card:#1a2030;--input:#111723;--canvas:#111722;
+  --t1:#e8eef5;--t2:#a7b4c4;--t3:#7e8a9a;
+  --blue:#208cff;--blue-h:#3ba7ff;--blue-soft:#1e2d40;
+  --brd:#2a3340;--brd2:#334155;
+  --green:#3ca66a;--orange:#ef9a1a;--red:#e25a68;--red-bg:#2d1520;
+  --r:10px;--rs:6px;
+  --f:'Segoe UI','SF Pro Display','Hiragino Sans',sans-serif;
+}
+body{background:var(--bg);color:var(--t1);font:14px var(--f);overflow-x:hidden;}
+
+/* ===== Tab switcher ===== */
+.tab-bar{display:flex;gap:0;background:var(--bg1);border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:100;}
+.tab-btn{flex:1;padding:14px 0;text-align:center;font:600 15px var(--f);color:var(--t3);cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;transition:.15s;}
+.tab-btn:hover{color:var(--t2);background:var(--bg2);}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);background:var(--bg2);}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* ===== Window chrome ===== */
+.win{background:var(--bg1);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden;margin:24px auto;max-width:1200px;box-shadow:0 8px 40px rgba(0,0,0,.5);}
+.win-title{background:#0a0d12;padding:7px 14px;font-size:12px;color:var(--t3);display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--brd);}
+.dots{display:flex;gap:6px;}
+.dots span{width:11px;height:11px;border-radius:50%;}
+.d-r{background:#ff5f57;}.d-y{background:#febc2e;}.d-g{background:#28c840;}
+
+/* ===== Shared ===== */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:var(--rs);font:500 12px var(--f);cursor:pointer;border:none;white-space:nowrap;transition:.12s;}
+.sel{padding:5px 24px 5px 8px;background:var(--bg3);border:1px solid var(--brd2);border-radius:var(--rs);color:var(--t1);font:12px var(--f);appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237E8A9A' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center;cursor:pointer;}
+.inp{padding:5px 8px;background:var(--input);border:1px solid var(--brd);border-radius:var(--rs);color:var(--t1);font:13px var(--f);width:54px;}
+.inp:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(32,140,255,.2);}
+.seg{display:inline-flex;border-radius:var(--rs);overflow:hidden;border:1px solid var(--brd2);}
+.seg button{padding:4px 12px;font:500 11px var(--f);background:var(--bg3);color:var(--t2);border:none;cursor:pointer;}
+.seg button.on{background:var(--blue);color:#fff;}
+.radio{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--t1);}
+.radio input{accent-color:var(--blue);margin:0;}
+.lbl{font-size:11px;color:var(--t3);}
+
+/* ===== CURRENT (Before) ===== */
+.c-toolbar{display:flex;align-items:center;gap:5px;padding:8px 10px;background:var(--card);border-radius:var(--r);margin:8px 12px 0;flex-wrap:nowrap;overflow-x:auto;border:1px solid var(--brd);}
+.c-btn-p{background:var(--blue);color:#fff;}
+.c-btn-s{background:var(--bg3);color:var(--t1);border:1px solid var(--brd2);}
+.c-settings{display:flex;align-items:center;padding:6px 10px;background:var(--card);border-radius:var(--r);margin:6px 12px 0;font-size:11px;color:var(--t3);border:1px solid var(--brd);gap:6px;flex-wrap:wrap;}
+.c-settings .spacer{flex:1;}
+.c-body{display:flex;margin:8px 12px;gap:6px;height:460px;}
+.c-left{width:160px;min-width:160px;background:var(--bg2);border:1px solid var(--brd);border-radius:var(--r);display:flex;flex-direction:column;padding:8px;overflow:hidden;}
+.c-left-title{font:600 12px var(--f);color:var(--t2);text-align:center;padding:4px 0 8px;}
+.c-right{flex:1;display:flex;flex-direction:column;gap:6px;}
+.c-preview{flex:1;background:var(--canvas);border:1px solid var(--brd);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden;}
+.c-preview-hdr{padding:6px 12px;font-size:13px;color:var(--t2);background:var(--card);border-bottom:1px solid var(--brd);}
+.c-preview-body{flex:1;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:12px;}
+.c-preview-ftr{padding:4px 12px;font-size:11px;color:var(--t3);text-align:center;border-top:1px solid var(--brd);}
+.c-meta{background:var(--card);border:1px solid var(--brd);border-radius:var(--r);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;}
+.c-meta-title{font-size:13px;color:var(--t2);}
+.c-meta-sub{font-size:11px;color:var(--t3);}
+.c-status{padding:6px 12px;font-size:12px;color:var(--t2);margin:0 12px;}
+.c-session{padding:4px 12px;font-size:11px;color:var(--t3);margin:0 12px;background:var(--bg2);border-radius:var(--rs);}
+.c-hint{padding:4px 12px;font-size:11px;color:var(--orange);margin:0 12px 8px;background:var(--bg2);border-radius:var(--rs);}
+.c-guide{font-size:11px;color:var(--t2);line-height:1.7;padding:4px 0;}
+.file-item{padding:5px 8px;border-radius:var(--rs);font-size:11px;color:var(--t2);cursor:pointer;margin-bottom:2px;display:flex;align-items:center;gap:5px;}
+.file-item:hover{background:var(--bg3);}
+.file-item.on{background:var(--blue-soft);color:var(--blue);font-weight:500;}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.dot-g{background:var(--green);}.dot-r{background:var(--red);}.dot-u{background:var(--t3);}
+
+/* ===== PROPOSED (After) ===== */
+.n-toolbar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--card);border-radius:var(--r);margin:8px 12px 0;border:1px solid var(--brd);}
+.n-divider{width:1px;height:28px;background:var(--brd2);margin:0 2px;}
+.n-group{display:flex;align-items:center;gap:6px;}
+.n-btn-p{background:var(--blue);color:#fff;font-weight:600;}
+.n-btn-p:hover{background:var(--blue-h);}
+.n-btn-s{background:transparent;color:var(--blue);border:1.5px solid var(--blue);}
+.n-btn-s:hover{background:var(--blue-soft);}
+.n-btn-t{background:transparent;color:var(--t2);border:1px solid var(--brd);}
+.n-btn-t:hover{background:var(--bg3);color:var(--t1);}
+.n-btn-g{background:transparent;color:var(--t3);border:none;padding:6px 8px;}
+.n-btn-g:hover{color:var(--t1);background:var(--bg3);}
+.n-chips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:6px 14px 0;margin:0 12px;}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font:500 11px var(--f);}
+.chip-d{background:var(--bg3);color:var(--t3);}
+.chip-c{background:rgba(32,140,255,.12);color:var(--blue);border:1px solid rgba(32,140,255,.25);}
+.chip-w{background:rgba(239,154,26,.12);color:var(--orange);border:1px solid rgba(239,154,26,.25);}
+.n-body{display:flex;margin:8px 12px;gap:6px;height:460px;}
+.n-left{width:180px;min-width:180px;background:var(--bg2);border:1px solid var(--brd);border-radius:var(--r);display:flex;flex-direction:column;padding:8px;overflow:hidden;}
+.n-right{flex:1;display:flex;flex-direction:column;gap:6px;}
+.n-previews{flex:1;display:flex;gap:6px;}
+.n-preview{flex:1;background:var(--canvas);border:1px solid var(--brd);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden;}
+.n-preview-hdr{padding:6px 12px;font-size:12px;color:var(--t2);background:var(--card);border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center;}
+.n-preview-hdr .info{font-size:11px;color:var(--t3);}
+.n-preview-body{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;}
+.n-status{padding:6px 14px;font-size:11px;color:var(--t3);background:var(--bg2);border-top:1px solid var(--brd);display:flex;justify-content:space-between;}
+.drop-zone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px dashed var(--brd2);border-radius:var(--r);background:var(--canvas);cursor:pointer;transition:.2s;gap:10px;padding:32px;}
+.drop-zone:hover{border-color:var(--blue);background:var(--blue-soft);}
+.drop-icon{font-size:40px;opacity:.35;}
+.drop-text{color:var(--t2);font-size:14px;text-align:center;line-height:1.6;}
+.drop-hint{color:var(--t3);font-size:11px;}
+
+/* img placeholder */
+.img-placeholder{border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.3);}
+
+/* page chrome */
+.page-hdr{background:linear-gradient(135deg,#1a1a2e,#16213e);padding:28px 32px;border-bottom:1px solid var(--brd);}
+.page-hdr h1{font-size:24px;font-weight:700;margin-bottom:4px;}
+.page-hdr p{color:var(--t2);font-size:14px;}
+.section-pad{padding:12px 24px 24px;}
+</style>
+</head>
+<body>
+
+<!-- Tab bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('current')">現状の画面</button>
+  <button class="tab-btn" onclick="switchTab('proposed')">改善案</button>
+  <button class="tab-btn" onclick="switchTab('empty')">改善案（空状態）</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 1: CURRENT (faithful reproduction) -->
+<!-- ============================================================ -->
+<div id="tab-current" class="tab-content active">
+<div class="win">
+  <div class="win-title">
+    <div class="dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+    画像リサイズツール
+  </div>
+
+  <!-- Toolbar row 1 -->
+  <div class="c-toolbar">
+    <button class="btn c-btn-p">📂 画像/フォルダを選択</button>
+    <button class="btn c-btn-s">❓ 使い方</button>
+    <button class="btn c-btn-s">⚙ 設定</button>
+    <span class="lbl" style="margin-left:4px;">プリセット</span>
+    <select class="sel" style="width:160px;">
+      <option>横長の高画質(組込)</option>
+    </select>
+    <button class="btn c-btn-s">適用</button>
+    <button class="btn c-btn-s">×削除</button>
+    <button class="btn c-btn-s">保存</button>
+    <button class="btn c-btn-s">管理</button>
+    <div style="flex:1;"></div>
+    <label class="radio"><input type="radio" name="cm"> 比率 %</label>
+    <label class="radio"><input type="radio" name="cm" checked> 幅 px</label>
+    <label class="radio"><input type="radio" name="cm"> 高さ px</label>
+    <label class="radio"><input type="radio" name="cm"> 幅×高</label>
+    <input class="inp" value="450">
+    <span class="lbl">px</span>
+    <button class="btn c-btn-p">🔄 プレビュー</button>
+    <button class="btn c-btn-p">💾 保存</button>
+    <button class="btn c-btn-p" style="background:#1a7ae5;">📁 一括適用保存</button>
+    <select class="sel">
+      <option>画面に合わせる</option>
+    </select>
+  </div>
+
+  <!-- Settings bar row 2 -->
+  <div class="c-settings">
+    <span>現在設定: プロモード / テーマ ダーク / 形式 JPEG / 品質 85 / EXIF 保持 / GPS削除 OFF / ドライラン OFF</span>
+    <div class="spacer"></div>
+    <button class="btn c-btn-s" style="padding:3px 10px;font-size:11px;">詳細設定を表示</button>
+    <div class="seg">
+      <button class="seg button on">システム</button>
+      <button class="seg button">ライト</button>
+      <button class="seg button">ダーク</button>
+    </div>
+    <div class="seg">
+      <button class="seg button">簡易</button>
+      <button class="seg button on">プロ</button>
+    </div>
+  </div>
+
+  <!-- Main body -->
+  <div class="c-body">
+    <!-- Left: file list -->
+    <div class="c-left">
+      <div class="c-left-title">ファイルリスト</div>
+      <div style="margin-bottom:6px;">
+        <div class="seg" style="width:100%;">
+          <button class="seg button on" style="flex:1;">全件</button>
+          <button class="seg button" style="flex:1;">失敗</button>
+          <button class="seg button" style="flex:1;">未処理</button>
+        </div>
+      </div>
+      <div class="c-guide">
+        1. 画像を選択 または ドラッグ&ドロップ<br>
+        2. サイズ・形式を指定<br>
+        3. 保存 または 一括適用保存<br>
+        プロ: フォルダー投入で再帰読込（jpg/jpeg/png）<br>
+        処理中は 中止のみ可能
+      </div>
+    </div>
+
+    <!-- Right: previews -->
+    <div class="c-right">
+      <div class="c-preview">
+        <div class="c-preview-hdr">オリジナル</div>
+        <div class="c-preview-body">
+          <span style="opacity:.3;">--- × ---  ---</span>
+        </div>
+        <div class="c-preview-ftr">--- × ---  ---</div>
+      </div>
+      <div class="c-preview">
+        <div class="c-preview-hdr">リサイズ後</div>
+        <div class="c-preview-body">
+          <span style="opacity:.3;">--- × ---  ---</span>
+        </div>
+        <div class="c-preview-ftr">--- × ---  ---  (---)</div>
+      </div>
+      <div class="c-meta">
+        <div>
+          <div class="c-meta-title">メタデータ（プロ）</div>
+          <div class="c-meta-sub">画像を選択するとメタデータを表示できます</div>
+        </div>
+        <button class="btn c-btn-s" style="padding:4px 14px;font-size:11px;">表示</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bars -->
+  <div class="c-status">準備完了</div>
+  <div class="c-session">セッション: モード プロ / 表示 0/0 (全件) / 未処理 0 / 失敗 0 / ドライラン OFF / 保存先 -</div>
+  <div class="c-hint">操作ガイド: 画像が未選択です。まず画像を読み込んでください。</div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 2: PROPOSED (with images loaded) -->
+<!-- ============================================================ -->
+<div id="tab-proposed" class="tab-content">
+<div class="win">
+  <div class="win-title">
+    <div class="dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+    KarukuResize — 画像リサイズツール
+  </div>
+
+  <!-- Compact toolbar: primary flow only -->
+  <div class="n-toolbar">
+    <div class="n-group">
+      <button class="btn n-btn-s">画像を選択</button>
+    </div>
+    <div class="n-divider"></div>
+    <div class="n-group">
+      <select class="sel">
+        <option>幅 px</option>
+        <option>比率 %</option>
+        <option>高さ px</option>
+        <option>幅×高</option>
+      </select>
+      <input class="inp" value="1280" style="width:64px;">
+      <span class="lbl">px</span>
+    </div>
+    <div class="n-divider"></div>
+    <div class="n-group">
+      <button class="btn n-btn-s">プレビュー</button>
+      <button class="btn n-btn-p">保存</button>
+      <button class="btn n-btn-p">一括保存</button>
+    </div>
+    <div style="flex:1;"></div>
+    <div class="n-group">
+      <select class="sel" style="width:150px;">
+        <option>横長の高画質</option>
+        <option>SNS投稿用</option>
+        <option>メール添付用</option>
+      </select>
+      <button class="btn n-btn-g" title="設定">⚙</button>
+      <button class="btn n-btn-g" title="ヘルプ">?</button>
+    </div>
+  </div>
+
+  <!-- Settings chips: only changed items -->
+  <div class="n-chips">
+    <span class="lbl" style="margin-right:2px;">設定:</span>
+    <span class="chip chip-c">品質 95</span>
+    <span class="chip chip-c">WEBP</span>
+    <span class="chip chip-w">ドライラン ON</span>
+  </div>
+
+  <!-- Main body -->
+  <div class="n-body">
+    <!-- Left: file list -->
+    <div class="n-left">
+      <div style="font:600 12px var(--f);color:var(--t2);padding:2px 0 8px;">ファイルリスト</div>
+      <div style="margin-bottom:8px;">
+        <div class="seg" style="width:100%;">
+          <button class="seg button on" style="flex:1;">全件</button>
+          <button class="seg button" style="flex:1;">失敗</button>
+          <button class="seg button" style="flex:1;">未処理</button>
+        </div>
+      </div>
+      <div class="file-item on"><span class="dot dot-g"></span>sunset_4k.jpg</div>
+      <div class="file-item"><span class="dot dot-g"></span>mountain.png</div>
+      <div class="file-item"><span class="dot dot-u"></span>portrait.jpg</div>
+      <div class="file-item"><span class="dot dot-r"></span>broken.webp</div>
+      <div class="file-item"><span class="dot dot-u"></span>landscape.avif</div>
+      <div class="file-item"><span class="dot dot-g"></span>flower.jpg</div>
+      <div class="file-item"><span class="dot dot-u"></span>building.png</div>
+    </div>
+
+    <!-- Right: horizontal previews -->
+    <div class="n-right">
+      <div class="n-previews">
+        <div class="n-preview">
+          <div class="n-preview-hdr">
+            オリジナル
+            <span class="info">3840 × 2160 · 4.2 MB</span>
+          </div>
+          <div class="n-preview-body" style="background:linear-gradient(135deg,#141e2b,#0d1520);">
+            <div class="img-placeholder" style="width:180px;height:102px;background:linear-gradient(135deg,#e8a04c 0%,#c4622a 30%,#3a1a5e 70%,#1a0a3e 100%);"></div>
+          </div>
+        </div>
+        <div class="n-preview">
+          <div class="n-preview-hdr">
+            リサイズ後
+            <span class="info">1280 × 720 · 285 KB <span style="color:var(--green);">(−93%)</span></span>
+          </div>
+          <div class="n-preview-body" style="background:linear-gradient(135deg,#141e2b,#0d1520);">
+            <div class="img-placeholder" style="width:126px;height:71px;background:linear-gradient(135deg,#e8a04c 0%,#c4622a 30%,#3a1a5e 70%,#1a0a3e 100%);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="n-status">
+    <span>準備完了 · 7枚読込 · 3枚処理済 · 1枚失敗</span>
+    <span>保存先: ~/Pictures/resized/</span>
+  </div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TAB 3: PROPOSED (empty state with drop zone) -->
+<!-- ============================================================ -->
+<div id="tab-empty" class="tab-content">
+<div class="win">
+  <div class="win-title">
+    <div class="dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+    KarukuResize — 画像リサイズツール
+  </div>
+
+  <!-- Compact toolbar -->
+  <div class="n-toolbar">
+    <div class="n-group">
+      <button class="btn n-btn-s">画像を選択</button>
+    </div>
+    <div class="n-divider"></div>
+    <div class="n-group">
+      <select class="sel">
+        <option>幅 px</option>
+      </select>
+      <input class="inp" value="" placeholder="1280" style="width:64px;color:var(--t3);">
+      <span class="lbl">px</span>
+    </div>
+    <div class="n-divider"></div>
+    <div class="n-group">
+      <button class="btn n-btn-s" style="opacity:.4;pointer-events:none;">プレビュー</button>
+      <button class="btn n-btn-p" style="opacity:.4;pointer-events:none;">保存</button>
+      <button class="btn n-btn-p" style="opacity:.4;pointer-events:none;">一括保存</button>
+    </div>
+    <div style="flex:1;"></div>
+    <div class="n-group">
+      <select class="sel" style="width:150px;">
+        <option>横長の高画質</option>
+      </select>
+      <button class="btn n-btn-g" title="設定">⚙</button>
+      <button class="btn n-btn-g" title="ヘルプ">?</button>
+    </div>
+  </div>
+
+  <!-- Settings chips -->
+  <div class="n-chips">
+    <span class="lbl" style="margin-right:2px;">設定:</span>
+    <span class="chip chip-d">デフォルト設定</span>
+  </div>
+
+  <!-- Main body: drop zone -->
+  <div class="n-body">
+    <div class="n-left">
+      <div style="font:600 12px var(--f);color:var(--t2);padding:2px 0 8px;">ファイルリスト</div>
+      <div style="margin-bottom:8px;">
+        <div class="seg" style="width:100%;">
+          <button class="seg button on" style="flex:1;">全件</button>
+          <button class="seg button" style="flex:1;">失敗</button>
+          <button class="seg button" style="flex:1;">未処理</button>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+        <div style="text-align:center;color:var(--t3);font-size:11px;line-height:1.6;">
+          画像がありません
+        </div>
+      </div>
+    </div>
+
+    <div class="n-right">
+      <div class="drop-zone">
+        <div class="drop-icon">📂</div>
+        <div class="drop-text">
+          ここに画像をドロップ<br>
+          またはクリックして選択
+        </div>
+        <div class="drop-hint">jpg · jpeg · png · webp · avif に対応</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="n-status">
+    <span>画像を選択してください</span>
+    <span></span>
+  </div>
+</div>
+</div>
+
+<script>
+function switchTab(id){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active',
+      (id==='current'&&i===0)||(id==='proposed'&&i===1)||(id==='empty'&&i===2));
+  });
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+}
+</script>
+</body>
+</html>

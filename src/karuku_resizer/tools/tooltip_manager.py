@@ -36,23 +36,17 @@ class TooltipManager:
         clean_text = str(text).strip()
         if not clean_text:
             return
-        self._texts[widget] = clean_text
-        try:
-            is_bound = self._bind_tooltip_events(widget)
-        except Exception:
-            is_bound = False
-        if is_bound:
-            return
+        candidates: List[tk.Misc] = [widget]
+        candidates.extend(self._iter_descendant_widgets(widget))
 
-        self._texts.pop(widget, None)
-        for child in self._iter_descendant_widgets(widget):
-            self._texts[child] = clean_text
+        for candidate in candidates:
+            self._texts[candidate] = clean_text
             try:
-                child_bound = self._bind_tooltip_events(child)
+                bound = self._bind_tooltip_events(candidate)
             except Exception:
-                child_bound = False
-            if not child_bound:
-                self._texts.pop(child, None)
+                bound = False
+            if not bound:
+                self._texts.pop(candidate, None)
 
     def hide(self) -> None:
         """Hide tooltip immediately."""
