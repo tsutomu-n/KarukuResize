@@ -6,6 +6,7 @@ CustomTkinterのダーク/ライトモード自動切替に対応したCTkImage�
 from __future__ import annotations
 
 import logging
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -20,11 +21,16 @@ _logger = logging.getLogger(__name__)
 
 def _find_icons_dir() -> Path:
     """アイコンディレクトリを探索する。パッケージ内またはプロジェクトルートから。"""
-    candidates = [
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(str(meipass)) / "assets" / "icons")
+    candidates.extend([
         _ICONS_DIR,
         Path(__file__).resolve().parent / "assets" / "icons",
         Path.cwd() / "assets" / "icons",
-    ]
+    ])
     for candidate in candidates:
         if candidate.is_dir():
             return candidate

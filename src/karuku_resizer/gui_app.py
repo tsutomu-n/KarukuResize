@@ -450,6 +450,26 @@ class ResizeApp(customtkinter.CTk):
             corner_radius=8,
         )
 
+    def _style_outline_button(self, button: customtkinter.CTkButton) -> None:
+        button.configure(
+            fg_color="transparent",
+            hover_color=METALLIC_COLORS["accent_soft"],
+            text_color=METALLIC_COLORS["primary"],
+            border_width=2,
+            border_color=METALLIC_COLORS["primary"],
+            corner_radius=8,
+        )
+
+    def _style_tertiary_button(self, button: customtkinter.CTkButton) -> None:
+        button.configure(
+            fg_color="transparent",
+            hover_color=METALLIC_COLORS["bg_tertiary"],
+            text_color=METALLIC_COLORS["text_secondary"],
+            border_width=1,
+            border_color=METALLIC_COLORS["border_light"],
+            corner_radius=8,
+        )
+
     @staticmethod
     def _runtime_base_dir() -> Path:
         # PyInstaller onefile展開先では sys._MEIPASS を優先する。
@@ -821,6 +841,12 @@ class ResizeApp(customtkinter.CTk):
         if announce:
             self.status_var.set(f"プリセット適用: {preset.name}")
         return True
+
+    def _on_preset_menu_changed(self, _value: str) -> None:
+        preset_id = self._selected_preset_id()
+        if not preset_id:
+            return
+        self._apply_preset_by_id(preset_id, announce=True, persist=True)
 
     def _apply_selected_preset(self) -> None:
         preset_id = self._selected_preset_id()
@@ -1291,7 +1317,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._show_help,
             font=self.font_default,
         )
-        self._style_secondary_button(self.help_button)
+        self._style_tertiary_button(self.help_button)
         self.help_button.pack(side="left", padx=(0, 8), pady=4)
         self._icon_settings = load_icon("settings", 16)
         self.settings_button = customtkinter.CTkButton(
@@ -1303,7 +1329,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._open_settings_dialog,
             font=self.font_default,
         )
-        self._style_secondary_button(self.settings_button)
+        self._style_tertiary_button(self.settings_button)
         self.settings_button.pack(side="left", padx=(0, 8), pady=4)
 
         preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
@@ -1321,6 +1347,7 @@ class ResizeApp(customtkinter.CTk):
             variable=self.preset_var,
             values=[PRESET_NONE_LABEL],
             width=topbar_widths["preset_menu"],
+            command=self._on_preset_menu_changed,
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
             button_color=METALLIC_COLORS["primary"],
@@ -1330,24 +1357,6 @@ class ResizeApp(customtkinter.CTk):
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
         self.preset_menu.pack(side="left", padx=(0, 6), pady=4)
-        self.preset_apply_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="適用",
-            width=topbar_widths["preset_action"],
-            command=self._apply_selected_preset,
-            font=self.font_small,
-        )
-        self._style_secondary_button(self.preset_apply_button)
-        self.preset_apply_button.pack(side="left", padx=(0, 4), pady=4)
-        self.preset_save_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="保存",
-            width=topbar_widths["preset_action"],
-            command=self._save_current_as_preset,
-            font=self.font_small,
-        )
-        self._style_secondary_button(self.preset_save_button)
-        self.preset_save_button.pack(side="left", padx=(0, 4), pady=4)
         self.preset_manage_button = customtkinter.CTkButton(
             top_row_primary,
             text="管理",
@@ -1355,7 +1364,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._open_preset_manager_dialog,
             font=self.font_small,
         )
-        self._style_secondary_button(self.preset_manage_button)
+        self._style_tertiary_button(self.preset_manage_button)
         self.preset_manage_button.pack(side="left", padx=(0, 0), pady=4)
 
         size_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
@@ -1450,7 +1459,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._toggle_details_panel,
             font=self.font_small,
         )
-        self._style_secondary_button(self.details_toggle_button)
+        self._style_tertiary_button(self.details_toggle_button)
         self.details_toggle_button.pack(side="right", padx=(0, 6), pady=8)
 
         self.recent_settings_row = customtkinter.CTkFrame(self.settings_header_frame, fg_color="transparent")
@@ -1669,8 +1678,6 @@ class ResizeApp(customtkinter.CTk):
         self.help_button.configure(width=widths["help"])
         self.settings_button.configure(width=widths["settings"])
         self.preset_menu.configure(width=widths["preset_menu"])
-        self.preset_apply_button.configure(width=widths["preset_action"])
-        self.preset_save_button.configure(width=widths["preset_action"])
         self.preset_manage_button.configure(width=widths["preset_action"])
         self.preview_button.configure(width=widths["preview"])
         self.save_button.configure(width=widths["save"])
@@ -1750,23 +1757,28 @@ class ResizeApp(customtkinter.CTk):
         self._refresh_recent_settings_buttons()
 
     def _update_settings_summary(self):
-        mode_label = self.ui_mode_var.get()
-        appearance_label = self.appearance_mode_var.get()
+        changes: list[str] = []
+        if self.output_format_var.get() != "自動":
+            changes.append(f"形式: {self.output_format_var.get()}")
+        if self.quality_var.get() != "85":
+            changes.append(f"品質: {self.quality_var.get()}")
+        if self.exif_mode_var.get() != "保持":
+            changes.append(f"EXIF: {self.exif_mode_var.get()}")
+        if self.remove_gps_var.get():
+            changes.append("GPS削除")
+        if self.dry_run_var.get():
+            changes.append("ドライラン ON")
         format_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
-        codec_summary = ""
-        if self._is_pro_mode() and format_id == "webp":
-            codec_summary = (
-                f" / WEBP method {self.webp_method_var.get()} "
-                f"(lossless {'ON' if self.webp_lossless_var.get() else 'OFF'})"
-            )
-        elif self._is_pro_mode() and format_id == "avif":
-            codec_summary = f" / AVIF speed {self.avif_speed_var.get()}"
-
-        summary = (
-            f"現在設定: {mode_label}モード / テーマ {appearance_label} / 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
-            f"EXIF {self.exif_mode_var.get()} / GPS削除 {'ON' if self.remove_gps_var.get() else 'OFF'} / "
-            f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
-        )
+        if self._is_pro_mode() and format_id == "webp" and self.webp_method_var.get() != "6":
+            changes.append(f"WEBP method {self.webp_method_var.get()}")
+        if self._is_pro_mode() and format_id == "webp" and self.webp_lossless_var.get():
+            changes.append("WEBP lossless")
+        if self._is_pro_mode() and format_id == "avif" and self.avif_speed_var.get() != "6":
+            changes.append(f"AVIF speed {self.avif_speed_var.get()}")
+        if changes:
+            summary = "設定: " + " / ".join(changes)
+        else:
+            summary = "設定: デフォルト"
         self.settings_summary_var.set(summary)
         self._update_session_summary()
 
@@ -1930,6 +1942,28 @@ class ResizeApp(customtkinter.CTk):
             "fixed": [self.entry_w_fixed, self.entry_h_fixed],
         }
 
+        self._auto_preview_timer: Optional[str] = None
+        for var in (self.pct_var, self.w_var, self.h_var):
+            var.trace_add("write", self._schedule_auto_preview)
+
+    def _schedule_auto_preview(self, *_args: Any) -> None:
+        if self._auto_preview_timer is not None:
+            self.after_cancel(self._auto_preview_timer)
+        self._auto_preview_timer = self.after(300, self._auto_preview)
+
+    def _auto_preview(self) -> None:
+        self._auto_preview_timer = None
+        if self.current_index is None:
+            return
+        if self._is_loading_files:
+            return
+        if self._operation_scope is not None and self._operation_scope.active:
+            return
+        try:
+            self._draw_previews(self.jobs[self.current_index])
+        except Exception:
+            pass
+
     def _setup_action_buttons(self, parent):
         """アクションボタンをセットアップ"""
         topbar_widths = TOPBAR_WIDTHS["normal"]
@@ -1943,7 +1977,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._preview_current,
             font=self.font_default
         )
-        self._style_primary_button(self.preview_button)
+        self._style_outline_button(self.preview_button)
         self.preview_button.pack(side="left", padx=(0, 8), pady=8)
         
         self._icon_save = load_icon("save", 16)
@@ -2121,7 +2155,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._show_exif_preview_dialog,
             font=self.font_small,
         )
-        self._style_secondary_button(self.exif_preview_button)
+        self._style_tertiary_button(self.exif_preview_button)
         self.exif_preview_button.pack(side="left", padx=(0, 10), pady=8)
 
         self.open_log_folder_button = customtkinter.CTkButton(
@@ -2131,7 +2165,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._open_log_folder,
             font=self.font_small,
         )
-        self._style_secondary_button(self.open_log_folder_button)
+        self._style_tertiary_button(self.open_log_folder_button)
         self.open_log_folder_button.pack(side="left", padx=(0, 10), pady=8)
 
         self.codec_controls_frame = customtkinter.CTkFrame(parent)
@@ -2645,14 +2679,14 @@ class ResizeApp(customtkinter.CTk):
         preview_pane = customtkinter.CTkFrame(self.main_content, fg_color="transparent")
         preview_pane.pack(side="right", fill="both", expand=True, padx=(5, 0))
         preview_pane.grid_rowconfigure(0, weight=1)
-        preview_pane.grid_rowconfigure(1, weight=1)
-        preview_pane.grid_rowconfigure(2, weight=0)
+        preview_pane.grid_rowconfigure(1, weight=0)
         preview_pane.grid_columnconfigure(0, weight=1)
+        preview_pane.grid_columnconfigure(1, weight=1)
 
         # Original Preview
         frame_original = customtkinter.CTkFrame(preview_pane, corner_radius=12)
         self._style_card_frame(frame_original, corner_radius=12)
-        frame_original.grid(row=0, column=0, sticky="nswe", pady=(0, 5))
+        frame_original.grid(row=0, column=0, sticky="nswe", padx=(0, 4), pady=(0, 5))
         frame_original.grid_rowconfigure(1, weight=1)
         frame_original.grid_columnconfigure(0, weight=1)
         customtkinter.CTkLabel(
@@ -2675,7 +2709,7 @@ class ResizeApp(customtkinter.CTk):
         # Resized Preview
         self.lf_resized = customtkinter.CTkFrame(preview_pane, corner_radius=12)
         self._style_card_frame(self.lf_resized, corner_radius=12)
-        self.lf_resized.grid(row=1, column=0, sticky="nswe", pady=(5, 0))
+        self.lf_resized.grid(row=0, column=1, sticky="nswe", padx=(4, 0), pady=(0, 5))
         self.lf_resized.grid_rowconfigure(1, weight=1)
         self.lf_resized.grid_columnconfigure(0, weight=1)
         self.resized_title_label = customtkinter.CTkLabel(
@@ -2707,7 +2741,7 @@ class ResizeApp(customtkinter.CTk):
         # Metadata preview (pro mode only)
         self.metadata_frame = customtkinter.CTkFrame(preview_pane, corner_radius=12)
         self._style_card_frame(self.metadata_frame, corner_radius=12)
-        self.metadata_frame.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        self.metadata_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
         self.metadata_header_frame = customtkinter.CTkFrame(self.metadata_frame, fg_color="transparent")
         self.metadata_header_frame.pack(side="top", fill="x", padx=8, pady=(8, 4))
@@ -2727,7 +2761,7 @@ class ResizeApp(customtkinter.CTk):
             command=self._toggle_metadata_panel,
             font=self.font_small,
         )
-        self._style_secondary_button(self.metadata_toggle_button)
+        self._style_tertiary_button(self.metadata_toggle_button)
         self.metadata_toggle_button.pack(side="right")
 
         self.metadata_status_var = customtkinter.StringVar(value="画像を選択するとメタデータを表示できます")
@@ -3741,8 +3775,6 @@ class ResizeApp(customtkinter.CTk):
             self.help_button,
             self.settings_button,
             self.preset_menu,
-            self.preset_apply_button,
-            self.preset_save_button,
             self.preset_manage_button,
             self.preview_button,
             self.save_button,
@@ -4586,12 +4618,13 @@ class ResizeApp(customtkinter.CTk):
             "一括適用保存の確認",
             f"基準画像: {reference_job.path.name}\n"
             f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
-            f"出力形式: {reference_format_label}\n"
+            f"出力形式: {reference_format_label} / 品質: {self.quality_var.get()}\n"
             f"モード: {self._batch_run_mode_text(batch_options)}\n"
             f"EXIF: {self.exif_mode_var.get()} / GPS削除: {'ON' if self.remove_gps_var.get() else 'OFF'}\n"
             f"保存先: {output_dir}\n"
             f"対象枚数: {len(self.jobs)}枚\n\n"
-            "読み込み済み全画像に同じ設定を適用して処理します。",
+            "読み込み済み全画像に同じ設定を適用して処理します。\n"
+            "よろしいですか？",
         )
 
     def _select_batch_output_dir(self) -> Optional[Path]:
