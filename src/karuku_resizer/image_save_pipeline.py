@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Dict, Iterable, Literal, Optional, Tuple
+from typing import Any, Dict, Iterable, Literal, Optional, Tuple
 
 from PIL import ExifTags, Image, features
 
@@ -311,7 +311,7 @@ def build_encoder_save_kwargs(
     webp_method: int = 6,
     webp_lossless: bool = False,
     avif_speed: int = 6,
-) -> Dict[str, object]:
+) -> Dict[str, Any]:
     """出力形式に応じたエンコーダ設定を返す。"""
     normalized_quality = normalize_quality(quality)
 

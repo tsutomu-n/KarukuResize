@@ -23,7 +23,7 @@ class UIParameterExtractor:
         """
         self.config = config
     
-    def get_resize_value(self, resize_mode: str, width_entry: ctk.CTkEntry, 
+    def get_resize_value(self, resize_mode: str, width_entry: Optional[ctk.CTkEntry],
                         default_width: Optional[int] = None) -> Optional[int]:
         """
         統一されたリサイズ値取得メソッド
@@ -42,6 +42,9 @@ class UIParameterExtractor:
         if default_width is None:
             default_width = self.config.resize_width
         
+        if width_entry is None:
+            return default_width
+
         try:
             entry_value = width_entry.get().strip()
             if entry_value:
@@ -148,21 +151,39 @@ class UIParameterExtractor:
             処理パラメータの辞書
         """
         # 基本パラメータの取得
-        quality = self.get_quality_value(ui_widgets.get("quality_slider"))
-        output_format = self.get_output_format(ui_widgets.get("format_var"))
-        resize_mode = self.get_resize_mode(ui_widgets.get("resize_var"))
+        quality_slider = ui_widgets.get("quality_slider")
+        format_var = ui_widgets.get("format_var")
+        resize_var = ui_widgets.get("resize_var")
+        width_entry = ui_widgets.get("width_entry")
+        target_size_entry = ui_widgets.get("target_size_entry")
+
+        quality = (
+            self.get_quality_value(quality_slider)
+            if isinstance(quality_slider, ctk.CTkSlider)
+            else self.config.DEFAULT_QUALITY
+        )
+        output_format = (
+            self.get_output_format(format_var)
+            if isinstance(format_var, ctk.StringVar)
+            else "original"
+        )
+        resize_mode = (
+            self.get_resize_mode(resize_var)
+            if isinstance(resize_var, ctk.StringVar)
+            else "none"
+        )
         
         # リサイズ値の取得
         resize_value = self.get_resize_value(
             resize_mode,
-            ui_widgets.get("width_entry"),
+            width_entry if isinstance(width_entry, ctk.CTkEntry) else None,
             self.config.resize_width
         )
         
         # 目標サイズの取得（オプション）
         target_size_kb = 0
-        if "target_size_entry" in ui_widgets:
-            target_size_kb = self.get_target_size_kb(ui_widgets["target_size_entry"])
+        if isinstance(target_size_entry, ctk.CTkEntry):
+            target_size_kb = self.get_target_size_kb(target_size_entry)
         
         # resize_core用のパラメータに変換
         actual_resize_mode = "none" if resize_mode == "none" else "width"
@@ -175,7 +196,7 @@ class UIParameterExtractor:
             "target_size_kb": target_size_kb,
             # UI表示用の元の値も保持
             "original_resize_mode": resize_mode,
-            "original_format": ui_widgets.get("format_var", ctk.StringVar()).get() if "format_var" in ui_widgets else "元の形式"
+            "original_format": format_var.get() if isinstance(format_var, ctk.StringVar) else "元の形式"
         }
     
     def update_config_from_ui(self, ui_widgets: Dict[str, Any]):

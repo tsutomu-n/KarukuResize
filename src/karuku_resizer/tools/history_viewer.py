@@ -3,11 +3,10 @@
 """
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
-from history_manager import HistoryManager, HistoryEntry
+from .history_manager import HistoryManager, HistoryEntry
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
-import json
 
 
 class HistoryViewer(ctk.CTkFrame):
@@ -286,11 +285,12 @@ class HistoryViewer(ctk.CTkFrame):
         
     def _format_size(self, size_bytes: int) -> str:
         """サイズをフォーマット"""
+        size = float(size_bytes)
         for unit in ['B', 'KB', 'MB', 'GB']:
-            if size_bytes < 1024.0:
-                return f"{size_bytes:.1f} {unit}"
-            size_bytes /= 1024.0
-        return f"{size_bytes:.1f} TB"
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
         
     def _reprocess_entry(self, entry: HistoryEntry):
         """エントリーを再処理"""
@@ -298,8 +298,9 @@ class HistoryViewer(ctk.CTkFrame):
         settings = entry.get_settings_dict()
         
         # 親ウィジェットのメソッドを呼び出し（実装は親側で）
-        if hasattr(self.master, 'reprocess_from_history'):
-            self.master.reprocess_from_history(entry.source_path, settings)
+        callback = getattr(self.master, "reprocess_from_history", None)
+        if callable(callback):
+            callback(entry.source_path, settings)
             
     def _export_history(self, format: str):
         """履歴をエクスポート"""

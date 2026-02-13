@@ -2,13 +2,15 @@
 統計情報表示のモジュール
 """
 import customtkinter as ctk
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+import matplotlib.dates as mdates
+from matplotlib.ticker import MaxNLocator
+from datetime import datetime
 import numpy as np
 
 # 日本語フォントの設定
@@ -23,6 +25,10 @@ class StatisticsViewer(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         
         self.stats_data: Dict[str, Any] = {}
+        self.total_count_label: Optional[ctk.CTkLabel] = None
+        self.success_rate_label: Optional[ctk.CTkLabel] = None
+        self.total_saved_size_label: Optional[ctk.CTkLabel] = None
+        self.avg_processing_time_label: Optional[ctk.CTkLabel] = None
         self._setup_ui()
         
     def _setup_ui(self):
@@ -115,6 +121,14 @@ class StatisticsViewer(ctk.CTkFrame):
         
         # データキーを保存
         setattr(self, f"{data_key}_label", value_label)
+        if data_key == "total_count":
+            self.total_count_label = value_label
+        elif data_key == "success_rate":
+            self.success_rate_label = value_label
+        elif data_key == "total_saved_size":
+            self.total_saved_size_label = value_label
+        elif data_key == "avg_processing_time":
+            self.avg_processing_time_label = value_label
         
         return card
         
@@ -130,22 +144,22 @@ class StatisticsViewer(ctk.CTkFrame):
         
     def _update_summary_cards(self):
         """サマリーカードを更新"""
-        if hasattr(self, 'total_count_label'):
+        if self.total_count_label is not None:
             self.total_count_label.configure(
                 text=f"{self.stats_data.get('total_count', 0):,}"
             )
             
-        if hasattr(self, 'success_rate_label'):
+        if self.success_rate_label is not None:
             rate = self.stats_data.get('success_rate', 0)
             self.success_rate_label.configure(text=f"{rate:.1f}%")
             
-        if hasattr(self, 'total_saved_size_label'):
+        if self.total_saved_size_label is not None:
             saved = self.stats_data.get('total_saved_size', 0)
             self.total_saved_size_label.configure(
                 text=self._format_size(saved)
             )
             
-        if hasattr(self, 'avg_processing_time_label'):
+        if self.avg_processing_time_label is not None:
             avg_time = self.stats_data.get('avg_processing_time', 0)
             self.avg_processing_time_label.configure(
                 text=f"{avg_time:.1f}秒"
@@ -182,6 +196,7 @@ class StatisticsViewer(ctk.CTkFrame):
         # データ準備
         dates = [datetime.fromisoformat(stat['date']) for stat in daily_stats]
         counts = [stat['count'] for stat in daily_stats]
+        x_values = mdates.date2num(dates)
         
         # グラフ作成
         fig = Figure(figsize=(5, 4), dpi=80, facecolor='#212121')
@@ -189,7 +204,7 @@ class StatisticsViewer(ctk.CTkFrame):
         ax.set_facecolor('#212121')
         
         # 棒グラフ
-        ax.bar(dates, counts, color='#1E88E5', alpha=0.8)
+        ax.bar(x_values, counts, color='#1E88E5', alpha=0.8)
         
         # スタイル設定
         ax.set_title('日別処理ファイル数', color='white', fontsize=14, pad=10)
@@ -203,7 +218,9 @@ class StatisticsViewer(ctk.CTkFrame):
         
         # X軸の日付フォーマット
         if len(dates) > 7:
-            ax.xaxis.set_major_locator(plt.MaxNLocator(7))
+            ax.xaxis.set_major_locator(MaxNLocator(7))
+        ax.xaxis_date()
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
         fig.autofmt_xdate()
         
         # グリッド
@@ -224,6 +241,8 @@ class StatisticsViewer(ctk.CTkFrame):
         dates = [datetime.fromisoformat(stat['date']) for stat in daily_stats]
         saved_sizes = [stat['saved_size'] for stat in daily_stats]
         cumulative_sizes = np.cumsum(saved_sizes)
+        cumulative_gb = cumulative_sizes / (1024**3)
+        x_values = mdates.date2num(dates)
         
         # グラフ作成
         fig = Figure(figsize=(5, 4), dpi=80, facecolor='#212121')
@@ -231,8 +250,8 @@ class StatisticsViewer(ctk.CTkFrame):
         ax.set_facecolor('#212121')
         
         # 線グラフ
-        ax.plot(dates, cumulative_sizes / (1024**3), color='#E53935', linewidth=2, marker='o', markersize=4)
-        ax.fill_between(dates, 0, cumulative_sizes / (1024**3), alpha=0.3, color='#E53935')
+        ax.plot(x_values, cumulative_gb, color='#E53935', linewidth=2, marker='o', markersize=4)
+        ax.fill_between(x_values, 0, cumulative_gb, alpha=0.3, color='#E53935')
         
         # スタイル設定
         ax.set_title('累積削減容量', color='white', fontsize=14, pad=10)
@@ -246,7 +265,9 @@ class StatisticsViewer(ctk.CTkFrame):
         
         # X軸の日付フォーマット
         if len(dates) > 7:
-            ax.xaxis.set_major_locator(plt.MaxNLocator(7))
+            ax.xaxis.set_major_locator(MaxNLocator(7))
+        ax.xaxis_date()
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
         fig.autofmt_xdate()
         
         # グリッド
@@ -261,17 +282,19 @@ class StatisticsViewer(ctk.CTkFrame):
         
     def _format_size(self, size_bytes: int) -> str:
         """サイズをフォーマット"""
+        size = float(size_bytes)
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size_bytes < 1024.0:
-                return f"{size_bytes:.1f} {unit}"
-            size_bytes /= 1024.0
-        return f"{size_bytes:.1f} PB"
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} PB"
         
     def _on_period_change(self, value: str):
         """期間が変更された時"""
         # 親ウィジェットに通知（実装は親側で）
-        if hasattr(self.master, 'on_stats_period_change'):
-            self.master.on_stats_period_change(int(value))
+        callback = getattr(self.master, "on_stats_period_change", None)
+        if callable(callback):
+            callback(int(value))
 
 
 class StatisticsDialog(ctk.CTkToplevel):

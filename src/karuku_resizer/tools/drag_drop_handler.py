@@ -3,7 +3,7 @@
 """
 import customtkinter as ctk
 from pathlib import Path
-from typing import Callable, Optional, List
+from typing import Any, Callable, Optional, List, Protocol, cast
 import platform
 import sys
 
@@ -21,10 +21,18 @@ if sys.version_info < (3, 13):
 else:
     print("情報: Python 3.13以降ではドラッグ&ドロップ機能は無効です。")
 
+
+class _DndCapableWidget(Protocol):
+    def drop_target_register(self, *dndtypes: Any) -> Any: ...
+    def dnd_bind(self, sequence: str, func: Any) -> Any: ...
+
+
+_INITIALIZED_ROOT_KEYS: set[int] = set()
+
 class DragDropHandler:
     """ドラッグ&ドロップ機能を管理するクラス"""
     
-    def __init__(self, widget: ctk.CTkFrame, 
+    def __init__(self, widget: ctk.CTkFrame,
                  on_drop_callback: Callable[[List[Path]], None],
                  file_filter: Optional[Callable[[Path], bool]] = None):
         """
@@ -57,22 +65,16 @@ class DragDropHandler:
         try:
             # ウィジェットのマスターウィンドウを取得
             root = self.widget.winfo_toplevel()
-            
-            # すでにDnD対応済みかチェック
-            if not hasattr(root, '_dnd_initialized'):
-                root._dnd_initialized = True
-            
+            _INITIALIZED_ROOT_KEYS.add(id(root))
+
             # ドロップターゲットとして登録
-            if hasattr(self.widget, 'drop_target_register'):
-                self.widget.drop_target_register(DND_FILES)
-            
-                # イベントバインド
-                if hasattr(self.widget, 'dnd_bind'):
-                    self.widget.dnd_bind('<<DropEnter>>', self._on_drop_enter)
-                    self.widget.dnd_bind('<<DropLeave>>', self._on_drop_leave)
-                    self.widget.dnd_bind('<<Drop>>', self._on_drop)
-            else:
-                print("警告: ドラッグ&ドロップAPIが利用できません")
+            dnd_widget = cast(_DndCapableWidget, self.widget)
+            dnd_widget.drop_target_register(DND_FILES)
+
+            # イベントバインド
+            dnd_widget.dnd_bind('<<DropEnter>>', self._on_drop_enter)
+            dnd_widget.dnd_bind('<<DropLeave>>', self._on_drop_leave)
+            dnd_widget.dnd_bind('<<Drop>>', self._on_drop)
             
         except Exception as e:
             print(f"ドラッグ&ドロップの初期化エラー: {e}")

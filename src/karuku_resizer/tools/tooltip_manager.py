@@ -30,6 +30,8 @@ class TooltipManager:
         self._window: Optional[tk.Toplevel] = None
         self._label: Optional[tk.Label] = None
         self._visible_for: Optional[tk.Misc] = None
+        self._motion_target: Optional[tk.Misc] = None
+        self._install_global_fallback_bindings()
 
     def register(self, widget: tk.Misc, text: str) -> None:
         """Register tooltip text for a widget."""
@@ -42,11 +44,11 @@ class TooltipManager:
         for candidate in candidates:
             self._texts[candidate] = clean_text
             try:
-                bound = self._bind_tooltip_events(candidate)
+                self._bind_tooltip_events(candidate)
             except Exception:
-                bound = False
-            if not bound:
-                self._texts.pop(candidate, None)
+                # bindできないウィジェットでも、グローバルモーション監視で
+                # ツールチップ表示できるようテキストは保持する。
+                continue
 
     def hide(self) -> None:
         """Hide tooltip immediately."""
@@ -54,6 +56,7 @@ class TooltipManager:
         if self._window is not None:
             self._window.withdraw()
         self._visible_for = None
+        self._motion_target = None
 
     def _unregister_widget(self, widget: tk.Misc) -> None:
         self._texts.pop(widget, None)
@@ -77,6 +80,60 @@ class TooltipManager:
             return False
         self._bound_widgets.add(widget)
         return True
+
+    def _install_global_fallback_bindings(self) -> None:
+        """bind非対応ウィジェット向けのホバー検知フォールバック。"""
+        bind_all = getattr(self.root, "bind_all", None)
+        if callable(bind_all):
+            try:
+                bind_all("<Motion>", self._on_global_motion, add="+")
+            except Exception:
+                pass
+        bind = getattr(self.root, "bind", None)
+        if callable(bind):
+            try:
+                bind("<Leave>", lambda _e: self.hide(), add="+")
+            except Exception:
+                pass
+
+    def _on_global_motion(self, event: tk.Event) -> None:
+        if not self.enabled_provider():
+            self.hide()
+            return
+
+        x_root = getattr(event, "x_root", None)
+        y_root = getattr(event, "y_root", None)
+        if x_root is None or y_root is None:
+            return
+
+        try:
+            hovered = self.root.winfo_containing(int(x_root), int(y_root))
+        except Exception:
+            return
+
+        target = self._resolve_tooltip_target(hovered)
+        if target is self._motion_target:
+            return
+
+        self._motion_target = target
+        if target is None:
+            self.hide()
+            return
+        self._schedule_show(target, via_focus=False)
+
+    def _resolve_tooltip_target(self, widget: Optional[tk.Misc]) -> Optional[tk.Misc]:
+        current = widget
+        while current is not None:
+            text = self._texts.get(current, "")
+            if text:
+                return current
+            parent = getattr(current, "master", None)
+            if parent is current:
+                break
+            if parent is None:
+                break
+            current = parent
+        return None
 
     @staticmethod
     def _iter_descendant_widgets(widget: tk.Misc) -> List[tk.Misc]:
@@ -147,6 +204,7 @@ class TooltipManager:
             self.hide()
             return
         if not widget.winfo_exists():
+            self._texts.pop(widget, None)
             return
         text = self._texts.get(widget, "")
         if not text:

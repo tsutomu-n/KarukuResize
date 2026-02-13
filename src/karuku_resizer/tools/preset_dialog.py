@@ -3,7 +3,7 @@
 """
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
-from preset_manager import PresetData, PresetManager
+from .preset_manager import PresetData, PresetManager
 from typing import Optional, Callable
 from pathlib import Path
 

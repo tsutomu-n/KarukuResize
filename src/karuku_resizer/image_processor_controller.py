@@ -10,7 +10,7 @@
 import io
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, Callable
+from typing import Dict, Any, Optional, Tuple, Callable, cast
 from PIL import Image
 import time
 
@@ -50,6 +50,26 @@ class ImageProcessorController:
         self.param_extractor = param_extractor
         self._processing_thread = None
         self._cancel_requested = False
+
+    @staticmethod
+    def _run_memory_resize_and_compress(*, source_image: Image.Image, output_buffer: io.BytesIO,
+                                        resize_mode: str, resize_value: Optional[int],
+                                        quality: int, output_format: str, optimize: bool) -> Tuple[bool, Optional[str]]:
+        """メモリベース処理の戻り値を (success, error_message) に正規化する。"""
+        result = resize_and_compress_image(
+            source_image=source_image,
+            output_buffer=output_buffer,
+            resize_mode=resize_mode,
+            resize_value=resize_value,
+            quality=quality,
+            output_format=output_format,
+            optimize=optimize
+        )
+        if isinstance(result, tuple) and len(result) == 2:
+            success, message = result
+            return bool(success), cast(Optional[str], message)
+        # 期待外の戻り値は安全側で失敗扱いにする
+        return False, "メモリ処理の戻り値形式が不正です"
     
     def process_preview(self, image_path: str, ui_widgets: Dict[str, Any],
                        detailed: bool = False, 
@@ -112,14 +132,14 @@ class ImageProcessorController:
                         progress_callback(f"プレビュー処理: {params}")
                     
                     # メモリベース処理を実行
-                    success, error_msg = resize_and_compress_image(
+                    success, error_msg = self._run_memory_resize_and_compress(
                         source_image=source_image.copy(),  # コピーを渡す
                         output_buffer=output_buffer,
                         resize_mode=params["resize_mode"],
                         resize_value=params["resize_value"],
                         quality=params["quality"],
                         output_format=output_format,
-                        optimize=True
+                        optimize=True,
                     )
                     
                     if success:
@@ -323,14 +343,14 @@ class ImageProcessorController:
                 progress_callback(f"品質{best_quality}%で試行中... ({attempt + 1}/7)")
             
             # 処理実行
-            success, _ = resize_and_compress_image(
+            success, _ = self._run_memory_resize_and_compress(
                 source_image=source_image.copy(),
                 output_buffer=output_buffer,
                 resize_mode="width" if resize_value else "none",
                 resize_value=resize_value,
                 quality=best_quality,
                 output_format=output_format,
-                optimize=True
+                optimize=True,
             )
             
             if success:

@@ -146,7 +146,10 @@ class ImagePreviewWidget(ctk.CTkFrame):
             image = Image.open(image_path)
             
             # EXIF情報の確認
-            has_exif = hasattr(image, '_getexif') and image._getexif() is not None
+            try:
+                has_exif = bool(image.getexif())
+            except Exception:
+                has_exif = False
             
             # 画像情報を作成
             info = ImageInfo(

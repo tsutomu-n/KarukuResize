@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, cast
 from tkinter import filedialog, messagebox, simpledialog
 from urllib.parse import unquote, urlparse
 
@@ -53,6 +53,7 @@ from karuku_resizer.processing_preset_store import (
 from karuku_resizer.image_save_pipeline import (
     ExifEditValues,
     SaveOptions,
+    SaveFormat,
     ExifPreview,
     SaveResult,
     build_encoder_save_kwargs,
@@ -451,7 +452,7 @@ class ResizeApp(customtkinter.CTk):
         if png_path is not None:
             try:
                 self._window_icon_image = ImageTk.PhotoImage(file=str(png_path))
-                self.iconphoto(True, self._window_icon_image)
+                self.iconphoto(True, cast(Any, self._window_icon_image))
             except Exception:
                 logging.exception("Failed to set window icon via iconphoto: %s", png_path)
 
@@ -1229,36 +1230,45 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_ui(self):
         """UI要素をセットアップ"""
-        # -------------------- UI top bar --------------------------------
-        top = customtkinter.CTkFrame(self)
-        self._style_card_frame(top)
-        top.pack(side="top", fill="x", padx=12, pady=(8, 6))
+        # -------------------- UI top bar (2 rows) ------------------------
+        top_container = customtkinter.CTkFrame(self)
+        self._style_card_frame(top_container)
+        top_container.pack(side="top", fill="x", padx=12, pady=(8, 6))
+
+        top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
+        top_row_primary.pack(side="top", fill="x", padx=8, pady=(6, 2))
+
+        top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
+        top_row_secondary.pack(side="top", fill="x", padx=8, pady=(2, 6))
 
         self.select_button = customtkinter.CTkButton(
-            top, text="📂 画像を選択", width=128, command=self._select_files, font=self.font_default
+            top_row_primary, text="📂 画像を選択", width=128, command=self._select_files, font=self.font_default
         )
         self._style_primary_button(self.select_button)
-        self.select_button.pack(side="left", padx=(8, 6), pady=8)
+        self.select_button.pack(side="left", padx=(0, 6), pady=4)
         self.help_button = customtkinter.CTkButton(
-            top, text="❓ 使い方", width=108, command=self._show_help, font=self.font_default
+            top_row_primary, text="❓ 使い方", width=108, command=self._show_help, font=self.font_default
         )
         self._style_secondary_button(self.help_button)
-        self.help_button.pack(side="left", padx=(0, 10), pady=8)
+        self.help_button.pack(side="left", padx=(0, 8), pady=4)
         self.settings_button = customtkinter.CTkButton(
-            top, text="⚙ 設定", width=90, command=self._open_settings_dialog, font=self.font_default
+            top_row_primary, text="⚙ 設定", width=90, command=self._open_settings_dialog, font=self.font_default
         )
         self._style_secondary_button(self.settings_button)
-        self.settings_button.pack(side="left", padx=(0, 10), pady=8)
+        self.settings_button.pack(side="left", padx=(0, 8), pady=4)
+
+        preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        preset_spacer.pack(side="left", expand=True)
 
         customtkinter.CTkLabel(
-            top,
+            top_row_primary,
             text="プリセット",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, 4), pady=4)
         self.preset_var = customtkinter.StringVar(value=PRESET_NONE_LABEL)
         self.preset_menu = customtkinter.CTkOptionMenu(
-            top,
+            top_row_primary,
             variable=self.preset_var,
             values=[PRESET_NONE_LABEL],
             width=180,
@@ -1270,38 +1280,37 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.preset_menu.pack(side="left", padx=(0, 6), pady=8)
+        self.preset_menu.pack(side="left", padx=(0, 6), pady=4)
         self.preset_apply_button = customtkinter.CTkButton(
-            top,
+            top_row_primary,
             text="適用",
             width=72,
             command=self._apply_selected_preset,
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_apply_button)
-        self.preset_apply_button.pack(side="left", padx=(0, 4), pady=8)
+        self.preset_apply_button.pack(side="left", padx=(0, 4), pady=4)
         self.preset_save_button = customtkinter.CTkButton(
-            top,
+            top_row_primary,
             text="保存",
             width=72,
             command=self._save_current_as_preset,
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_save_button)
-        self.preset_save_button.pack(side="left", padx=(0, 4), pady=8)
+        self.preset_save_button.pack(side="left", padx=(0, 4), pady=4)
         self.preset_manage_button = customtkinter.CTkButton(
-            top,
+            top_row_primary,
             text="管理",
             width=72,
             command=self._open_preset_manager_dialog,
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_manage_button)
-        self.preset_manage_button.pack(side="left", padx=(0, 10), pady=8)
+        self.preset_manage_button.pack(side="left", padx=(0, 0), pady=4)
 
-        # Spacer to push subsequent widgets to the right
-        spacer = customtkinter.CTkFrame(top, fg_color="transparent")
-        spacer.pack(side="left", expand=True)
+        size_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
+        size_controls_frame.pack(side="left", fill="x", expand=True)
 
         # Mode radio buttons
         self.mode_var = customtkinter.StringVar(value="ratio")
@@ -1314,7 +1323,7 @@ class ResizeApp(customtkinter.CTk):
         ]
         for text, val in modes:
             mode_radio = customtkinter.CTkRadioButton(
-                top,
+                size_controls_frame,
                 text=text,
                 variable=self.mode_var,
                 value=val,
@@ -1325,11 +1334,14 @@ class ResizeApp(customtkinter.CTk):
                 border_color=METALLIC_COLORS["border_medium"],
                 text_color=METALLIC_COLORS["text_primary"],
             )
-            mode_radio.pack(side="left", padx=(0, 4))
+            mode_radio.pack(side="left", padx=(0, 6))
             self.mode_radio_buttons.append(mode_radio)
 
-        self._setup_entry_widgets(top)
-        self._setup_action_buttons(top)
+        self._setup_entry_widgets(size_controls_frame)
+
+        action_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
+        action_controls_frame.pack(side="right")
+        self._setup_action_buttons(action_controls_frame)
         self._setup_settings_layers()
         self._setup_main_layout()
 
@@ -2627,7 +2639,7 @@ class ResizeApp(customtkinter.CTk):
             border_width=1,
             border_color=METALLIC_COLORS["border_light"],
             fg_color=METALLIC_COLORS["input_bg"],
-            text_color=METALLIC_COLORS["text_primary"],
+            text_color=cast(Any, METALLIC_COLORS["text_primary"]),
             font=self.font_small,
             wrap="word",
         )
@@ -2948,7 +2960,7 @@ class ResizeApp(customtkinter.CTk):
             target = self._get_target(first_img.size)
         return settings_text, fmt, target
 
-    def _resolve_output_format_for_image(self, source_image: Image.Image) -> str:
+    def _resolve_output_format_for_image(self, source_image: Image.Image) -> SaveFormat:
         selected_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
         return resolve_output_format(
             selected=selected_id,
@@ -3095,7 +3107,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _build_save_options(
         self,
-        output_format: str,
+        output_format: SaveFormat,
         exif_edit_values: Optional[ExifEditValues] = None,
     ) -> Optional[SaveOptions]:
         pro_mode = self._is_pro_mode()
@@ -3106,7 +3118,7 @@ class ResizeApp(customtkinter.CTk):
             if edit_values is None:
                 return None
         return SaveOptions(
-            output_format=output_format,  # type: ignore[arg-type]
+            output_format=output_format,
             quality=self._current_quality(),
             dry_run=self.dry_run_var.get(),
             exif_mode=exif_mode,  # type: ignore[arg-type]
@@ -3127,7 +3139,13 @@ class ResizeApp(customtkinter.CTk):
         filetypes.append(("All files", "*.*"))
         return filetypes
 
-    def _build_unique_batch_base_path(self, output_dir: Path, stem: str, output_format: str, dry_run: bool) -> Path:
+    def _build_unique_batch_base_path(
+        self,
+        output_dir: Path,
+        stem: str,
+        output_format: SaveFormat,
+        dry_run: bool,
+    ) -> Path:
         base = output_dir / f"{stem}_resized"
         if dry_run:
             return base
@@ -4032,7 +4050,7 @@ class ResizeApp(customtkinter.CTk):
             border_width=1,
             border_color=METALLIC_COLORS["border_light"],
             fg_color=METALLIC_COLORS["input_bg"],
-            text_color=METALLIC_COLORS["text_primary"],
+            text_color=cast(Any, METALLIC_COLORS["text_primary"]),
             font=self.font_small,
             wrap="word",
         )
@@ -4315,7 +4333,7 @@ class ResizeApp(customtkinter.CTk):
             return None
         return img.resize((tw, th), Resampling.LANCZOS)
 
-    def _resolve_batch_reference(self) -> Optional[Tuple[ImageJob, Tuple[int, int], str]]:
+    def _resolve_batch_reference(self) -> Optional[Tuple[ImageJob, Tuple[int, int], SaveFormat]]:
         """Resolve selected image as batch reference and freeze output params."""
         if not self.jobs:
             return None
@@ -4411,7 +4429,7 @@ class ResizeApp(customtkinter.CTk):
         self.status_var.set(msg)
         messagebox.showinfo("保存結果", msg)
 
-    def _build_batch_save_options(self, reference_output_format: str) -> Optional[SaveOptions]:
+    def _build_batch_save_options(self, reference_output_format: SaveFormat) -> Optional[SaveOptions]:
         exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
         batch_exif_edit_values = (
             self._current_exif_edit_values(show_warning=True, strict=True) if exif_mode == "edit" else None
@@ -4493,7 +4511,7 @@ class ResizeApp(customtkinter.CTk):
         job: ImageJob,
         output_dir: Path,
         reference_target: Tuple[int, int],
-        reference_output_format: str,
+        reference_output_format: SaveFormat,
         batch_options: SaveOptions,
         stats: BatchSaveStats,
     ) -> None:
@@ -4532,7 +4550,7 @@ class ResizeApp(customtkinter.CTk):
         self,
         output_dir: Path,
         reference_target: Tuple[int, int],
-        reference_output_format: str,
+        reference_output_format: SaveFormat,
         batch_options: SaveOptions,
         target_jobs: Optional[List[ImageJob]] = None,
     ) -> BatchSaveStats:
@@ -4779,14 +4797,14 @@ class ResizeApp(customtkinter.CTk):
                 if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
                     save_img = save_img.convert("RGB")
                 preview_kwargs = build_encoder_save_kwargs(
-                    output_format=output_format,  # type: ignore[arg-type]
+                    output_format=output_format,
                     quality=self._current_quality(),
                     webp_method=self._current_webp_method(),
                     webp_lossless=self.webp_lossless_var.get(),
                     avif_speed=self._current_avif_speed(),
                 )
                 try:
-                    save_img.save(bio, **preview_kwargs)
+                    save_img.save(bio, **cast(Dict[str, Any], preview_kwargs))
                     kb = len(bio.getvalue()) / 1024
                 except Exception:
                     kb = 0.0
