@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Optional, Union, Tuple
 from PIL import Image, UnidentifiedImageError
 from loguru import logger
+from karuku_resizer.runtime_logging import get_default_log_dir
 
 # Windows固有のエラーコードと対応する日本語メッセージ
 WINDOWS_ERROR_MESSAGES = {
@@ -37,7 +38,9 @@ WINDOWS_ERROR_MESSAGES = {
 
 # ログ設定
 def setup_logging(
-    console_level="INFO", file_level="DEBUG", log_file="process_{time}.log"
+    console_level="INFO",
+    file_level="DEBUG",
+    log_file: Optional[Union[str, Path]] = None,
 ):
     """ロギングの設定を行います"""
     logger.remove()  # デフォルト設定を削除
@@ -71,15 +74,56 @@ def setup_logging(
             diagnose=False,
         )
 
+    file_sink = _resolve_cli_log_path(log_file)
     logger.add(
-        log_file,
+        str(file_sink),
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {function}: {message}",
-        rotation="1 day",
+        rotation="10 MB",
+        retention="14 days",
+        compression="zip",
+        enqueue=True,
         level=file_level,
         encoding="utf-8",
     )
     if rich_enabled:
         logger.debug("Rich logging is enabled for CLI console output")
+    logger.debug("CLI log sink: {}", file_sink)
+
+
+def _resolve_cli_log_path(log_file: Optional[Union[str, Path]]) -> Path:
+    """CLIログの出力先を解決する。相対パスは専用ログディレクトリ配下へ寄せる。"""
+    if log_file is not None:
+        candidate = Path(log_file)
+        if candidate.is_absolute():
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            return candidate
+        log_dir = _resolve_cli_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir / candidate
+
+    log_dir = _resolve_cli_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "process_{time}.log"
+
+
+def _resolve_cli_log_dir() -> Path:
+    """CLIログのデフォルトディレクトリを返す。
+
+    優先順:
+    1. 環境変数 `KARUKU_LOG_DIR`
+    2. リポジトリ開発時: `<repo>/src/logs`
+    3. それ以外: OS標準ログディレクトリ
+    """
+    env_log_dir = os.environ.get("KARUKU_LOG_DIR", "").strip()
+    if env_log_dir:
+        return Path(env_log_dir).expanduser()
+
+    repo_root = Path(__file__).resolve().parents[2]
+    repo_src_dir = repo_root / "src"
+    if (repo_root / "pyproject.toml").exists() and repo_src_dir.is_dir():
+        return repo_src_dir / "logs"
+
+    return get_default_log_dir(app_name="KarukuResize")
 
 
 def get_directory_size(path):

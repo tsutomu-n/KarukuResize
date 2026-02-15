@@ -111,9 +111,7 @@ def setup_logger(verbose=False):
     )
 
     # ファイル出力用のロガー設定
-    # ログファイルの出力先ディレクトリを指定
-    log_dir = Path("/home/tn/projects/tools/karukuresize/log")
-    # ディレクトリが存在しない場合は作成
+    log_dir = _resolve_script_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # ログファイル名を生成
@@ -126,10 +124,24 @@ def setup_logger(verbose=False):
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {module}:{function}:{line} - {message}",
         level="DEBUG",  # ファイルログは常にDEBUGレベルで出力
         rotation="10 MB",  # 10MBでローテーション
-        retention="7 days",  # 7日間保持
+        retention="14 days",  # 14日間保持
+        compression="zip",
+        enqueue=True,
         encoding="utf-8",
     )
     return str(full_log_path)  # 文字列として返す
+
+
+def _resolve_script_log_dir() -> Path:
+    env_dir = os.environ.get("KARUKU_LOG_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir).expanduser()
+
+    repo_root = Path(__file__).resolve().parents[1]
+    src_dir = repo_root / "src"
+    if (repo_root / "pyproject.toml").exists() and src_dir.is_dir():
+        return src_dir / "logs"
+    return repo_root / "logs"
 
 
 def get_destination_path(source_path, source_dir, dest_dir):
