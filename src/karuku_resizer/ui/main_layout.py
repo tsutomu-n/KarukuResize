@@ -11,7 +11,13 @@ from PIL.ExifTags import GPSTAGS
 ColorMap = Dict[str, Tuple[str, str]]
 
 
-def setup_main_layout(app: Any, *, colors: ColorMap, default_preview: int) -> None:
+def setup_main_layout(
+    app: Any,
+    *,
+    colors: ColorMap,
+    default_preview: int,
+    file_filter_labels: Sequence[str],
+) -> None:
     setup_progress_bar_and_cancel(app, colors=colors)
     setup_status_bar(app, colors=colors)
 
@@ -21,7 +27,7 @@ def setup_main_layout(app: Any, *, colors: ColorMap, default_preview: int) -> No
     setup_left_panel(
         app,
         colors=colors,
-        file_filter_labels=list(app._file_filter_label_to_id.keys()),
+        file_filter_labels=file_filter_labels,
     )
     setup_right_panel(app, colors=colors)
 

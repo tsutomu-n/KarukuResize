@@ -1619,6 +1619,7 @@ class ResizeApp(customtkinter.CTk):
             self,
             colors=METALLIC_COLORS,
             default_preview=DEFAULT_PREVIEW,
+            file_filter_labels=list(FILE_FILTER_LABEL_TO_ID.keys()),
         )
 
     def _setup_progress_bar_and_cancel(self):
