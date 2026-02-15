@@ -146,6 +146,7 @@ uv run pre-commit run --all-files
 - `docs/WSL2_GUIDE.md`
 - `docs/INSTALLATION.md`
 - `docs/api_reference.md`
+- `docs/developer_guide.md`
 
 ## ライセンス
 

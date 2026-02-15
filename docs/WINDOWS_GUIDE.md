@@ -1,54 +1,48 @@
-# Windows 11 ガイド
+# Windows ガイド
 
-Windows 11 で KarukuResize を実行・ビルドするための手順です。
+Windows 環境で KarukuResize を実行・ビルドする手順です。
 
-## 1. 前提
+## 前提
 
-- Windows 11
+- Windows 10/11
 - Python 3.12 以上
 - Git
 - PowerShell
 
-## 2. セットアップ
+## 1. セットアップ
 
 ```powershell
 cd $HOME\Documents
 git clone https://github.com/tsutomu-n/KarukuResize.git
 cd KarukuResize
-
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-pip install uv
 uv sync --group dev
 ```
 
-## 3. GUI起動
+## 2. GUI 起動
+
+```powershell
+uv run karuku-resizer
+```
+
+互換エイリアス:
 
 ```powershell
 uv run karukuresize-gui
-# または
-uv run python -m karuku_resizer.gui_app
 ```
 
-## 4. プロモード再帰読込（Windows運用）
+## 3. 使い方（実運用）
 
-1. アプリ上で `プロ` に切替
-2. `📂 画像/フォルダを選択`
-3. `はい: フォルダーを再帰読み込み`
-4. 対象は `jpg/jpeg/png`
-5. ドラッグ&ドロップでも同様（単体ファイルは `png/jpg/jpeg/webp/avif`）
+1. `画像を選択` で画像またはフォルダを読み込む
+2. 必要ならプロモードに切り替えて再帰読込を使う
+3. サイズ・形式・品質などを調整して `プレビュー`
+4. `保存` または `一括適用保存` を実行
 
-動作仕様:
-- 読込中は操作を抑制し、進捗バーとステータスを表示
-- `読み込み中止` でキャンセル可能
-- 完了時に成功/失敗件数を表示
-- 失敗ファイルがある場合は「失敗のみ再試行」が可能
-- 失敗一覧は結果ダイアログからコピー可能
-- 選択方式（再帰/個別）は前回設定を記憶
-- 最近使った設定（最大6件）をヘッダから再適用可能
+プロモード再帰読込:
+- 対象拡張子は `jpg/jpeg/png`
+- 読込中は進捗表示
+- 失敗がある場合は「失敗のみ再試行」が利用可能
 
-## 5. WindowsでのEXEビルド
+## 4. EXE ビルド
 
 ```powershell
 uv run karukuresize-build-exe
@@ -57,39 +51,33 @@ uv run karukuresize-build-exe
 生成物:
 - `dist\KarukuResize.exe`
 
-アイコン設定:
-- EXEアイコンは `assets\app.ico` が自動で使われます。
-- アイコンを変更したい場合は `assets\app.ico` を差し替えてから再ビルドしてください。
+アイコン:
+- `assets\app.ico` を使用
+- 変更する場合は差し替えて再ビルド
 
-## 6. ビルド後の最小確認
+## 5. ビルド後チェック
 
 1. `KarukuResize.exe` が起動する
-2. プロモードで再帰読込時、ウィンドウが固まらず進捗表示される
-3. `読み込み中止` が効く
-4. `📁 一括適用保存` が完了し、失敗時は詳細表示される
+2. 画像読み込み、プレビュー、保存が実行できる
+3. 一括適用保存が完了まで進む
+4. 失敗時にエラー内容が確認できる
 
-## 6.1 DPI / OS 検証ターゲット（運用基準）
+## 6. DPI確認基準
 
-今回のUI改修では、次を標準の確認範囲とします。
-
-| 区分 | 対象 |
-|---|---|
-| 必須DPI | 100% / 125% / 150% |
-| 任意DPI | 200% |
-| 優先OS | Windows 11 |
-| 目視確認 | macOS (Retina) |
+推奨検証:
+- 必須: 100% / 125% / 150%
+- 任意: 200%
 
 確認ポイント:
-1. ウィンドウ最小幅 `1200px` で、上部2段の操作エリアが切れない
-2. ボタン・ラジオ・プリセット操作がクリック可能
-3. 設定サマリー行の文字が極端に欠けない
-4. `📂 画像を選択` / `🔄 プレビュー` / `💾 保存` / `📁 一括適用保存` が動作する
+1. 最小幅 `1200px` で上部操作エリアが破綻しない
+2. ボタン・ラジオ・入力が操作可能
+3. 設定サマリー行の表示が欠けすぎない
 
 ## 7. トラブルシュート
 
 - 依存関係エラー:
   - `uv sync --group dev` を再実行
-- 起動時エラー:
-  - 仮想環境を有効化して `uv run python -m karuku_resizer.gui_app` で詳細確認
-- EXEが起動しない:
-  - セキュリティソフト除外設定、またはビルドを再実行
+- GUI起動エラー:
+  - `uv run python -m karuku_resizer.gui_app` で詳細確認
+- EXE起動失敗:
+  - 再ビルド後に再確認

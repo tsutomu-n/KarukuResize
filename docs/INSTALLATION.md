@@ -1,124 +1,77 @@
 # KarukuResize インストールガイド
 
-## 🌐 環境別インストール方法
+このドキュメントは、KarukuResize をローカル環境に導入するための手順をまとめています。
 
-### Windows ユーザーの方へ
-- **ネイティブWindows環境** → そのまま下記の手順を実行
-- **WSL2環境でGUIを使いたい** → [Windowsガイド](./WINDOWS_GUIDE.md)を参照（Windows側での実行を推奨）
-- **WSL2環境でCLIのみ** → 下記の手順を実行
+## 前提
 
-## 🔧 インストール方法
+- Python 3.12 以上
+- Git
+- `uv`（推奨）
 
-### 方法1: uv を使用（推奨）
-
-このプロジェクトはpyproject.tomlで管理されているため、uvを使用することを推奨します：
+## 1. リポジトリを取得
 
 ```bash
-# uvをインストール（まだの場合）
-curl -LsSf https://astral.sh/uv/install.sh | sh  # Linux/macOS
-# または
-pip install uv  # すべてのOS
+git clone https://github.com/tsutomu-n/KarukuResize.git
+cd KarukuResize
+```
 
-# プロジェクトをインストール
+## 2. 依存関係を同期（開発運用）
+
+```bash
+uv sync --group dev
+```
+
+この方法は、開発・テスト・ビルドで必要な依存関係をまとめて導入できます。
+
+## 3. コマンドエントリを使いたい場合
+
+`uv run` を使わずに `karuku-resizer` / `karukuresize-cli` を直接使いたい場合は editable install を行います。
+
+```bash
 uv pip install -e .
 ```
 
-インストール後、以下のコマンドが使用可能になります：
-- `karukuresize-cli` - コマンドラインツール
-- `karukuresize-gui` - GUIツール
-
-### 方法2: pip を使用
-
-uvが使えない場合は、通常のpipでもインストール可能です：
+## 4. 動作確認
 
 ```bash
-# pyproject.toml を使用してインストール
-pip install -e .
+# GUI
+uv run karuku-resizer
+
+# CLI
+uv run karukuresize-cli -s input -d output -w 1280 -q 85 --dry-run
 ```
 
-### 方法3: 依存関係の個別インストール（非推奨）
-
-pyproject.tomlを使わずに必要な依存関係だけをインストール：
-
-```bash
-# 必要な依存関係をインストール
-pip install pillow customtkinter loguru tqdm emoji
-```
-
-注意: この方法では`karukuresize-cli`や`karukuresize-gui`コマンドは使用できません。
-
-## 🐍 Python バージョンの確認
-
-KarukuResizeはPython 3.12以上が必要です：
-
-```bash
-# Pythonバージョンを確認
-python --version
-
-# python3 コマンドの場合
-python3 --version
-```
-
-## 🖥️ OS別の注意事項
+## 5. OSごとの補足
 
 ### Windows
+- GUI運用・ビルドともにネイティブ Windows を推奨。
+- 詳細は `docs/WINDOWS_GUIDE.md` を参照。
+
+### WSL2
+- CLI中心の運用を推奨。
+- GUIを使う場合は Windows 側で実行する運用が安定。
+- 詳細は `docs/WSL2_GUIDE.md` を参照。
+
+## よくある問題
+
+### `uv: command not found`
+
+`uv` を導入してから再実行してください。
+
+### `No pyproject.toml found`
+
+コマンドを実行しているディレクトリがプロジェクトルート (`KarukuResize/`) か確認してください。
+
+### LinuxでGUIが起動しない
+
+`tkinter` 関連パッケージ不足の可能性があります。例:
+
 ```bash
-# Windowsの場合はpyコマンドも使用可能
-py -m pip install pillow customtkinter loguru tqdm emoji
+sudo apt-get update
+sudo apt-get install -y python3-tk
 ```
 
-### macOS
-```bash
-# Homebrewでpython3をインストールしている場合
-python3 -m pip install pillow customtkinter loguru tqdm emoji
-```
+## 次に読むドキュメント
 
-### Linux
-```bash
-# システムのpython3を使用
-python3 -m pip install pillow customtkinter loguru tqdm emoji
-```
-
-## ✅ インストール確認
-
-インストールが成功したか確認：
-
-```python
-# Pythonインタープリタで確認
-python -c "import PIL; print('Pillow OK')"
-python -c "import customtkinter; print('CustomTkinter OK')"
-python -c "import loguru; print('Loguru OK')"
-python -c "import tqdm; print('tqdm OK')"
-python -c "import emoji; print('emoji OK')"
-```
-
-すべて「OK」と表示されれば成功です！
-
-## 🚨 よくあるエラーと対処法
-
-### 1. pip が見つからない
-```bash
-# pipをインストール
-python -m ensurepip --upgrade
-
-# またはget-pip.pyを使用
-curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-python get-pip.py
-```
-
-### 2. Permission denied エラー
-```bash
-# ユーザーディレクトリにインストール
-pip install --user pillow customtkinter loguru tqdm emoji
-```
-
-### 3. customtkinter のインストールエラー
-```bash
-# tkinterが必要な場合（Linux）
-sudo apt-get install python3-tk  # Ubuntu/Debian
-sudo yum install python3-tkinter  # CentOS/RHEL
-```
-
-## 🎯 次のステップ
-
-インストールが完了したら、[QUICK_START.md](./QUICK_START.md)を参照して使い始めてください！
+- すぐ使う: `docs/QUICK_START.md`
+- ビルド: `docs/BUILDING.md`

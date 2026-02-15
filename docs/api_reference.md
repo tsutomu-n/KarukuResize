@@ -1,223 +1,77 @@
 # KarukuResize API リファレンス
 
-## 目次
-- [resize_core モジュール](#resize_core-モジュール)
-- [resize_images モジュール](#resize_images-モジュール)
-- [resize_images_gui モジュール](#resize_images_gui-モジュール)
+このドキュメントは、現行実装で外部利用しやすいAPIとCLI仕様を簡潔にまとめたものです。
 
----
+## エントリポイント
 
-## resize_core モジュール
+`pyproject.toml` の `project.scripts`:
 
-画像処理の中核となる機能を提供するモジュール。
+- `karuku-resizer` → `karuku_resizer.gui_app:main`
+- `karukuresize-gui` → `karuku_resizer.gui_app:main`（互換）
+- `karukuresize-cli` → `karuku_resizer.resize_core:main`
+- `karukuresize-build-exe` → `karuku_resizer.build_exe:main`
 
-### 主要関数
+## `karuku_resizer.resize_core`（CLI/共通）
 
-#### `resize_and_compress_image()`
+### CLI引数（`_build_arg_parser`）
 
-画像をリサイズして圧縮します。
+| 引数 | 説明 | 既定値 |
+|---|---|---|
+| `-s, --source` | 入力フォルダ | 必須 |
+| `-d, --dest` | 出力フォルダ | 必須 |
+| `-w, --width` | リサイズ後の最大幅(px) | `1280` |
+| `-q, --quality` | JPEG/WEBP品質 | `85` |
+| `-f, --format` | `jpeg/png/webp` | `jpeg` |
+| `--recursive/--no-recursive` | 再帰探索 | `--recursive` |
+| `--extensions` | 対象拡張子（カンマ区切り） | `jpg,jpeg,png` |
+| `--failures-file` | 失敗一覧JSON保存先 | 空文字（無効） |
+| `--dry-run` | 保存せずシミュレーション | `False` |
+| `--json` | 実行サマリをJSON出力 | `False` |
+| `-v, --verbose` | ログ詳細度 | `0` |
 
-```python
-def resize_and_compress_image(
-    source_path: Union[str, Path],
-    dest_path: Union[str, Path],
-    target_width: int,
-    quality: int,
-    format: str = "original",
-    exif_handling: str = "keep",
-    balance: int = 5,
-    webp_lossless: bool = False,
-    dry_run: bool = False,
-) -> tuple[bool, bool, int | None]
-```
+### 主な公開関数
 
-**パラメータ:**
-- `source_path`: 入力画像のパス
-- `dest_path`: 出力画像のパス
-- `target_width`: 目標の幅（ピクセル、1以上の整数）
-- `quality`: 圧縮品質（1-100の整数）
-- `format`: 出力形式（'original', 'jpeg', 'png', 'webp'）
-- `exif_handling`: EXIFメタデータの取り扱い（'keep': 維持, 'remove': 削除）
-- `balance`: 圧縮と品質のバランス（1-10、未使用）
-- `webp_lossless`: WebPロスレス圧縮を使用するか
-- `dry_run`: 実際にファイルを保存せずシミュレートする
+- `resize_and_compress_image(...)`
+  - 画像1件のリサイズ/保存処理
+- `find_image_files(source_dir) -> list[Path]`
+  - 画像ファイル探索
+- `format_file_size(size_in_bytes) -> str`
+  - サイズ表示用フォーマット
+- `setup_logging(...)`
+  - CLIロギング設定（`src/logs` または `KARUKU_LOG_DIR`）
 
-**戻り値:**
-- `tuple[bool, bool, int | None]`: (成功フラグ, スキップフラグ, ファイルサイズKB)
-- ドライランモードでは: `tuple[tuple, tuple, int]`: (元のサイズ, 新しいサイズ, 推定ファイルサイズ)
+## `karuku_resizer.runtime_logging`
 
-**使用例:**
-```python
-success, skipped, size_kb = resize_and_compress_image(
-    source_path="input.jpg",
-    dest_path="output.jpg",
-    target_width=1280,
-    quality=85
-)
-```
+GUIランタイムログの保存先・保持ポリシー管理。
 
-#### `find_image_files()`
+### 主な公開関数
 
-指定ディレクトリから画像ファイルを再帰的に検索します。
+- `get_default_log_dir(app_name="KarukuResize") -> Path`
+  - OS標準ログディレクトリを返す
+- `create_run_log_artifacts(...) -> RunLogArtifacts`
+  - 実行単位のログ/サマリファイルパスを生成
+- `prune_run_files(...) -> list[Path]`
+  - 保持ポリシーを超える古いログを削除
+- `write_run_summary(summary_path, payload) -> None`
+  - 実行サマリJSONを保存
 
-```python
-def find_image_files(directory: Union[str, Path]) -> list[Path]
-```
+## `karuku_resizer.image_save_pipeline`
 
-**パラメータ:**
-- `directory`: 検索対象のディレクトリパス
+GUI保存処理で使う画像保存基盤。
 
-**戻り値:**
-- `list[Path]`: 見つかった画像ファイルのパスリスト
+### 主な型/関数
 
-**対応フォーマット:**
-- JPEG (.jpg, .jpeg)
-- PNG (.png)
-- WebP (.webp)
-- GIF (.gif)
-- BMP (.bmp)
-- TIFF (.tiff, .tif)
+- `SaveOptions`
+- `SaveResult`
+- `SaveFormat`
+- `save_image(...)`
+- `resolve_output_format(...)`
+- `destination_with_extension(...)`
 
-#### `sanitize_filename()`
+## 注意
 
-ファイル名を安全な形式に変換します。
-
-```python
-def sanitize_filename(filename: str, max_length: int = 255) -> str
-```
-
-**パラメータ:**
-- `filename`: 元のファイル名
-- `max_length`: 最大長（デフォルト: 255）
-
-**戻り値:**
-- `str`: 安全な形式に変換されたファイル名
-
-**機能:**
-- Windowsで使用できない文字を置換
-- 予約語の処理（CON, AUX, NUL等）
-- Unicode正規化（NFD → NFC）
-- 最大長の制限
-
-#### `format_file_size()`
-
-ファイルサイズを人間が読みやすい形式にフォーマットします。
-
-```python
-def format_file_size(size_bytes: int) -> str
-```
-
-**パラメータ:**
-- `size_bytes`: バイト単位のサイズ
-
-**戻り値:**
-- `str`: フォーマットされたサイズ（例: "1.5 MB"）
-
-#### `get_destination_path()`
-
-ソースパスから出力パスを生成します。
-
-```python
-def get_destination_path(
-    source_path: Path,
-    source_dir: Union[str, Path],
-    dest_dir: Union[str, Path]
-) -> Path
-```
-
-**パラメータ:**
-- `source_path`: ソースファイルのパス
-- `source_dir`: ソースディレクトリのルート
-- `dest_dir`: 出力ディレクトリのルート
-
-**戻り値:**
-- `Path`: 出力ファイルのパス（ディレクトリ構造を維持）
-
-#### `normalize_path()`
-
-パスを正規化してPathオブジェクトとして返します。
-
-```python
-def normalize_path(path: Union[str, Path]) -> Path
-```
-
-**パラメータ:**
-- `path`: 正規化するパス
-
-**戻り値:**
-- `Path`: 正規化されたPathオブジェクト
-
-**機能:**
-- Windows長パス対応（\\\\?\\ プレフィックス）
-- Unicode正規化
-- 相対パスの解決
-
-### エラーハンドリング関数
-
-#### `get_japanese_error_message()`
-
-エラーコードから日本語のエラーメッセージを取得します。
-
-```python
-def get_japanese_error_message(error: Exception) -> str
-```
-
-**パラメータ:**
-- `error`: 例外オブジェクト
-
-**戻り値:**
-- `str`: 日本語のエラーメッセージ
-
-**対応エラー:**
-- FileNotFoundError
-- PermissionError
-- OSError（各種エラーコード）
-- IOError
-- MemoryError
-- その他の一般的なエラー
-
----
-
-## resize_images モジュール
-
-コマンドラインインターフェース（CLI）を提供するモジュール。
-
-### 主要関数
-
-#### `main()`
-
-CLIのエントリーポイント。
-
-```python
-def main() -> int
-```
-
-**戻り値:**
-- `int`: 終了コード（0: 成功、1: エラー）
-
-### コマンドライン引数
-
-```bash
-python resize_images.py [OPTIONS]
-```
-
-**必須引数:**
-- `-s, --source`: ソースディレクトリのパス
-- `-d, --dest`: 出力ディレクトリのパス
-
-**オプション引数:**
-- `-w, --width`: リサイズ後の最大幅（デフォルト: 1280）
-- `-q, --quality`: JPEG品質（1-100、デフォルト: 85）
-- `--dry-run`: 実際に保存せずシミュレート
-- `--resume`: 既存ファイルをスキップ
-- `--log-level`: ログレベル（DEBUG, INFO, WARNING, ERROR, CRITICAL）
-- `--check-disk`: 処理前にディスク容量を確認
-- `--debug`: デバッグモードを有効化
-
-### 処理フロー
-
-1. コマンドライン引数の解析
-2. 入力検証
+- `src/karuku_resizer/gui_app_backup.py` はバックアップ用で、実行経路のAPIとはみなさない
+- CLIとGUIは内部実装を一部共有しているが、入出力仕様はそれぞれのエントリポイントを基準に扱う
 3. 画像ファイルの検索
 4. 各ファイルの処理（進捗表示付き）
 5. 結果サマリーの表示

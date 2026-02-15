@@ -1,81 +1,69 @@
 # KarukuResize クイックスタート
 
-このガイドは「すぐ使う」ための最短手順です。
+このガイドは、最短で使い始めるための手順です。
 
 ## 1. セットアップ
 
-### 共通
-- Python 3.12 以上
-- `uv`（推奨）または `pip`
-
 ```bash
-# プロジェクトルートで実行
+git clone https://github.com/tsutomu-n/KarukuResize.git
+cd KarukuResize
 uv sync --group dev
 ```
 
 ## 2. 起動
 
-### GUI
+### GUI（推奨）
+
+```bash
+uv run karuku-resizer
+```
+
+互換エイリアス:
+
 ```bash
 uv run karukuresize-gui
-# または
-uv run python -m karuku_resizer.gui_app
 ```
 
 ### CLI
+
 ```bash
 uv run karukuresize-cli -s input -d output -w 1280 -q 85
 ```
 
-## 3. GUIの基本フロー
+## 3. GUI の基本フロー
 
-1. `📂 画像を選択`（プロモードは `📂 画像/フォルダを選択`）
-2. またはウィンドウへ直接ドラッグ&ドロップ（ファイル/フォルダー）
-3. サイズ指定（比率/幅/高さ/固定）
-4. `🔄 プレビュー`
-5. `💾 保存`（単体）または `📁 一括適用保存`（読込済み全体）
-
-## 4. プロモードの再帰読込
-
-1. `プロ` に切り替え
-2. `📂 画像/フォルダを選択`
-3. ダイアログで `はい` を選ぶとフォルダ再帰読込
-4. 対象拡張子: `jpg / jpeg / png`
-5. ドラッグ&ドロップ時の単体ファイルは `png / jpg / jpeg / webp / avif` を受理
+1. `画像を選択` で画像またはフォルダを読み込む
+2. 必要に応じてサイズ指定（比率 / 幅 / 高さ / 固定）
+3. `プレビュー`
+4. `保存`（単体）または `一括適用保存`（全体）
 
 補足:
-- 前回の入力方式（再帰/個別）は記憶されます。
-- 読込中は他操作を無効化し、`読み込み中止` が使えます。
-- 進捗、成功/失敗件数、残り時間目安を表示します。
-- 失敗がある場合は完了時に「失敗のみ再試行」が可能です。
-- 失敗一覧は結果ダイアログからクリップボードにコピーできます。
+- ドラッグ&ドロップでも読み込み可能
+- プロモードの再帰読込対象は `jpg/jpeg/png`
+- 失敗がある場合は「失敗のみ再試行」が可能
 
-## 5. 一括適用保存のポイント
+## 4. 一括適用保存の使いどころ
 
-- 選択中画像の設定を基準に、読込済み画像すべてへ適用します。
-- `ドライラン` ON 時はファイルを作成せず結果のみ確認できます。
-- 失敗があっても全体処理は継続し、完了時に失敗詳細を表示します。
-- 設定ヘッダの「最近使った設定」から、直近設定（最大6件）を即時再適用できます。
+- 現在選択中の設定を、読込済み画像全体に適用したいとき
+- 画質やEXIF方針を揃えて一気に保存したいとき
+- `ドライラン` で先に結果件数だけ確認したいとき
 
-## 6. よく使うCLIコマンド
+## 5. CLI 例
 
 ```bash
-# 高品質
-uv run karukuresize-cli -s input -d output -w 1920 -q 95
+# 再帰なし（直下のみ）
+uv run karukuresize-cli -s input -d output --no-recursive
 
-# 軽量化優先
-uv run karukuresize-cli -s input -d output -w 800 -q 75
+# 対象拡張子を指定
+uv run karukuresize-cli -s input -d output --extensions jpg,jpeg,png,webp,avif
 
-# 保存しない確認
-uv run karukuresize-cli -s input -d output -w 1280 --dry-run
+# JSON要約と失敗一覧ファイルを出力
+uv run karukuresize-cli -s input -d output --json --failures-file failures.json
 ```
 
-## 7. 問題が起きたとき
+## 6. 困ったとき
 
-- GUIが起動しない:
-  - `uv sync --group dev` を再実行
-  - `uv run python -m karuku_resizer.gui_app` でエラー詳細確認
-- WSL2でGUIが不安定:
-  - Windows側でGUIを起動（`docs/WINDOWS_GUIDE.md` を参照）
-- ビルドしたい:
-  - `docs/BUILDING.md` を参照
+- インストール関連: `docs/INSTALLATION.md`
+- Windows運用: `docs/WINDOWS_GUIDE.md`
+- WSL2運用: `docs/WSL2_GUIDE.md`
+- ビルド: `docs/BUILDING.md`
