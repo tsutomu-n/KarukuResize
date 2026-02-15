@@ -34,4 +34,3 @@ def test_resolve_cli_log_path_absolute_is_preserved(monkeypatch, tmp_path):
 
     result = resize_core._resolve_cli_log_path(absolute_path)
     assert result == absolute_path
-

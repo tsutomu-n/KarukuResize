@@ -925,7 +925,7 @@ def resize_and_compress_image(
         balance: 圧縮と品質のバランス (1-10, 1=最高圧縮率, 10=最高品質)
         webp_lossless: WebPをロスレスで保存するかどうか
         dry_run: 実際の処理を行わずサイズ見積もりのみ実施
-        
+
         # メモリベース処理用の新しいパラメータ
         source_image: PIL.Imageオブジェクト（メモリベース処理用）
         output_buffer: io.BytesIOオブジェクト（メモリベース処理用）
@@ -947,17 +947,17 @@ def resize_and_compress_image(
         OSError: ファイルシステム関連のエラー
         PIL.UnidentifiedImageError: サポートされていない画像形式または破損している場合
     """
-    
+
     # メモリベース処理の場合
     if source_image is not None and output_buffer is not None:
         # resize_valueが設定されていない場合はtarget_widthを使用
         if resize_value is None and target_width is not None:
             resize_value = target_width
-        
+
         # output_formatが設定されていない場合はformatを使用
         if output_format is None:
             output_format = format if format != "original" else "jpeg"
-        
+
         # メモリベース処理を実行
         success, error_msg = resize_and_compress_image_memory(
             source_image=source_image,
@@ -972,10 +972,10 @@ def resize_and_compress_image(
             optimize=optimize,
             webp_lossless=webp_lossless,
         )
-        
+
         # メモリベース処理の戻り値を調整
         return (success, error_msg)
-    
+
     # ファイルベース処理の場合
     # resize_modeとresize_valueからtarget_widthを設定
     if resize_mode == "none":
@@ -986,7 +986,7 @@ def resize_and_compress_image(
     elif target_width is None:
         # 古い呼び出し方式との互換性のため、デフォルト値を設定
         target_width = 800
-    
+
     # パラメータバリデーション（resize_mode="none"の場合はスキップ）
     if resize_mode != "none" and (target_width is None or target_width <= 0):
         error_msg = f"無効な目標幅です: {target_width}. 1以上の正の整数が必要です"
@@ -1138,7 +1138,7 @@ def resize_and_compress_image(
                 else:
                     # リサイズする場合（従来通り）
                     keep_original_size = original_width <= target_width
-                    
+
                     # 縦横比を維持したリサイズ計算
                     if not keep_original_size:
                         ratio = original_height / original_width
@@ -1484,7 +1484,7 @@ def resize_and_compress_image_memory(
 ) -> tuple[bool, str | None]:
     """
     メモリベースの画像リサイズと圧縮を行う
-    
+
     Args:
         source_image: PIL.Imageオブジェクト
         output_buffer: io.BytesIOオブジェクト
@@ -1497,7 +1497,7 @@ def resize_and_compress_image_memory(
         progressive: プログレッシブJPEGを使用するか
         optimize: 最適化を使用するか
         webp_lossless: WebPロスレスを使用するか
-        
+
     Returns:
         tuple[bool, str | None]: (成功したか, エラーメッセージ)
     """
@@ -1505,26 +1505,26 @@ def resize_and_compress_image_memory(
         # 入力検証
         if source_image is None or output_buffer is None:
             return False, "source_imageとoutput_bufferは必須です"
-        
+
         if not hasattr(source_image, 'size') or not hasattr(source_image, 'mode'):
             return False, "無効な画像オブジェクトです"
-            
+
         if not hasattr(output_buffer, 'write') or not hasattr(output_buffer, 'seek'):
             return False, "無効な出力バッファです"
-        
+
         # リサイズ値の検証（resize_mode="none"の場合はスキップ）
         if resize_mode != "none":
             if resize_value is None or resize_value <= 0:
                 return False, f"無効なリサイズ値: {resize_value} (resize_mode={resize_mode})"
-        
+
         # 画像のコピーを作成（元の画像を変更しないため）
         img = source_image.copy()
         original_width, original_height = img.size
-        
+
         # リサイズ処理
         if resize_mode != "none":
             new_size = None
-            
+
             if resize_mode == "width":
                 ratio = original_height / original_width
                 new_height = int(resize_value * ratio)
@@ -1543,29 +1543,29 @@ def resize_and_compress_image_memory(
             elif resize_mode == "percentage":
                 scale = resize_value / 100.0
                 new_size = (int(original_width * scale), int(original_height * scale))
-            
+
             if new_size:
                 filter_type = Image.LANCZOS if lanczos_filter else Image.BICUBIC
                 img = img.resize(new_size, filter_type)
-        
+
         # 出力フォーマットの正規化
         output_format = output_format.lower()
         if output_format == "jpg":
             output_format = "jpeg"
-        
+
         # 保存オプションの設定
         save_options = {}
-        
+
         if output_format == "jpeg":
             save_options["format"] = "JPEG"
             save_options["quality"] = quality
             save_options["optimize"] = optimize
             save_options["progressive"] = progressive
-            
+
             # EXIF処理
             if exif_handling == "keep" and hasattr(source_image, "info") and "exif" in source_image.info:
                 save_options["exif"] = source_image.info["exif"]
-            
+
             # JPEGはRGBモードが必要
             if img.mode not in ("RGB", "L"):
                 if img.mode == "RGBA":
@@ -1575,42 +1575,42 @@ def resize_and_compress_image_memory(
                     img = background
                 else:
                     img = img.convert("RGB")
-                    
+
         elif output_format == "png":
             save_options["format"] = "PNG"
             save_options["optimize"] = optimize
             save_options["compress_level"] = 6
-            
+
             # PNGはEXIFをサポートしない場合が多い
             if exif_handling == "keep" and hasattr(source_image, "info"):
                 # PNGメタデータとして保存を試みる
                 for key in ["exif", "dpi", "icc_profile"]:
                     if key in source_image.info:
                         save_options[key] = source_image.info[key]
-                        
+
         elif output_format == "webp":
             save_options["format"] = "WEBP"
             save_options["quality"] = quality
             save_options["lossless"] = webp_lossless
             save_options["method"] = 6
-            
+
             # EXIF処理
             if exif_handling == "keep" and hasattr(source_image, "info") and "exif" in source_image.info:
                 save_options["exif"] = source_image.info["exif"]
-            
+
             # WebPはRGBAをサポート
             if not webp_lossless and img.mode not in ("RGB", "RGBA", "L"):
                 img = img.convert("RGB")
         else:
             return False, f"サポートされていない出力フォーマット: {output_format}"
-        
+
         # バッファに保存
         output_buffer.seek(0)
         img.save(output_buffer, **save_options)
         output_buffer.seek(0)
-        
+
         return True, None
-        
+
     except Exception as e:
         error_msg = f"画像処理エラー: {str(e)}"
         logger.error(error_msg)

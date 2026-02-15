@@ -51,6 +51,7 @@ Thumbs.db
 
 # Logs, inputs, outputs, and archives
 /logs/
+/src/logs/
 /input/
 /output/
 /archive/
@@ -64,6 +65,7 @@ Thumbs.db
 
 # PyInstaller artifacts
 *.spec
+!/KarukuResize.spec
 *.spec.bak
 *.pkg
 *.pyz
@@ -71,7 +73,6 @@ Thumbs.db
 warn-*.txt
 xref-*.html
 KarukuResize.exe
-
 
 .memo
 .oldfiles

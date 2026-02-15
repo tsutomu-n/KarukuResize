@@ -329,14 +329,15 @@ def main():
                 target_width=args.width,
                 quality=args.quality,
                 format="original",  # オリジナル形式を維持
-                dry_run=args.dry_run
+                dry_run=args.dry_run,
             )
-            
+
             # ドライランモードの場合、別の形式で返される可能性があるため
             # 互換性のために元の動作をエミュレート
             if success:
                 # 画像のサイズ情報を取得
                 from PIL import Image
+
                 try:
                     with Image.open(source_path) as img:
                         original_size = img.size

@@ -1,7 +1,11 @@
 {
-    "typeCheckingMode": "basic",
-    "exclude": [
-      "src/karuku_resizer/resize_core.py",
-      "src/karuku_resizer/gui_app_backup.py"
-    ]
-  }
+  "typeCheckingMode": "basic",
+  "include": [
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "src/karuku_resizer/resize_core.py",
+    "src/karuku_resizer/gui_app_backup.py"
+  ]
+}

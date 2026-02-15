@@ -41,10 +41,12 @@ Repository = "https://github.com/tsutomu-n/KarukuResize"
 Issues = "https://github.com/tsutomu-n/KarukuResize/issues"
 
 [project.scripts]
-# GUIエントリポイント（旧 karukuresize-gui を新パスへ）
-karukuresize-gui = "karuku_resizer.gui_app:main"
-karukuresize-cli = "karuku_resizer.resize_core:main"
+# 推奨GUIエントリポイント
 karuku-resizer = "karuku_resizer.gui_app:main"
+# 互換エイリアス（既存利用者向け）
+karukuresize-gui = "karuku_resizer.gui_app:main"
+# CLIエントリポイント
+karukuresize-cli = "karuku_resizer.resize_core:main"
 karukuresize-build-exe = "karuku_resizer.build_exe:main"
 
 [build-system]
@@ -79,7 +81,6 @@ line-length = 120
 target-version = "py312"
 exclude = [
     "src/karuku_resizer/resize_core.py",  # パーサバグ回避で除外
-    "tests/legacy",  # 旧アーキテクチャ検証の遺産テストを除外
 ]
 
 [tool.ruff.lint]
