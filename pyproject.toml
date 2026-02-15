@@ -4,7 +4,7 @@ version = "0.2.1"
 description = "KarukuResize:日本語対応の画像リサイズ・圧縮ツール（GUI対応版・Windows長パス対応）"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
     { name = "tsutomu-n" },
 ]
@@ -12,7 +12,7 @@ keywords = ["image", "resize", "compression", "gui", "cli", "python"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
