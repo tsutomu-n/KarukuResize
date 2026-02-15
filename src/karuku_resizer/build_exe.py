@@ -53,13 +53,6 @@ if ICON_PATH.is_file():
     # 実行時に Tk 側で iconbitmap/iconphoto に使えるよう、ICO 自体も同梱する。
     PYINSTALLER_ARGS.extend(["--add-data", f"{ICON_PATH}{DATA_SEP}assets"])
 
-# Lucide PNGアイコンを同梱する（ダーク/ライトテーマ対応）
-ICONS_DIR = PROJECT_ROOT / "assets" / "icons"
-for theme in ("dark", "light"):
-    theme_dir = ICONS_DIR / theme
-    if theme_dir.is_dir():
-        PYINSTALLER_ARGS.extend(["--add-data", f"{theme_dir}{DATA_SEP}assets/icons/{theme}"])
-
 # Entry point script path
 SCRIPT_PATH = PROJECT_ROOT / "src" / "karuku_resizer" / "gui_app.py"
 HOOKS_DIR = PROJECT_ROOT / "src" / "karuku_resizer" / "tools"

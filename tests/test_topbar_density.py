@@ -11,6 +11,6 @@ def test_topbar_density_switches_to_normal_above_threshold() -> None:
 
 
 def test_batch_button_text_changes_with_density() -> None:
-    assert ResizeApp._batch_button_text_for_density("normal") == "一括適用保存"
-    assert ResizeApp._batch_button_text_for_density("compact") == "一括保存"
+    assert ResizeApp._batch_button_text_for_density("normal") == "📁 一括適用保存"
+    assert ResizeApp._batch_button_text_for_density("compact") == "📁 一括保存"
 
