@@ -50,7 +50,6 @@ from karuku_resizer.processing_preset_store import (
     ProcessingPresetStore,
     merge_processing_values,
 )
-from karuku_resizer.icon_loader import load_icon
 from karuku_resizer.image_save_pipeline import (
     ExifEditValues,
     SaveOptions,
@@ -84,6 +83,14 @@ from karuku_resizer.ui_tooltip_content import (
     TOP_AND_PRESET_TOOLTIPS,
     UI_MODE_VALUE_TOOLTIPS,
 )
+from karuku_resizer.ui import topbar_layout
+from karuku_resizer.ui import settings_header
+from karuku_resizer.ui import main_layout
+from karuku_resizer.ui import settings_dialog
+from karuku_resizer.ui import preset_dialog
+from karuku_resizer.ui import result_dialog
+from karuku_resizer.ui import input_sources
+from karuku_resizer.ui import file_load_session
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -100,31 +107,8 @@ MIN_WINDOW_WIDTH = 1200
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
-TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1310
-TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
-    "normal": {
-        "select": 128,
-        "help": 108,
-        "settings": 90,
-        "preset_menu": 180,
-        "preset_action": 72,
-        "preview": 118,
-        "save": 118,
-        "batch": 118,
-        "zoom": 140,
-    },
-    "compact": {
-        "select": 118,
-        "help": 94,
-        "settings": 82,
-        "preset_menu": 156,
-        "preset_action": 64,
-        "preview": 108,
-        "save": 96,
-        "batch": 106,
-        "zoom": 126,
-    },
-}
+TOPBAR_DENSITY_COMPACT_MAX_WIDTH = topbar_layout.TOPBAR_DENSITY_COMPACT_MAX_WIDTH
+TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = topbar_layout.TOPBAR_WIDTHS
 
 # -------------------- UI color constants --------------------
 METALLIC_COLORS = {
@@ -277,6 +261,69 @@ logger = logging.getLogger(__name__)
 
 
 class ResizeApp(customtkinter.CTk):
+    # Top bar / input widgets (ui.topbar_layout から動的に初期化される属性)
+    select_button: customtkinter.CTkButton
+    help_button: customtkinter.CTkButton
+    settings_button: customtkinter.CTkButton
+    preset_menu: customtkinter.CTkOptionMenu
+    preset_var: customtkinter.StringVar
+    preset_manage_button: customtkinter.CTkButton
+    preview_button: customtkinter.CTkButton
+    save_button: customtkinter.CTkButton
+    batch_button: customtkinter.CTkButton
+    zoom_cb: customtkinter.CTkComboBox
+    zoom_var: customtkinter.StringVar
+    mode_var: customtkinter.StringVar
+    mode_radio_buttons: List[customtkinter.CTkRadioButton]
+    ratio_entry: customtkinter.CTkEntry
+    entry_w_single: customtkinter.CTkEntry
+    entry_h_single: customtkinter.CTkEntry
+    entry_w_fixed: customtkinter.CTkEntry
+    entry_h_fixed: customtkinter.CTkEntry
+    mode_frames: Dict[str, customtkinter.CTkFrame]
+    active_mode_frame: Optional[customtkinter.CTkFrame]
+    _all_entries: List[customtkinter.CTkEntry]
+    _entry_widgets: Dict[str, List[customtkinter.CTkEntry]]
+    pct_var: customtkinter.StringVar
+    w_var: customtkinter.StringVar
+    h_var: customtkinter.StringVar
+    _auto_preview_timer: Optional[str]
+    settings_header_frame: customtkinter.CTkFrame
+    settings_summary_var: customtkinter.StringVar
+    settings_summary_label: customtkinter.CTkLabel
+    ui_mode_var: customtkinter.StringVar
+    ui_mode_segment: customtkinter.CTkSegmentedButton
+    appearance_mode_var: customtkinter.StringVar
+    appearance_mode_segment: customtkinter.CTkSegmentedButton
+    details_toggle_button: customtkinter.CTkButton
+    recent_settings_row: customtkinter.CTkFrame
+    recent_settings_title_label: customtkinter.CTkLabel
+    recent_settings_buttons_frame: customtkinter.CTkFrame
+    recent_settings_empty_label: customtkinter.CTkLabel
+    detail_settings_frame: customtkinter.CTkFrame
+    _recent_settings_max: int
+    _merge_processing_values: Callable[[Mapping[str, Any]], Mapping[str, Any]]
+    main_content: customtkinter.CTkFrame
+    file_list_frame: customtkinter.CTkScrollableFrame
+    file_filter_var: customtkinter.StringVar
+    file_filter_segment: customtkinter.CTkSegmentedButton
+    empty_state_label: customtkinter.CTkLabel
+    canvas_org: customtkinter.CTkCanvas
+    canvas_resz: customtkinter.CTkCanvas
+    info_orig_var: customtkinter.StringVar
+    info_resized_var: customtkinter.StringVar
+    resized_title_label: customtkinter.CTkLabel
+    metadata_frame: customtkinter.CTkFrame
+    metadata_textbox: customtkinter.CTkTextbox
+    metadata_status_var: customtkinter.StringVar
+    metadata_expanded: bool
+    operation_stage_var: customtkinter.StringVar
+    action_hint_var: customtkinter.StringVar
+    session_summary_var: customtkinter.StringVar
+    status_var: customtkinter.StringVar
+    progress_bar: customtkinter.CTkProgressBar
+    cancel_button: customtkinter.CTkButton
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -341,6 +388,8 @@ class ResizeApp(customtkinter.CTk):
         self._operation_scope: Optional[OperationScope] = None
         self._action_hint_reason = ""
         self._recent_setting_buttons: List[customtkinter.CTkButton] = []
+        self._recent_settings_max = RECENT_SETTINGS_MAX
+        self._merge_processing_values = merge_processing_values
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
             app_name=LOG_APP_NAME,
             retention_days=DEFAULT_RETENTION_DAYS,
@@ -951,746 +1000,90 @@ class ResizeApp(customtkinter.CTk):
         self.status_var.set(status_text)
 
     def _open_preset_manager_dialog(self) -> None:
-        if self._preset_dialog is not None and self._preset_dialog.winfo_exists():
-            self._preset_dialog.focus_set()
-            return
-
-        dialog = customtkinter.CTkToplevel(self)
-        self._preset_dialog = dialog
-        dialog.title("プリセット管理")
-        dialog.geometry("700x360")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
-        dialog.grid_columnconfigure(1, weight=1)
-
-        selected_label_var = customtkinter.StringVar(value=self.preset_var.get())
-        name_var = customtkinter.StringVar(value="")
-        description_var = customtkinter.StringVar(value="")
-        info_var = customtkinter.StringVar(value="")
-        default_status_var = customtkinter.StringVar(value="")
-
-        def _close_dialog() -> None:
-            if dialog.winfo_exists():
-                dialog.grab_release()
-                dialog.destroy()
-            self._preset_dialog = None
-
-        def _current_preset_id() -> str:
-            return self._preset_name_to_id.get(selected_label_var.get(), "")
-
-        def _current_preset() -> Optional[ProcessingPreset]:
-            return self._get_preset_by_id(_current_preset_id())
-
-        def _refresh_dialog_menu(selected_id: Optional[str] = None) -> None:
-            labels = list(self._preset_name_to_id.keys()) or [PRESET_NONE_LABEL]
-            preset_option_menu.configure(values=labels)
-            if selected_id:
-                selected_label_var.set(self._preset_label_for_id(selected_id, labels[0]))
-            elif selected_label_var.get() not in labels:
-                selected_label_var.set(labels[0])
-
-        def _build_preset_info_text(preset: ProcessingPreset) -> str:
-            values = merge_processing_values(preset.values)
-            mode = str(values.get("mode", "ratio"))
-            if mode == "ratio":
-                size_text = f"比率 {values.get('ratio_value', '100')}%"
-            elif mode == "width":
-                size_text = f"幅 {values.get('width_value', '')}px"
-            elif mode == "height":
-                size_text = f"高さ {values.get('height_value', '')}px"
-            else:
-                size_text = f"固定 {values.get('width_value', '')}x{values.get('height_value', '')}px"
-            format_id = str(values.get("output_format", "auto")).lower()
-            format_label = FORMAT_ID_TO_LABEL.get(format_id, "自動")
-            exif_mode_label = EXIF_ID_TO_LABEL.get(str(values.get("exif_mode", "keep")), "保持")
-            preset_kind = "組み込み" if preset.is_builtin else "ユーザー"
-            updated_at = preset.updated_at or "-"
-            return (
-                f"種別: {preset_kind} / ID: {preset.preset_id}\n"
-                f"サイズ: {size_text} / 形式: {format_label} / 品質: {values.get('quality', '85')}\n"
-                f"EXIF: {exif_mode_label} / GPS削除: {'ON' if self._to_bool(values.get('remove_gps', False)) else 'OFF'} / "
-                f"ドライラン: {'ON' if self._to_bool(values.get('dry_run', False)) else 'OFF'}\n"
-                f"更新日時: {updated_at}"
-            )
-
-        def _refresh_dialog_fields(*_args: object) -> None:
-            preset = _current_preset()
-            default_id = str(self.settings.get("default_preset_id", "")).strip()
-            if preset is None:
-                name_var.set("")
-                description_var.set("")
-                info_var.set("プリセットを選択してください。")
-                default_status_var.set("既定プリセット: 未設定")
-                name_entry.configure(state="disabled")
-                description_entry.configure(state="disabled")
-                update_button.configure(state="disabled")
-                delete_button.configure(state="disabled")
-                apply_button.configure(state="disabled")
-                set_default_button.configure(state="disabled")
-                return
-
-            name_var.set(preset.name)
-            description_var.set(preset.description)
-            info_var.set(_build_preset_info_text(preset))
-            default_label = self._preset_label_for_id(default_id, PRESET_NONE_LABEL) if default_id else PRESET_NONE_LABEL
-            default_status_var.set(f"既定プリセット: {default_label}")
-
-            is_user = not preset.is_builtin
-            field_state = "normal" if is_user else "disabled"
-            name_entry.configure(state=field_state)
-            description_entry.configure(state=field_state)
-            update_button.configure(state="normal" if is_user else "disabled")
-            delete_button.configure(state="normal" if is_user else "disabled")
-            apply_button.configure(state="normal")
-            set_default_button.configure(state="normal")
-
-        def _apply_dialog_preset() -> None:
-            preset_id = _current_preset_id()
-            if not preset_id:
-                return
-            if self._apply_preset_by_id(preset_id, announce=True, persist=True):
-                self._refresh_preset_menu(selected_preset_id=preset_id)
-                selected_label_var.set(self._preset_label_for_id(preset_id, selected_label_var.get()))
-                _refresh_dialog_fields()
-
-        def _set_default_preset() -> None:
-            preset_id = _current_preset_id()
-            if not preset_id:
-                return
-            self.settings["default_preset_id"] = preset_id
-            self._save_current_settings()
-            default_status_var.set(f"既定プリセット: {self._preset_label_for_id(preset_id, PRESET_NONE_LABEL)}")
-            self.status_var.set("既定プリセットを更新しました。")
-
-        def _clear_default_preset() -> None:
-            self.settings["default_preset_id"] = ""
-            self._save_current_settings()
-            default_status_var.set(f"既定プリセット: {PRESET_NONE_LABEL}")
-            self.status_var.set("既定プリセットを解除しました。")
-
-        def _update_user_preset_from_current() -> None:
-            preset = _current_preset()
-            if preset is None or preset.is_builtin:
-                messagebox.showwarning("プリセット更新", "ユーザープリセットを選択してください。", parent=dialog)
-                return
-
-            updated_name = name_var.get().strip()
-            if not updated_name:
-                messagebox.showwarning("プリセット更新", "プリセット名を入力してください。", parent=dialog)
-                return
-
-            for existing in self._user_presets():
-                if existing.preset_id != preset.preset_id and existing.name == updated_name:
-                    messagebox.showwarning(
-                        "プリセット更新",
-                        f"同名のユーザープリセット「{updated_name}」が存在します。",
-                        parent=dialog,
-                    )
-                    return
-
-            updated_desc = description_var.get().strip()
-            updated_values = self._capture_current_processing_values(
-                require_valid_exif_datetime=True,
-                warning_parent=dialog,
-            )
-            if updated_values is None:
-                return
-
-            user_presets: List[ProcessingPreset] = []
-            for existing in self._user_presets():
-                if existing.preset_id == preset.preset_id:
-                    existing.name = updated_name
-                    existing.description = updated_desc
-                    existing.values = merge_processing_values(updated_values)
-                    existing.updated_at = datetime.now().isoformat(timespec="seconds")
-                user_presets.append(existing)
-
-            self._persist_user_presets(user_presets, selected_preset_id=preset.preset_id)
-            self._set_selected_preset_label_by_id(preset.preset_id)
-            _refresh_dialog_menu(selected_id=preset.preset_id)
-            _refresh_dialog_fields()
-            self._save_current_settings()
-            self.status_var.set(f"プリセット更新: {updated_name}")
-
-        def _delete_user_preset() -> None:
-            preset = _current_preset()
-            if preset is None or preset.is_builtin:
-                messagebox.showwarning("プリセット削除", "削除できるのはユーザープリセットのみです。", parent=dialog)
-                return
-
-            if not messagebox.askyesno(
-                "プリセット削除",
-                f"「{preset.name}」を削除しますか？",
-                parent=dialog,
-            ):
-                return
-
-            remaining = [existing for existing in self._user_presets() if existing.preset_id != preset.preset_id]
-            deleted_id = preset.preset_id
-            self._persist_user_presets(remaining)
-            if str(self.settings.get("default_preset_id", "")).strip() == deleted_id:
-                self.settings["default_preset_id"] = ""
-                self._save_current_settings()
-            fallback_id = self._selected_preset_id()
-            _refresh_dialog_menu(selected_id=fallback_id)
-            _refresh_dialog_fields()
-            self.status_var.set(f"プリセット削除: {preset.name}")
-
-        row = 0
-        customtkinter.CTkLabel(
-            dialog,
-            text="対象プリセット",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
-        preset_option_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            variable=selected_label_var,
-            values=list(self._preset_name_to_id.keys()) or [PRESET_NONE_LABEL],
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        preset_dialog.open_preset_manager_dialog(
+            self,
+            colors=METALLIC_COLORS,
+            format_id_to_label=FORMAT_ID_TO_LABEL,
+            exif_id_to_label=EXIF_ID_TO_LABEL,
+            preset_none_label=PRESET_NONE_LABEL,
         )
-        preset_option_menu.grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="名称（ユーザーのみ変更可）",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        name_entry = customtkinter.CTkEntry(
-            dialog,
-            textvariable=name_var,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        name_entry.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="説明（任意）",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        description_entry = customtkinter.CTkEntry(
-            dialog,
-            textvariable=description_var,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        description_entry.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            textvariable=default_status_var,
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-            anchor="w",
-            justify="left",
-        ).grid(row=row, column=0, columnspan=2, padx=20, pady=(2, 6), sticky="ew")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            textvariable=info_var,
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-            anchor="w",
-            justify="left",
-        ).grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
-
-        row += 1
-        action_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        action_frame.grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 16), sticky="e")
-
-        apply_button = customtkinter.CTkButton(
-            action_frame,
-            text="適用",
-            width=88,
-            command=_apply_dialog_preset,
-            font=self.font_small,
-        )
-        self._style_secondary_button(apply_button)
-        apply_button.pack(side="left", padx=(0, 8))
-
-        set_default_button = customtkinter.CTkButton(
-            action_frame,
-            text="既定に設定",
-            width=108,
-            command=_set_default_preset,
-            font=self.font_small,
-        )
-        self._style_secondary_button(set_default_button)
-        set_default_button.pack(side="left", padx=(0, 8))
-
-        clear_default_button = customtkinter.CTkButton(
-            action_frame,
-            text="既定解除",
-            width=92,
-            command=_clear_default_preset,
-            font=self.font_small,
-        )
-        self._style_secondary_button(clear_default_button)
-        clear_default_button.pack(side="left", padx=(0, 8))
-
-        update_button = customtkinter.CTkButton(
-            action_frame,
-            text="現在設定で更新",
-            width=132,
-            command=_update_user_preset_from_current,
-            font=self.font_small,
-        )
-        self._style_primary_button(update_button)
-        update_button.pack(side="left", padx=(0, 8))
-
-        delete_button = customtkinter.CTkButton(
-            action_frame,
-            text="削除",
-            width=82,
-            command=_delete_user_preset,
-            font=self.font_small,
-        )
-        self._style_secondary_button(delete_button)
-        delete_button.pack(side="left", padx=(0, 8))
-
-        close_button = customtkinter.CTkButton(
-            action_frame,
-            text="閉じる",
-            width=82,
-            command=_close_dialog,
-            font=self.font_small,
-        )
-        self._style_secondary_button(close_button)
-        close_button.pack(side="left")
-
-        selected_label_var.trace_add("write", _refresh_dialog_fields)
-        _refresh_dialog_menu()
-        _refresh_dialog_fields()
-
-        dialog.protocol("WM_DELETE_WINDOW", _close_dialog)
-        dialog.focus_set()
 
     def _setup_ui(self):
-        """UI要素をセットアップ"""
-        # -------------------- UI top bar (2 rows) ------------------------
-        top_container = customtkinter.CTkFrame(self)
-        self._style_card_frame(top_container)
-        top_container.pack(side="top", fill="x", padx=12, pady=(8, 6))
-
-        top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_primary.pack(side="top", fill="x", padx=8, pady=(6, 2))
-
-        top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_secondary.pack(side="top", fill="x", padx=8, pady=(2, 6))
-        topbar_widths = TOPBAR_WIDTHS["normal"]
-
-        self._icon_folder_open = load_icon("folder-open", 16)
-        self.select_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="画像を選択",
-            image=self._icon_folder_open,
-            compound="left",
-            width=topbar_widths["select"],
-            command=self._select_files,
-            font=self.font_default,
+        """UI要素をセットアップ。上部UI構築は専用モジュールに委譲する。"""
+        topbar_layout.setup_ui(
+            self,
+            colors=METALLIC_COLORS,
+            preset_none_label=PRESET_NONE_LABEL,
         )
-        self._style_primary_button(self.select_button)
-        self.select_button.pack(side="left", padx=(0, 6), pady=4)
-        self._icon_circle_help = load_icon("circle-help", 16)
-        self.help_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="使い方",
-            image=self._icon_circle_help,
-            compound="left",
-            width=topbar_widths["help"],
-            command=self._show_help,
-            font=self.font_default,
-        )
-        self._style_tertiary_button(self.help_button)
-        self.help_button.pack(side="left", padx=(0, 8), pady=4)
-        self._icon_settings = load_icon("settings", 16)
-        self.settings_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="設定",
-            image=self._icon_settings,
-            compound="left",
-            width=topbar_widths["settings"],
-            command=self._open_settings_dialog,
-            font=self.font_default,
-        )
-        self._style_tertiary_button(self.settings_button)
-        self.settings_button.pack(side="left", padx=(0, 8), pady=4)
-
-        preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
-        preset_spacer.pack(side="left", expand=True)
-
-        customtkinter.CTkLabel(
-            top_row_primary,
-            text="プリセット",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=4)
-        self.preset_var = customtkinter.StringVar(value=PRESET_NONE_LABEL)
-        self.preset_menu = customtkinter.CTkOptionMenu(
-            top_row_primary,
-            variable=self.preset_var,
-            values=[PRESET_NONE_LABEL],
-            width=topbar_widths["preset_menu"],
-            command=self._on_preset_menu_changed,
-            font=self.font_small,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.preset_menu.pack(side="left", padx=(0, 6), pady=4)
-        self.preset_manage_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="管理",
-            width=topbar_widths["preset_action"],
-            command=self._open_preset_manager_dialog,
-            font=self.font_small,
-        )
-        self._style_tertiary_button(self.preset_manage_button)
-        self.preset_manage_button.pack(side="left", padx=(0, 0), pady=4)
-
-        size_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
-        size_controls_frame.pack(side="left", fill="x", expand=True)
-
-        # Mode radio buttons
-        self.mode_var = customtkinter.StringVar(value="ratio")
-        self.mode_radio_buttons: List[customtkinter.CTkRadioButton] = []
-        modes = [
-            ("比率 %", "ratio"),
-            ("幅 px", "width"),
-            ("高さ px", "height"),
-            ("幅×高", "fixed"),
-        ]
-        for text, val in modes:
-            mode_radio = customtkinter.CTkRadioButton(
-                size_controls_frame,
-                text=text,
-                variable=self.mode_var,
-                value=val,
-                command=self._update_mode,
-                font=self.font_default,
-                fg_color=METALLIC_COLORS["primary"],
-                hover_color=METALLIC_COLORS["hover"],
-                border_color=METALLIC_COLORS["border_medium"],
-                text_color=METALLIC_COLORS["text_primary"],
-            )
-            mode_radio.pack(side="left", padx=(0, 6))
-            self.mode_radio_buttons.append(mode_radio)
-
-        self._setup_entry_widgets(size_controls_frame)
-
-        action_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
-        action_controls_frame.pack(side="right")
-        self._setup_action_buttons(action_controls_frame)
-        self._setup_settings_layers()
-        self._refresh_topbar_density()
-        self._setup_main_layout()
 
     def _setup_settings_layers(self):
         """基本操作の下に設定サマリーと詳細設定（折りたたみ）を配置する。"""
-        self.settings_header_frame = customtkinter.CTkFrame(self)
-        self._style_card_frame(self.settings_header_frame, corner_radius=12)
-        self.settings_header_frame.pack(side="top", fill="x", padx=12, pady=(0, 6))
-
-        self.settings_summary_var = customtkinter.StringVar(value="")
-        self.settings_summary_label = customtkinter.CTkLabel(
-            self.settings_header_frame,
-            textvariable=self.settings_summary_var,
-            anchor="w",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_secondary"],
+        settings_header.setup_settings_layers(
+            self,
+            colors=METALLIC_COLORS,
+            ui_mode_labels=list(UI_MODE_LABEL_TO_ID.keys()),
+            appearance_labels=list(APPEARANCE_LABEL_TO_ID.keys()),
         )
-        self.settings_summary_label.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=8)
-
-        self.ui_mode_var = customtkinter.StringVar(value="簡易")
-        self.ui_mode_segment = customtkinter.CTkSegmentedButton(
-            self.settings_header_frame,
-            values=list(UI_MODE_LABEL_TO_ID.keys()),
-            variable=self.ui_mode_var,
-            command=self._on_ui_mode_changed,
-            width=120,
-            font=self.font_small,
-            selected_color=METALLIC_COLORS["primary"],
-            selected_hover_color=METALLIC_COLORS["hover"],
-            unselected_color=METALLIC_COLORS["bg_tertiary"],
-            unselected_hover_color=METALLIC_COLORS["accent_soft"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)
-
-        self.appearance_mode_var = customtkinter.StringVar(value="システム")
-        self.appearance_mode_segment = customtkinter.CTkSegmentedButton(
-            self.settings_header_frame,
-            values=list(APPEARANCE_LABEL_TO_ID.keys()),
-            variable=self.appearance_mode_var,
-            command=self._on_appearance_mode_changed,
-            width=180,
-            font=self.font_small,
-            selected_color=METALLIC_COLORS["primary"],
-            selected_hover_color=METALLIC_COLORS["hover"],
-            unselected_color=METALLIC_COLORS["bg_tertiary"],
-            unselected_hover_color=METALLIC_COLORS["accent_soft"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.appearance_mode_segment.pack(side="right", padx=(0, 8), pady=8)
-
-        self.details_toggle_button = customtkinter.CTkButton(
-            self.settings_header_frame,
-            text="詳細設定を表示",
-            width=140,
-            command=self._toggle_details_panel,
-            font=self.font_small,
-        )
-        self._style_tertiary_button(self.details_toggle_button)
-        self.details_toggle_button.pack(side="right", padx=(0, 6), pady=8)
-
-        self.recent_settings_row = customtkinter.CTkFrame(self.settings_header_frame, fg_color="transparent")
-        self.recent_settings_row.pack(side="bottom", fill="x", padx=10, pady=(0, 8))
-        self.recent_settings_title_label = customtkinter.CTkLabel(
-            self.recent_settings_row,
-            text="最近使った設定",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_secondary"],
-        )
-        self.recent_settings_title_label.pack(side="left", padx=(0, 8))
-        self.recent_settings_buttons_frame = customtkinter.CTkFrame(
-            self.recent_settings_row,
-            fg_color="transparent",
-        )
-        self.recent_settings_buttons_frame.pack(side="left", fill="x", expand=True)
-        self.recent_settings_empty_label = customtkinter.CTkLabel(
-            self.recent_settings_buttons_frame,
-            text="まだありません",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-        )
-        self.recent_settings_empty_label.pack(side="left")
-
-        self.detail_settings_frame = customtkinter.CTkFrame(self)
-        self._style_card_frame(self.detail_settings_frame, corner_radius=12)
-        self._setup_output_controls(self.detail_settings_frame)
-        self._register_setting_watchers()
-        self._refresh_recent_settings_buttons()
-        self._apply_ui_mode()
-        self._update_settings_summary()
-        self._set_details_panel_visibility(False)
 
     def _register_setting_watchers(self):
-        for var in (
-            self.output_format_var,
-            self.quality_var,
-            self.webp_method_var,
-            self.webp_lossless_var,
-            self.avif_speed_var,
-            self.exif_mode_var,
-            self.remove_gps_var,
-            self.dry_run_var,
-        ):
-            var.trace_add("write", self._on_setting_var_changed)
+        settings_header.register_setting_watchers(self)
 
     def _on_setting_var_changed(self, *_args):
-        self._update_settings_summary()
+        settings_header.on_setting_var_changed(self, *_args)
 
     @staticmethod
     def _recent_setting_label_from_values(values: Mapping[str, Any]) -> str:
-        merged = merge_processing_values(values)
-        mode = str(merged.get("mode", "ratio"))
-        if mode == "width":
-            size_text = f"幅{merged.get('width_value', '')}px"
-        elif mode == "height":
-            size_text = f"高{merged.get('height_value', '')}px"
-        elif mode == "fixed":
-            size_text = f"固定{merged.get('width_value', '')}x{merged.get('height_value', '')}"
-        else:
-            size_text = f"比率{merged.get('ratio_value', '100')}%"
-        format_id = str(merged.get("output_format", "auto")).lower()
-        format_label = FORMAT_ID_TO_LABEL.get(format_id, "自動")
-        quality_text = f"Q{merged.get('quality', '85')}"
-        return f"{size_text}/{format_label}/{quality_text}"
+        return settings_header.recent_setting_label_from_values(
+            values,
+            merge_processing_values_fn=merge_processing_values,
+            format_id_to_label=FORMAT_ID_TO_LABEL,
+        )
 
     @staticmethod
     def _recent_settings_fingerprint(values: Mapping[str, Any]) -> str:
-        merged = merge_processing_values(values)
-        return json.dumps(merged, ensure_ascii=False, sort_keys=True)
+        return settings_header.recent_settings_fingerprint(
+            values,
+            merge_processing_values_fn=merge_processing_values,
+        )
 
     @classmethod
     def _normalize_recent_settings_entries(cls, raw: Any) -> List[Dict[str, Any]]:
-        if not isinstance(raw, list):
-            return []
-
-        entries: List[Dict[str, Any]] = []
-        seen: set[str] = set()
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            values_raw = item.get("values")
-            if not isinstance(values_raw, Mapping):
-                continue
-            values = merge_processing_values(values_raw)
-            fingerprint = str(item.get("fingerprint", "")).strip() or cls._recent_settings_fingerprint(values)
-            if not fingerprint or fingerprint in seen:
-                continue
-            seen.add(fingerprint)
-            label = str(item.get("label", "")).strip() or cls._recent_setting_label_from_values(values)
-            used_at = str(item.get("used_at", "")).strip()
-            entries.append(
-                {
-                    "fingerprint": fingerprint,
-                    "label": label,
-                    "used_at": used_at,
-                    "values": values,
-                }
-            )
-            if len(entries) >= RECENT_SETTINGS_MAX:
-                break
-        return entries
+        return settings_header.normalize_recent_settings_entries(
+            raw,
+            recent_settings_max=RECENT_SETTINGS_MAX,
+            merge_processing_values_fn=merge_processing_values,
+            recent_settings_fingerprint_fn=cls._recent_settings_fingerprint,
+            recent_setting_label_fn=cls._recent_setting_label_from_values,
+        )
 
     def _recent_settings_entries(self) -> List[Dict[str, Any]]:
-        entries = self._normalize_recent_settings_entries(self.settings.get("recent_processing_settings", []))
-        self.settings["recent_processing_settings"] = entries
-        return entries
+        return settings_header.recent_settings_entries(self)
 
     def _refresh_recent_settings_buttons(self) -> None:
-        if not hasattr(self, "recent_settings_buttons_frame"):
-            return
-
-        for button in self._recent_setting_buttons:
-            button.destroy()
-        self._recent_setting_buttons = []
-
-        entries = self._recent_settings_entries()
-        if not entries:
-            if self.recent_settings_empty_label.winfo_manager() != "pack":
-                self.recent_settings_empty_label.pack(side="left")
-            return
-
-        if self.recent_settings_empty_label.winfo_manager():
-            self.recent_settings_empty_label.pack_forget()
-
-        for index, entry in enumerate(entries, start=1):
-            button = customtkinter.CTkButton(
-                self.recent_settings_buttons_frame,
-                text=f"{index}:{entry['label']}",
-                width=124,
-                command=lambda fp=entry["fingerprint"]: self._apply_recent_setting(fp),
-                font=self.font_small,
-            )
-            self._style_secondary_button(button)
-            button.pack(side="left", padx=(0, 6))
-            self._register_tooltip(button, self._recent_setting_tooltip_text(entry))
-            self._recent_setting_buttons.append(button)
+        settings_header.refresh_recent_settings_buttons(self)
 
     def _apply_recent_setting(self, fingerprint: str) -> None:
-        if self._is_loading_files:
-            messagebox.showinfo("処理中", "画像読み込み中は最近使った設定を適用できません。")
-            return
-
-        entries = self._recent_settings_entries()
-        target_index = next(
-            (index for index, entry in enumerate(entries) if entry.get("fingerprint") == fingerprint),
-            -1,
-        )
-        if target_index < 0:
-            messagebox.showwarning("最近使った設定", "選択された設定が見つかりませんでした。")
-            self._refresh_recent_settings_buttons()
-            return
-
-        entry = entries.pop(target_index)
-        values = entry.get("values")
-        if not isinstance(values, Mapping):
-            messagebox.showwarning("最近使った設定", "設定データが不正です。")
-            self._refresh_recent_settings_buttons()
-            return
-
-        self._apply_processing_values(values)
-        entry["used_at"] = datetime.now().isoformat(timespec="seconds")
-        entries.insert(0, entry)
-        self.settings["recent_processing_settings"] = entries[:RECENT_SETTINGS_MAX]
-        self._save_current_settings()
-        self._refresh_recent_settings_buttons()
-        self.status_var.set(f"最近使った設定を適用: {entry.get('label', '')}")
+        settings_header.apply_recent_setting(self, fingerprint)
 
     def _register_recent_setting_from_current(self) -> None:
-        values = self._capture_current_processing_values(require_valid_exif_datetime=False)
-        if values is None:
-            return
-        merged = merge_processing_values(values)
-        fingerprint = self._recent_settings_fingerprint(merged)
-        label = self._recent_setting_label_from_values(merged)
-        now = datetime.now().isoformat(timespec="seconds")
-
-        entries = self._recent_settings_entries()
-        entries = [entry for entry in entries if entry.get("fingerprint") != fingerprint]
-        entries.insert(
-            0,
-            {
-                "fingerprint": fingerprint,
-                "label": label,
-                "used_at": now,
-                "values": merged,
-            },
-        )
-        self.settings["recent_processing_settings"] = entries[:RECENT_SETTINGS_MAX]
-        self._save_current_settings()
-        self._refresh_recent_settings_buttons()
+        settings_header.register_recent_setting_from_current(self)
 
     @staticmethod
     def _topbar_density_for_width(window_width: int) -> str:
-        return "compact" if window_width <= TOPBAR_DENSITY_COMPACT_MAX_WIDTH else "normal"
+        return topbar_layout.topbar_density_for_width(window_width)
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
-        return "一括保存" if density == "compact" else "一括適用保存"
+        return topbar_layout.batch_button_text_for_density(density)
 
     def _select_button_text_for_state(self) -> str:
-        if self._is_pro_mode():
-            if self._topbar_density == "compact":
-                return "画像/フォルダ選択"
-            return "画像/フォルダを選択"
-        return "画像を選択"
+        return topbar_layout.select_button_text_for_state(self)
 
     def _apply_topbar_density(self, window_width: int) -> None:
-        density = self._topbar_density_for_width(window_width)
-        if density == self._topbar_density:
-            return
-        self._topbar_density = density
-        widths = TOPBAR_WIDTHS[density]
-
-        self.select_button.configure(width=widths["select"])
-        self.help_button.configure(width=widths["help"])
-        self.settings_button.configure(width=widths["settings"])
-        self.preset_menu.configure(width=widths["preset_menu"])
-        self.preset_manage_button.configure(width=widths["preset_action"])
-        self.preview_button.configure(width=widths["preview"])
-        self.save_button.configure(width=widths["save"])
-        self.batch_button.configure(
-            width=widths["batch"],
-            text=self._batch_button_text_for_density(density),
-        )
-        self.zoom_cb.configure(width=widths["zoom"])
-        self.select_button.configure(text=self._select_button_text_for_state())
+        topbar_layout.apply_topbar_density(self, window_width, min_window_width=MIN_WINDOW_WIDTH)
 
     def _refresh_topbar_density(self) -> None:
-        width = max(self.winfo_width(), MIN_WINDOW_WIDTH)
-        self._apply_topbar_density(width)
+        topbar_layout.refresh_topbar_density(self, min_window_width=MIN_WINDOW_WIDTH)
 
     def _ui_mode_id(self) -> str:
         return UI_MODE_LABEL_TO_ID.get(self.ui_mode_var.get(), "simple")
@@ -1821,210 +1214,18 @@ class ResizeApp(customtkinter.CTk):
             self.details_toggle_button.configure(text="詳細設定を表示")
 
     def _setup_entry_widgets(self, parent):
-        """入力ウィジェットをセットアップ"""
-        # Size entry fields
-        self.entry_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
-        self.entry_frame.pack(side="left", padx=(8, 10))
-
-        vcmd = (self.register(self._validate_int), "%P")
-
-        # --- Create widgets and frames for each mode ---
-        self.pct_var = customtkinter.StringVar(value="100")
-        self.w_var = customtkinter.StringVar()
-        self.h_var = customtkinter.StringVar()
-
-        # Ratio Mode
-        frame_ratio = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
-        self.ratio_entry = customtkinter.CTkEntry(
-            frame_ratio,
-            textvariable=self.pct_var,
-            width=54,
-            validate="key",
-            validatecommand=vcmd,
-            font=self.font_default,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.ratio_entry.pack(side="left")
-        customtkinter.CTkLabel(
-            frame_ratio, text="%", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
-        ).pack(side="left")
-
-        # Width Mode
-        frame_width = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
-        self.entry_w_single = customtkinter.CTkEntry(
-            frame_width,
-            textvariable=self.w_var,
-            width=64,
-            validate="key",
-            validatecommand=vcmd,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.entry_w_single.pack(side="left")
-        customtkinter.CTkLabel(
-            frame_width, text="px", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
-        ).pack(side="left")
-
-        # Height Mode
-        frame_height = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
-        self.entry_h_single = customtkinter.CTkEntry(
-            frame_height,
-            textvariable=self.h_var,
-            width=64,
-            validate="key",
-            validatecommand=vcmd,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.entry_h_single.pack(side="left")
-        customtkinter.CTkLabel(
-            frame_height, text="px", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
-        ).pack(side="left")
-
-        # Fixed Mode
-        frame_fixed = customtkinter.CTkFrame(self.entry_frame, fg_color="transparent")
-        self.entry_w_fixed = customtkinter.CTkEntry(
-            frame_fixed,
-            textvariable=self.w_var,
-            width=64,
-            validate="key",
-            validatecommand=vcmd,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.entry_w_fixed.pack(side="left")
-        customtkinter.CTkLabel(
-            frame_fixed, text="×", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
-        ).pack(side="left")
-        self.entry_h_fixed = customtkinter.CTkEntry(
-            frame_fixed,
-            textvariable=self.h_var,
-            width=64,
-            validate="key",
-            validatecommand=vcmd,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-            corner_radius=8,
-        )
-        self.entry_h_fixed.pack(side="left")
-        customtkinter.CTkLabel(
-            frame_fixed, text="px", font=self.font_default, text_color=METALLIC_COLORS["text_secondary"]
-        ).pack(side="left")
-
-        # --- Group frames and entries for easy management ---
-        self.mode_frames = {
-            "ratio": frame_ratio,
-            "width": frame_width,
-            "height": frame_height,
-            "fixed": frame_fixed,
-        }
-        self.active_mode_frame: Optional[customtkinter.CTkFrame] = None
-
-        self._all_entries = [
-            self.ratio_entry,
-            self.entry_w_single, self.entry_h_single,
-            self.entry_w_fixed, self.entry_h_fixed
-        ]
-        self._entry_widgets = {
-            "ratio": [self.ratio_entry],
-            "width": [self.entry_w_single],
-            "height": [self.entry_h_single],
-            "fixed": [self.entry_w_fixed, self.entry_h_fixed],
-        }
-
-        self._auto_preview_timer: Optional[str] = None
-        for var in (self.pct_var, self.w_var, self.h_var):
-            var.trace_add("write", self._schedule_auto_preview)
+        """入力ウィジェットをセットアップ（実装は専用モジュールへ委譲）。"""
+        topbar_layout.setup_entry_widgets(self, parent, colors=METALLIC_COLORS)
 
     def _schedule_auto_preview(self, *_args: Any) -> None:
-        if self._auto_preview_timer is not None:
-            self.after_cancel(self._auto_preview_timer)
-        self._auto_preview_timer = self.after(300, self._auto_preview)
+        topbar_layout.schedule_auto_preview(self, *_args)
 
     def _auto_preview(self) -> None:
-        self._auto_preview_timer = None
-        if self.current_index is None:
-            return
-        if self._is_loading_files:
-            return
-        if self._operation_scope is not None and self._operation_scope.active:
-            return
-        try:
-            self._draw_previews(self.jobs[self.current_index])
-        except Exception:
-            pass
+        topbar_layout.trigger_auto_preview(self)
 
     def _setup_action_buttons(self, parent):
-        """アクションボタンをセットアップ"""
-        topbar_widths = TOPBAR_WIDTHS["normal"]
-        self._icon_refresh = load_icon("refresh-cw", 16)
-        self.preview_button = customtkinter.CTkButton(
-            parent,
-            text="プレビュー",
-            image=self._icon_refresh,
-            compound="left",
-            width=topbar_widths["preview"],
-            command=self._preview_current,
-            font=self.font_default
-        )
-        self._style_outline_button(self.preview_button)
-        self.preview_button.pack(side="left", padx=(0, 8), pady=8)
-        
-        self._icon_save = load_icon("save", 16)
-        self.save_button = customtkinter.CTkButton(
-            parent,
-            text="保存",
-            image=self._icon_save,
-            compound="left",
-            width=topbar_widths["save"],
-            command=self._save_current,
-            font=self.font_default
-        )
-        self._style_primary_button(self.save_button)
-        self.save_button.pack(side="left", pady=8)
-        
-        self._icon_folder = load_icon("folder", 16)
-        self.batch_button = customtkinter.CTkButton(
-            parent,
-            text=self._batch_button_text_for_density(self._topbar_density),
-            image=self._icon_folder,
-            compound="left",
-            width=topbar_widths["batch"],
-            command=self._batch_save,
-            font=self.font_default
-        )
-        self._style_primary_button(self.batch_button)
-        self.batch_button.pack(side="left", padx=8, pady=8)
-
-        # Zoom combobox
-        self.zoom_var = customtkinter.StringVar(value="画面に合わせる")
-        self.zoom_cb = customtkinter.CTkComboBox(
-            parent,
-            variable=self.zoom_var,
-            values=["画面に合わせる", "100%", "200%", "300%"],
-            width=topbar_widths["zoom"],
-            state="readonly",
-            command=self._apply_zoom_selection,
-            font=self.font_default,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            border_color=METALLIC_COLORS["border_light"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.zoom_cb.pack(side="left", padx=(4, 8), pady=8)
+        """アクションボタンをセットアップ（実装は専用モジュールへ委譲）。"""
+        topbar_layout.setup_action_buttons(self, parent, colors=METALLIC_COLORS)
 
     def _setup_output_controls(self, parent):
         """保存関連の設定コントロールをセットアップ"""
@@ -2414,162 +1615,55 @@ class ResizeApp(customtkinter.CTk):
         self._ensure_run_log_handler()
 
     def _setup_main_layout(self):
-        """メインレイアウトをセットアップ"""
-        self._setup_progress_bar_and_cancel()
-        self._setup_status_bar()
-
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-
-        self._setup_left_panel()
-        self._setup_right_panel()
-
-        # Bind events and initialize runtime variables
-        self.bind("<Configure>", self._on_root_resize)
-        self._last_canvas_size: Tuple[int, int] = (DEFAULT_PREVIEW, DEFAULT_PREVIEW)
-        self._imgtk_org: Optional[ImageTk.PhotoImage] = None
-        self._imgtk_resz: Optional[ImageTk.PhotoImage] = None
-        self._zoom_org: Optional[float] = None
-        self._zoom_resz: Optional[float] = None
-
+        main_layout.setup_main_layout(
+            self,
+            colors=METALLIC_COLORS,
+            default_preview=DEFAULT_PREVIEW,
+        )
 
     def _setup_progress_bar_and_cancel(self):
-        """プログレスバーとキャンセルボタンをセットアップ"""
-        self.progress_bar = customtkinter.CTkProgressBar(
-            self,
-            width=400,
-            height=20,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            progress_color=METALLIC_COLORS["primary"],
-        )
-        self.progress_bar.set(0)
-        self.progress_bar.pack_forget()  # 初期は非表示
-
-        self.cancel_button = customtkinter.CTkButton(
-            self, text="キャンセル", width=100, command=self._cancel_active_operation
-        )
-        self._style_secondary_button(self.cancel_button)
-        self.cancel_button.pack_forget()  # 初期は非表示
+        main_layout.setup_progress_bar_and_cancel(self, colors=METALLIC_COLORS)
 
     def _setup_status_bar(self):
-        """ステータスバーをセットアップ"""
-        self.operation_stage_var = customtkinter.StringVar(value="")
-        self.operation_stage_label = customtkinter.CTkLabel(
-            self,
-            textvariable=self.operation_stage_var,
-            anchor="w",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["warning"],
-            fg_color=METALLIC_COLORS["bg_secondary"],
-            corner_radius=10,
-            padx=10,
-        )
-        self.operation_stage_label.pack_forget()
-
-        self.action_hint_var = customtkinter.StringVar(value="")
-        self.action_hint_label = customtkinter.CTkLabel(
-            self,
-            textvariable=self.action_hint_var,
-            anchor="w",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["warning"],
-            fg_color=METALLIC_COLORS["bg_secondary"],
-            corner_radius=10,
-            padx=10,
-        )
-        self.action_hint_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
-
-        self.session_summary_var = customtkinter.StringVar(value="")
-        self.session_summary_label = customtkinter.CTkLabel(
-            self,
-            textvariable=self.session_summary_var,
-            anchor="w",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-            fg_color=METALLIC_COLORS["bg_secondary"],
-            corner_radius=10,
-            padx=10,
-        )
-        self.session_summary_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
-
-        self.status_var = customtkinter.StringVar(value="準備完了")
-        self.status_label = customtkinter.CTkLabel(
-            self,
-            textvariable=self.status_var,
-            anchor='w',
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-            fg_color=METALLIC_COLORS["bg_secondary"],
-            corner_radius=10,
-            padx=10,
-        )
-        self.status_label.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
+        main_layout.setup_status_bar(self, colors=METALLIC_COLORS)
 
     def _show_operation_stage(self, stage_text: str) -> None:
-        if not stage_text:
-            return
-        self.operation_stage_var.set(f"処理段階: {stage_text} / {OPERATION_ONLY_CANCEL_HINT}")
-        if self.operation_stage_label.winfo_manager() != "pack":
-            self.operation_stage_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+        main_layout.show_operation_stage(
+            self,
+            stage_text,
+            operation_only_cancel_hint=OPERATION_ONLY_CANCEL_HINT,
+        )
 
     def _hide_operation_stage(self) -> None:
-        self.operation_stage_var.set("")
-        if self.operation_stage_label.winfo_manager():
-            self.operation_stage_label.pack_forget()
+        main_layout.hide_operation_stage(self)
 
     @staticmethod
     def _shorten_path_for_summary(path_text: str, max_len: int = 46) -> str:
-        value = str(path_text).strip()
-        if len(value) <= max_len:
-            return value
-        head = max_len // 2 - 1
-        tail = max_len - head - 1
-        return f"{value[:head]}…{value[-tail:]}"
+        return main_layout.shorten_path_for_summary(path_text, max_len=max_len)
 
     def _session_status_text(self) -> str:
-        mode = self.ui_mode_var.get() if hasattr(self, "ui_mode_var") else "簡易"
-        dry_run = "ON" if (hasattr(self, "dry_run_var") and self.dry_run_var.get()) else "OFF"
-        total = len(self.jobs)
-        failed = sum(1 for job in self.jobs if job.last_process_state == "failed")
-        unprocessed = sum(1 for job in self.jobs if job.last_process_state == "unprocessed")
-        visible = len(self._visible_job_indices)
-        if hasattr(self, "file_filter_var"):
-            filter_label_value = self.file_filter_var.get()
-        else:
-            filter_label_value = "全件"
-        filter_id = FILE_FILTER_LABEL_TO_ID.get(filter_label_value, "all")
-        filter_label = FILE_FILTER_ID_TO_LABEL.get(filter_id, filter_label_value)
-        output_dir = str(self.settings.get("last_output_dir") or self.settings.get("default_output_dir") or "-")
-        output_dir = self._shorten_path_for_summary(output_dir)
-        return (
-            f"セッション: モード {mode} / 表示 {visible}/{total} ({filter_label}) / "
-            f"未処理 {unprocessed} / 失敗 {failed} / ドライラン {dry_run} / 保存先 {output_dir}"
+        return main_layout.session_status_text(
+            self,
+            file_filter_label_to_id=FILE_FILTER_LABEL_TO_ID,
+            file_filter_id_to_label=FILE_FILTER_ID_TO_LABEL,
         )
 
     def _update_session_summary(self) -> None:
-        if not hasattr(self, "session_summary_var"):
-            return
-        self.session_summary_var.set(self._session_status_text())
+        main_layout.update_session_summary(
+            self,
+            file_filter_label_to_id=FILE_FILTER_LABEL_TO_ID,
+            file_filter_id_to_label=FILE_FILTER_ID_TO_LABEL,
+        )
 
     def _refresh_status_indicators(self) -> None:
-        self._update_action_hint()
-        self._update_session_summary()
+        main_layout.refresh_status_indicators(
+            self,
+            file_filter_label_to_id=FILE_FILTER_LABEL_TO_ID,
+            file_filter_id_to_label=FILE_FILTER_ID_TO_LABEL,
+        )
 
     def _update_action_hint(self) -> None:
-        if not hasattr(self, "action_hint_var"):
-            return
-        if self._is_loading_files:
-            reason = "読み込み中です。完了または中止後に操作できます。"
-        elif self._operation_scope is not None and self._operation_scope.active:
-            reason = "処理中です。キャンセル以外の操作はできません。"
-        elif not self.jobs:
-            reason = "画像が未選択です。まず画像を読み込んでください。"
-        elif self.current_index is None:
-            reason = "左の一覧から対象画像を選択してください。"
-        else:
-            reason = "準備完了です。プレビュー・保存を実行できます。"
-        self._action_hint_reason = reason
-        self.action_hint_var.set(f"操作ガイド: {reason}")
+        main_layout.update_action_hint(self)
 
     def _show_progress_with_cancel(
         self,
@@ -2577,23 +1671,23 @@ class ResizeApp(customtkinter.CTk):
         cancel_command: Callable[[], None],
         initial_progress: float,
     ) -> None:
-        self.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
-        self.cancel_button.configure(text=cancel_text, command=cancel_command)
-        self.cancel_button.pack(side="bottom", pady=(0, 10))
-        self.progress_bar.set(max(0.0, min(1.0, initial_progress)))
+        main_layout.show_progress_with_cancel(
+            self,
+            cancel_text,
+            cancel_command,
+            initial_progress,
+        )
 
     def _hide_progress_with_cancel(self) -> None:
-        self.progress_bar.pack_forget()
-        self.cancel_button.pack_forget()
-        self.cancel_button.configure(text="キャンセル", command=self._cancel_active_operation)
+        main_layout.hide_progress_with_cancel(self)
 
     def _build_operation_scope_hooks(self) -> OperationScopeHooks:
-        return OperationScopeHooks(
-            set_controls_enabled=self._set_interactive_controls_enabled,
-            show_progress_with_cancel=self._show_progress_with_cancel,
-            hide_progress_with_cancel=self._hide_progress_with_cancel,
-            show_stage=self._show_operation_stage,
-            hide_stage=self._hide_operation_stage,
+        return cast(
+            OperationScopeHooks,
+            main_layout.build_operation_scope_hooks(
+                self,
+                operation_scope_hooks_cls=OperationScopeHooks,
+            ),
         )
 
     def _begin_operation_scope(
@@ -2604,309 +1698,58 @@ class ResizeApp(customtkinter.CTk):
         cancel_command: Callable[[], None],
         initial_progress: float,
     ) -> None:
-        self._end_operation_scope()
-        self._operation_scope = OperationScope(
-            hooks=self._build_operation_scope_hooks(),
+        main_layout.begin_operation_scope(
+            self,
+            operation_scope_cls=OperationScope,
+            operation_scope_hooks_cls=OperationScopeHooks,
             stage_text=stage_text,
             cancel_text=cancel_text,
             cancel_command=cancel_command,
             initial_progress=initial_progress,
         )
-        self._operation_scope.begin()
 
     def _set_operation_stage(self, stage_text: str) -> None:
-        if self._operation_scope is not None and self._operation_scope.active:
-            self._operation_scope.set_stage(stage_text)
-            return
-        self._show_operation_stage(stage_text)
+        main_layout.set_operation_stage(self, stage_text)
 
     def _end_operation_scope(self) -> None:
-        if self._operation_scope is None:
-            return
-        self._operation_scope.close()
-        self._operation_scope = None
+        main_layout.end_operation_scope(self)
 
     def _setup_left_panel(self):
-        """左側のパネル（ファイルリスト）をセットアップ"""
-        # Create main content frame
-        self.main_content = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.main_content.pack(fill="both", expand=True, padx=12, pady=8)
-        
-        self.file_list_frame = customtkinter.CTkScrollableFrame(
-            self.main_content,
-            label_text="ファイルリスト",
-            label_font=self.font_small,
-            width=250,
-            fg_color=METALLIC_COLORS["bg_secondary"],
-            border_width=1,
-            border_color=METALLIC_COLORS["border_light"],
-            label_fg_color=METALLIC_COLORS["bg_tertiary"],
-            label_text_color=METALLIC_COLORS["text_secondary"],
-            corner_radius=12,
+        main_layout.setup_left_panel(
+            self,
+            colors=METALLIC_COLORS,
+            file_filter_labels=list(FILE_FILTER_LABEL_TO_ID.keys()),
         )
-        self.file_list_frame.pack(side="left", fill="y", padx=(0, 6))
-        self.file_filter_var = customtkinter.StringVar(value="全件")
-        self.file_filter_segment = customtkinter.CTkSegmentedButton(
-            self.file_list_frame,
-            values=list(FILE_FILTER_LABEL_TO_ID.keys()),
-            variable=self.file_filter_var,
-            command=self._on_file_filter_changed,
-            width=220,
-            font=self.font_small,
-            selected_color=METALLIC_COLORS["primary"],
-            selected_hover_color=METALLIC_COLORS["hover"],
-            unselected_color=METALLIC_COLORS["bg_tertiary"],
-            unselected_hover_color=METALLIC_COLORS["accent_soft"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.file_filter_segment.pack(fill="x", padx=8, pady=(8, 4))
-        self._register_tooltip(self.file_filter_segment, "一覧表示を全件・失敗・未処理で切り替えます。")
-        self.file_buttons: List[customtkinter.CTkButton] = []
-        self.empty_state_label = customtkinter.CTkLabel(
-            self.file_list_frame,
-            text="",
-            justify="left",
-            anchor="w",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_secondary"],
-            wraplength=220,
-        )
-        self.empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
-        self._update_empty_state_hint()
 
     def _setup_right_panel(self):
-        """右側のパネル（プレビュー）をセットアップ"""
-        preview_pane = customtkinter.CTkFrame(self.main_content, fg_color="transparent")
-        preview_pane.pack(side="right", fill="both", expand=True, padx=(5, 0))
-        preview_pane.grid_rowconfigure(0, weight=1)
-        preview_pane.grid_rowconfigure(1, weight=0)
-        preview_pane.grid_columnconfigure(0, weight=1)
-        preview_pane.grid_columnconfigure(1, weight=1)
-
-        # Original Preview
-        frame_original = customtkinter.CTkFrame(preview_pane, corner_radius=12)
-        self._style_card_frame(frame_original, corner_radius=12)
-        frame_original.grid(row=0, column=0, sticky="nswe", padx=(0, 4), pady=(0, 5))
-        frame_original.grid_rowconfigure(1, weight=1)
-        frame_original.grid_columnconfigure(0, weight=1)
-        customtkinter.CTkLabel(
-            frame_original,
-            text="オリジナル",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
-        self.canvas_org = customtkinter.CTkCanvas(frame_original, bg=self._canvas_background_color(), highlightthickness=0)
-        self.canvas_org.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.info_orig_var = customtkinter.StringVar(value="--- x ---  ---")
-        customtkinter.CTkLabel(
-            frame_original,
-            textvariable=self.info_orig_var,
-            justify="left",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-        ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
-
-        # Resized Preview
-        self.lf_resized = customtkinter.CTkFrame(preview_pane, corner_radius=12)
-        self._style_card_frame(self.lf_resized, corner_radius=12)
-        self.lf_resized.grid(row=0, column=1, sticky="nswe", padx=(4, 0), pady=(0, 5))
-        self.lf_resized.grid_rowconfigure(1, weight=1)
-        self.lf_resized.grid_columnconfigure(0, weight=1)
-        self.resized_title_label = customtkinter.CTkLabel(
-            self.lf_resized,
-            text="リサイズ後",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        )
-        self.resized_title_label.grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
-        self.canvas_resz = customtkinter.CTkCanvas(self.lf_resized, bg=self._canvas_background_color(), highlightthickness=0)
-        self.canvas_resz.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.info_resized_var = customtkinter.StringVar(value="--- x ---  ---  (---)")
-        customtkinter.CTkLabel(
-            self.lf_resized,
-            textvariable=self.info_resized_var,
-            justify="left",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-        ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
-
-        # Canvas Interactions
-        self.canvas_org.bind("<MouseWheel>", lambda e: self._on_zoom(e, is_resized=False))
-        self.canvas_resz.bind("<MouseWheel>", lambda e: self._on_zoom(e, is_resized=True))
-        self.canvas_org.bind("<ButtonPress-1>", lambda e: self.canvas_org.scan_mark(e.x, e.y))
-        self.canvas_org.bind("<B1-Motion>",   lambda e: self.canvas_org.scan_dragto(e.x, e.y, gain=1))
-        self.canvas_resz.bind("<ButtonPress-1>", lambda e: self.canvas_resz.scan_mark(e.x, e.y))
-        self.canvas_resz.bind("<B1-Motion>",   lambda e: self.canvas_resz.scan_dragto(e.x, e.y, gain=1))
-
-        # Metadata preview (pro mode only)
-        self.metadata_frame = customtkinter.CTkFrame(preview_pane, corner_radius=12)
-        self._style_card_frame(self.metadata_frame, corner_radius=12)
-        self.metadata_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
-
-        self.metadata_header_frame = customtkinter.CTkFrame(self.metadata_frame, fg_color="transparent")
-        self.metadata_header_frame.pack(side="top", fill="x", padx=8, pady=(8, 4))
-
-        self.metadata_title_label = customtkinter.CTkLabel(
-            self.metadata_header_frame,
-            text="メタデータ（プロ）",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        )
-        self.metadata_title_label.pack(side="left")
-
-        self.metadata_toggle_button = customtkinter.CTkButton(
-            self.metadata_header_frame,
-            text="表示",
-            width=80,
-            command=self._toggle_metadata_panel,
-            font=self.font_small,
-        )
-        self._style_tertiary_button(self.metadata_toggle_button)
-        self.metadata_toggle_button.pack(side="right")
-
-        self.metadata_status_var = customtkinter.StringVar(value="画像を選択するとメタデータを表示できます")
-        self.metadata_status_label = customtkinter.CTkLabel(
-            self.metadata_frame,
-            textvariable=self.metadata_status_var,
-            anchor="w",
-            justify="left",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_tertiary"],
-        )
-        self.metadata_status_label.pack(side="top", fill="x", padx=10, pady=(0, 4))
-
-        self.metadata_textbox = customtkinter.CTkTextbox(
-            self.metadata_frame,
-            height=120,
-            corner_radius=8,
-            border_width=1,
-            border_color=METALLIC_COLORS["border_light"],
-            fg_color=METALLIC_COLORS["input_bg"],
-            text_color=cast(Any, METALLIC_COLORS["text_primary"]),
-            font=self.font_small,
-            wrap="word",
-        )
-        self.metadata_expanded = False
-        self._set_metadata_panel_expanded(False)
-        self._set_metadata_text("（プロモードで表示可能）")
+        main_layout.setup_right_panel(self, colors=METALLIC_COLORS)
 
     def _toggle_metadata_panel(self):
-        self._set_metadata_panel_expanded(not self.metadata_expanded)
+        main_layout.toggle_metadata_panel(self)
 
     def _set_metadata_panel_expanded(self, expanded: bool):
-        self.metadata_expanded = expanded
-        if expanded:
-            if self.metadata_textbox.winfo_manager() != "pack":
-                self.metadata_textbox.pack(side="top", fill="x", padx=10, pady=(0, 10))
-            self.metadata_toggle_button.configure(text="隠す")
-        else:
-            if self.metadata_textbox.winfo_manager():
-                self.metadata_textbox.pack_forget()
-            self.metadata_toggle_button.configure(text="表示")
+        main_layout.set_metadata_panel_expanded(self, expanded)
 
     def _set_metadata_text(self, text: str):
-        self.metadata_textbox.configure(state="normal")
-        self.metadata_textbox.delete("1.0", "end")
-        self.metadata_textbox.insert("1.0", text)
-        self.metadata_textbox.configure(state="disabled")
+        main_layout.set_metadata_text(self, text)
 
     @staticmethod
     def _decode_exif_value(value: object) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            raw = value
-            if raw.startswith(b"ASCII\x00\x00\x00"):
-                raw = raw[8:]
-            text = raw.decode("utf-8", errors="ignore").strip("\x00 ").strip()
-            if not text:
-                text = raw.decode("latin-1", errors="ignore").strip("\x00 ").strip()
-            return text
-        if hasattr(value, "numerator") and hasattr(value, "denominator"):
-            denominator = getattr(value, "denominator", 1) or 1
-            numerator = getattr(value, "numerator", 0)
-            try:
-                ratio = float(numerator) / float(denominator)
-                if abs(ratio - round(ratio)) < 1e-9:
-                    return str(int(round(ratio)))
-                return f"{ratio:.4g}"
-            except Exception:
-                return str(value).strip()
-        if isinstance(value, tuple):
-            if len(value) == 2 and all(isinstance(v, (int, float)) for v in value):
-                denominator = value[1] if value[1] else 1
-                ratio = value[0] / denominator
-                if abs(ratio - round(ratio)) < 1e-9:
-                    return str(int(round(ratio)))
-                return f"{ratio:.4g}"
-            parts = [ResizeApp._decode_exif_value(v) for v in value]
-            return ", ".join(p for p in parts if p)
-        return str(value).strip()
+        return main_layout.decode_exif_value(value)
 
     def _extract_metadata_text(self, job: ImageJob) -> str:
-        if job.metadata_loaded:
-            return job.metadata_text
-
-        try:
-            with Image.open(job.path) as src:
-                exif = src.getexif()
-            has_exif = bool(exif)
-            tag_count = len(exif)
-            try:
-                gps_ifd = exif.get_ifd(EXIF_GPS_INFO_TAG)
-                has_gps = bool(gps_ifd)
-            except Exception:
-                has_gps = EXIF_GPS_INFO_TAG in exif
-
-            lines = [
-                f"EXIF: {'あり' if has_exif else 'なし'}",
-                f"タグ数: {tag_count}",
-                f"GPS: {'あり' if has_gps else 'なし'}",
-            ]
-            for label, tag_id in EXIF_PREVIEW_TAGS:
-                text = self._decode_exif_value(exif.get(tag_id))
-                if text:
-                    lines.append(f"{label}: {self._trim_preview_text(text, max_len=80)}")
-
-            if not has_exif:
-                lines.append("元画像にEXIFメタデータはありません。")
-            job.metadata_text = "\n".join(lines)
-            job.metadata_error = None
-        except Exception as exc:
-            job.metadata_error = str(exc)
-            job.metadata_text = "メタデータの取得に失敗しました。"
-
-        job.metadata_loaded = True
-        return job.metadata_text
+        return main_layout.extract_metadata_text(
+            self,
+            job,
+            exif_gps_info_tag=EXIF_GPS_INFO_TAG,
+            exif_preview_tags=EXIF_PREVIEW_TAGS,
+        )
 
     def _update_metadata_preview(self, job: Optional[ImageJob]):
-        if not hasattr(self, "metadata_status_var"):
-            return
-        if job is None:
-            self.metadata_status_var.set("画像を選択するとメタデータを表示できます")
-            self._set_metadata_text("（画像未選択）")
-            return
-
-        metadata_text = self._extract_metadata_text(job)
-        if job.metadata_error:
-            self.metadata_status_var.set(f"メタデータ: 取得失敗 ({job.path.name})")
-        else:
-            self.metadata_status_var.set(f"メタデータ: {job.path.name}")
-        self._set_metadata_text(metadata_text)
+        main_layout.update_metadata_preview(self, job)
 
     def _update_metadata_panel_state(self):
-        if not hasattr(self, "metadata_frame"):
-            return
-        if self._is_pro_mode():
-            if self.metadata_frame.winfo_manager() != "grid":
-                self.metadata_frame.grid()
-            selected_job = None
-            if self.current_index is not None and self.current_index < len(self.jobs):
-                selected_job = self.jobs[self.current_index]
-            self._update_metadata_preview(selected_job)
-        else:
-            if self.metadata_frame.winfo_manager():
-                self.metadata_frame.grid_remove()
+        main_layout.update_metadata_panel_state(self)
 
     def _restore_settings(self):
         """保存された設定を復元"""
@@ -3358,208 +2201,57 @@ class ResizeApp(customtkinter.CTk):
             actives[0].focus_set()
 
     def _setup_drag_and_drop(self) -> None:
-        if not TKDND_AVAILABLE or TkinterDnD is None:
-            logging.info("Drag and drop disabled: tkinterdnd2 unavailable")
-            return
-
-        try:
-            TkinterDnD._require(self)
-        except Exception as exc:
-            logging.warning("Drag and drop initialization failed: %s", exc)
-            return
-
-        targets = [
+        input_sources.setup_drag_and_drop(
             self,
-            self.main_content,
-            self.file_list_frame,
-            self.canvas_org,
-            self.canvas_resz,
-        ]
-        registered = 0
-        for widget in targets:
-            try:
-                widget.drop_target_register(DND_FILES)
-                widget.dnd_bind("<<DropEnter>>", self._on_drop_enter)
-                widget.dnd_bind("<<DropPosition>>", self._on_drop_position)
-                widget.dnd_bind("<<DropLeave>>", self._on_drop_leave)
-                widget.dnd_bind("<<Drop>>", self._on_drop_files)
-                registered += 1
-            except Exception:
-                logging.exception("Failed to register drop target: %s", widget)
-
-        self._drag_drop_enabled = registered > 0
-        if self._drag_drop_enabled:
-            logging.info("Drag and drop enabled on %d widgets", registered)
+            tkdnd_available=TKDND_AVAILABLE,
+            tkdnd_cls=TkinterDnD,
+            dnd_files=DND_FILES,
+        )
 
     @staticmethod
     def _dedupe_paths(paths: List[Path]) -> List[Path]:
-        seen: set[str] = set()
-        deduped: List[Path] = []
-        for path in paths:
-            marker = str(path).lower()
-            if marker in seen:
-                continue
-            seen.add(marker)
-            deduped.append(path)
-        return deduped
+        return input_sources.dedupe_paths(paths)
 
     @staticmethod
     def _is_selectable_input_file(path: Path) -> bool:
-        return path.suffix.lower() in SELECTABLE_INPUT_EXTENSIONS
+        return input_sources.is_selectable_input_file(
+            path,
+            selectable_input_extensions=SELECTABLE_INPUT_EXTENSIONS,
+        )
 
     @staticmethod
     def _normalize_dropped_path_text(value: str) -> str:
-        text = value.strip()
-        if not text:
-            return ""
-        if text.startswith("file://"):
-            parsed = urlparse(text)
-            if parsed.scheme == "file":
-                normalized = unquote(parsed.path or "")
-                if parsed.netloc and parsed.netloc.lower() != "localhost":
-                    normalized = f"//{parsed.netloc}{normalized}"
-                if os.name == "nt" and len(normalized) >= 3 and normalized[0] == "/" and normalized[2] == ":":
-                    normalized = normalized[1:]
-                if normalized:
-                    text = normalized
-        return text
+        return input_sources.normalize_dropped_path_text(value)
 
     def _parse_drop_paths(self, raw_data: Any) -> List[Path]:
-        data = str(raw_data or "").strip()
-        if not data:
-            return []
-        try:
-            raw_items = list(self.tk.splitlist(data))
-        except Exception:
-            raw_items = [data]
-
-        expanded_items: List[str] = []
-        for item in raw_items:
-            text = str(item)
-            if "\n" in text:
-                expanded_items.extend(line for line in text.splitlines() if line.strip())
-            else:
-                expanded_items.append(text)
-
-        paths: List[Path] = []
-        for item in expanded_items:
-            text = str(item).strip()
-            if text.startswith("{") and text.endswith("}"):
-                text = text[1:-1]
-            text = text.strip().strip('"')
-            text = self._normalize_dropped_path_text(text)
-            if text:
-                paths.append(Path(text))
-        return self._dedupe_paths(paths)
+        return input_sources.parse_drop_paths(self, raw_data)
 
     def _on_drop_enter(self, _event: Any) -> str:
-        return str(COPY)
+        return input_sources.on_drop_enter(COPY, _event)
 
     def _on_drop_position(self, _event: Any) -> str:
-        return str(COPY)
+        return input_sources.on_drop_position(COPY, _event)
 
     def _on_drop_leave(self, _event: Any) -> None:
-        return
+        return input_sources.on_drop_leave(_event)
 
     def _on_drop_files(self, event: Any) -> str:
-        if self._is_loading_files:
-            messagebox.showinfo("処理中", "現在、画像読み込み処理中です。完了またはキャンセル後に再実行してください。")
-            return str(COPY)
-
-        dropped_paths = self._parse_drop_paths(getattr(event, "data", ""))
-        if not dropped_paths:
-            messagebox.showwarning("ドラッグ&ドロップ", "ドロップされたパスを解釈できませんでした。")
-            return str(COPY)
-
-        self._handle_dropped_paths(dropped_paths)
-        return str(COPY)
+        return input_sources.on_drop_files(
+            self,
+            event,
+            copy_token=COPY,
+            selectable_input_extensions=SELECTABLE_INPUT_EXTENSIONS,
+        )
 
     def _handle_dropped_paths(self, dropped_paths: List[Path]) -> None:
-        files: List[Path] = []
-        dirs: List[Path] = []
-        ignored_count = 0
-        for path in dropped_paths:
-            try:
-                if not path.exists():
-                    ignored_count += 1
-                    continue
-                if path.is_dir():
-                    dirs.append(path)
-                elif path.is_file() and self._is_selectable_input_file(path):
-                    files.append(path)
-                else:
-                    ignored_count += 1
-            except OSError:
-                ignored_count += 1
-
-        files = self._dedupe_paths(files)
-        dirs = self._dedupe_paths(dirs)
-        if not files and not dirs:
-            messagebox.showwarning("ドラッグ&ドロップ", "画像ファイルまたはフォルダーが見つかりませんでした。")
-            return
-
-        if dirs and not self._is_pro_mode():
-            switch_to_pro = messagebox.askyesno(
-                "ドラッグ&ドロップ",
-                "フォルダーが含まれています。\n"
-                "プロモードへ切り替えて再帰読み込みしますか？",
-            )
-            if switch_to_pro:
-                self.ui_mode_var.set("プロ")
-                self._apply_ui_mode()
-                self._update_settings_summary()
-            else:
-                dirs = []
-
-        if not files and not dirs:
-            messagebox.showwarning("ドラッグ&ドロップ", "フォルダーを扱うにはプロモードに切り替えてください。")
-            return
-
-        if dirs:
-            self.settings["pro_input_mode"] = "recursive"
-        elif self._is_pro_mode():
-            self.settings["pro_input_mode"] = "files"
-
-        self._start_drop_load_async(files=files, dirs=dirs)
-        if ignored_count > 0:
-            self.status_var.set(f"{self.status_var.get()} / 対象外 {ignored_count}件をスキップ")
+        input_sources.handle_dropped_paths(
+            self,
+            dropped_paths,
+            selectable_input_extensions=SELECTABLE_INPUT_EXTENSIONS,
+        )
 
     def _start_drop_load_async(self, files: List[Path], dirs: List[Path]) -> None:
-        if not files and not dirs:
-            return
-
-        root_dir = dirs[0] if len(dirs) == 1 else None
-        self._begin_file_load_session(
-            mode_label="ドラッグ&ドロップ読込",
-            root_dir=root_dir,
-            clear_existing_jobs=True,
-        )
-        if root_dir is None and files:
-            self.settings["last_input_dir"] = str(files[0].parent)
-        elif root_dir is not None:
-            self.settings["last_input_dir"] = str(root_dir)
-
-        self.status_var.set(
-            f"ドラッグ&ドロップ読込開始: フォルダー{len(dirs)}件 / ファイル{len(files)}件 / "
-            f"{self._loading_hint_text()}"
-        )
-
-        if dirs:
-            worker = threading.Thread(
-                target=self._scan_and_load_drop_items_worker,
-                args=(files, dirs, self._file_load_cancel_event, self._file_load_queue),
-                daemon=True,
-                name="karuku-dnd-loader",
-            )
-        else:
-            worker = threading.Thread(
-                target=self._load_paths_worker,
-                args=(files, self._file_load_cancel_event, self._file_load_queue),
-                daemon=True,
-                name="karuku-dnd-file-loader",
-            )
-        worker.start()
-        self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+        input_sources.start_drop_load_async(self, files, dirs)
 
     @staticmethod
     def _scan_and_load_drop_items_worker(
@@ -3568,173 +2260,34 @@ class ResizeApp(customtkinter.CTk):
         cancel_event: threading.Event,
         out_queue: "queue.Queue[Dict[str, Any]]",
     ) -> None:
-        try:
-            candidates: List[Path] = []
-            seen: set[str] = set()
-
-            def _add_candidate(path: Path) -> None:
-                marker = str(path).lower()
-                if marker in seen:
-                    return
-                seen.add(marker)
-                candidates.append(path)
-
-            detected = 0
-            for path in dropped_files:
-                if cancel_event.is_set():
-                    out_queue.put({"type": "done", "canceled": True})
-                    return
-                if path.exists() and path.is_file() and path.suffix.lower() in SELECTABLE_INPUT_EXTENSIONS:
-                    _add_candidate(path)
-                    detected += 1
-                    if detected % 40 == 0:
-                        out_queue.put({"type": "scan_progress", "count": detected})
-
-            for root_dir in dropped_dirs:
-                if cancel_event.is_set():
-                    out_queue.put({"type": "done", "canceled": True})
-                    return
-                for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
-                    if cancel_event.is_set():
-                        out_queue.put({"type": "done", "canceled": True})
-                        return
-                    base_dir = Path(dirpath)
-                    for name in filenames:
-                        if cancel_event.is_set():
-                            out_queue.put({"type": "done", "canceled": True})
-                            return
-                        if Path(name).suffix.lower() in PRO_MODE_RECURSIVE_INPUT_EXTENSIONS:
-                            _add_candidate(base_dir / name)
-                            detected += 1
-                            if detected % 40 == 0:
-                                out_queue.put({"type": "scan_progress", "count": detected})
-
-            candidates.sort(key=lambda p: str(p).lower())
-            out_queue.put({"type": "scan_done", "total": len(candidates)})
-
-            for index, path in enumerate(candidates, start=1):
-                if cancel_event.is_set():
-                    out_queue.put({"type": "done", "canceled": True})
-                    return
-                try:
-                    with Image.open(path) as opened:
-                        opened.load()
-                        img = ImageOps.exif_transpose(opened)
-                    out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
-                except Exception as exc:
-                    out_queue.put({"type": "load_error", "path": path, "error": str(exc), "index": index})
-
-            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
-        except Exception as exc:
-            out_queue.put({"type": "fatal", "error": str(exc)})
-            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+        input_sources.scan_and_load_drop_items_worker(
+            dropped_files,
+            dropped_dirs,
+            cancel_event,
+            out_queue,
+            selectable_input_extensions=SELECTABLE_INPUT_EXTENSIONS,
+            recursive_extensions=PRO_MODE_RECURSIVE_INPUT_EXTENSIONS,
+        )
 
     # -------------------- file selection -------------------------------
     def _select_files(self):
-        if self._is_loading_files:
-            messagebox.showinfo("処理中", "現在、画像読み込み処理中です。完了またはキャンセル後に再実行してください。")
-            return
-
-        initial_dir = self.settings.get("last_input_dir", "")
-        if self._is_pro_mode():
-            paths, remembered_dir, started_async = self._select_files_in_pro_mode(initial_dir)
-            if started_async:
-                return
-        else:
-            paths, remembered_dir = self._select_files_in_simple_mode(initial_dir)
-        if not paths:
-            return
-
-        if remembered_dir is not None:
-            self.settings["last_input_dir"] = str(remembered_dir)
-
-        self._load_selected_paths(paths)
-        self._populate_listbox()
+        input_sources.select_files(self)
 
     def _select_files_in_simple_mode(self, initial_dir: str) -> Tuple[List[Path], Optional[Path]]:
-        selected = filedialog.askopenfilenames(
-            title="画像を選択",
-            initialdir=initial_dir,
-            filetypes=[("画像", "*.png *.jpg *.jpeg *.webp *.avif"), ("すべて", "*.*")],
-        )
-        if not selected:
-            return [], None
-        paths = [Path(p) for p in selected]
-        return paths, paths[0].parent
+        return input_sources.select_files_in_simple_mode(initial_dir)
 
     def _select_files_in_pro_mode(self, initial_dir: str) -> Tuple[List[Path], Optional[Path], bool]:
-        saved_mode = self._normalized_pro_input_mode(str(self.settings.get("pro_input_mode", "recursive")))
-        default_mode_text = "フォルダー再帰" if saved_mode == "recursive" else "ファイル個別"
-        choice = messagebox.askyesnocancel(
-            "画像選択（プロ）",
-            "はい: フォルダーを再帰読み込み\n"
-            "いいえ: ファイルを個別選択\n"
-            f"キャンセル: 中止\n\n既定: {default_mode_text}",
-            default="yes" if saved_mode == "recursive" else "no",
-        )
-        if choice is None:
-            return [], None, False
-        if choice is False:
-            self.settings["pro_input_mode"] = "files"
-            paths, remembered_dir = self._select_files_in_simple_mode(initial_dir)
-            return paths, remembered_dir, False
-
-        self.settings["pro_input_mode"] = "recursive"
-        root_dir_str = filedialog.askdirectory(
-            title="対象フォルダーを選択（再帰）",
-            initialdir=initial_dir,
-        )
-        if not root_dir_str:
-            return [], None, False
-
-        root_dir = Path(root_dir_str)
-        self._start_recursive_load_async(root_dir)
-        return [], root_dir, True
+        return input_sources.select_files_in_pro_mode(self, initial_dir)
 
     @staticmethod
     def _normalized_pro_input_mode(value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized in {"recursive", "files"}:
-            return normalized
-        return "recursive"
+        return input_sources.normalized_pro_input_mode(value)
 
     def _start_recursive_load_async(self, root_dir: Path) -> None:
-        self._begin_file_load_session(mode_label="再帰読み込み", root_dir=root_dir, clear_existing_jobs=True)
-        self._is_loading_files = True
-        self.status_var.set(
-            f"再帰探索開始: {root_dir} / 読み込み中は他操作を無効化（中止可）"
-        )
-
-        worker = threading.Thread(
-            target=self._scan_and_load_images_worker,
-            args=(root_dir, self._file_load_cancel_event, self._file_load_queue),
-            daemon=True,
-            name="karuku-recursive-loader",
-        )
-        worker.start()
-        self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+        file_load_session.start_recursive_load_async(self, root_dir)
 
     def _start_retry_failed_load_async(self, paths: List[Path]) -> None:
-        unique_paths = list(dict.fromkeys(paths))
-        if not unique_paths:
-            return
-
-        self._begin_file_load_session(
-            mode_label="失敗再試行",
-            root_dir=self._file_load_root_dir,
-            clear_existing_jobs=False,
-        )
-        self.status_var.set(
-            f"失敗再試行開始: 対象 {len(unique_paths)}件 / 読み込み中は他操作を無効化（中止可）"
-        )
-        worker = threading.Thread(
-            target=self._load_paths_worker,
-            args=(unique_paths, self._file_load_cancel_event, self._file_load_queue),
-            daemon=True,
-            name="karuku-retry-loader",
-        )
-        worker.start()
-        self._file_load_after_id = self.after(40, self._poll_file_load_queue)
+        file_load_session.start_retry_failed_load_async(self, paths)
 
     def _begin_file_load_session(
         self,
@@ -3742,31 +2295,12 @@ class ResizeApp(customtkinter.CTk):
         root_dir: Optional[Path],
         clear_existing_jobs: bool,
     ) -> None:
-        if clear_existing_jobs:
-            self._reset_loaded_jobs()
-        if root_dir is not None:
-            self.settings["last_input_dir"] = str(root_dir)
-        self._is_loading_files = True
-        self._file_load_cancel_event = threading.Event()
-        self._file_load_queue = queue.Queue(maxsize=8)
-        self._file_load_after_id = None
-        self._file_load_total_candidates = 0
-        self._file_load_loaded_count = 0
-        self._file_load_failed_details = []
-        self._file_load_failed_paths = []
-        self._file_scan_pulse = 0.0
-        self._file_scan_started_at = time.monotonic()
-        self._file_load_started_at = 0.0
-        self._file_load_mode_label = mode_label
-        self._file_load_root_dir = root_dir
-
-        self._begin_operation_scope(
-            stage_text="探索中",
-            cancel_text="読み込み中止",
-            cancel_command=self._cancel_file_loading,
-            initial_progress=0.05,
+        file_load_session.begin_file_load_session(
+            self,
+            mode_label=mode_label,
+            root_dir=root_dir,
+            clear_existing_jobs=clear_existing_jobs,
         )
-        self._refresh_status_indicators()
 
     def _set_interactive_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -3830,44 +2364,12 @@ class ResizeApp(customtkinter.CTk):
         cancel_event: threading.Event,
         out_queue: "queue.Queue[Dict[str, Any]]",
     ) -> None:
-        try:
-            candidates: List[Path] = []
-            detected = 0
-            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
-                if cancel_event.is_set():
-                    out_queue.put({"type": "done", "canceled": True})
-                    return
-                base_dir = Path(dirpath)
-                for name in filenames:
-                    if cancel_event.is_set():
-                        out_queue.put({"type": "done", "canceled": True})
-                        return
-                    suffix = Path(name).suffix.lower()
-                    if suffix in PRO_MODE_RECURSIVE_INPUT_EXTENSIONS:
-                        candidates.append(base_dir / name)
-                        detected += 1
-                        if detected % 40 == 0:
-                            out_queue.put({"type": "scan_progress", "count": detected})
-
-            candidates.sort(key=lambda p: str(p).lower())
-            out_queue.put({"type": "scan_done", "total": len(candidates)})
-
-            for index, path in enumerate(candidates, start=1):
-                if cancel_event.is_set():
-                    out_queue.put({"type": "done", "canceled": True})
-                    return
-                try:
-                    with Image.open(path) as opened:
-                        opened.load()
-                        img = ImageOps.exif_transpose(opened)
-                    out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
-                except Exception as e:
-                    out_queue.put({"type": "load_error", "path": path, "error": str(e), "index": index})
-
-            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
-        except Exception as e:
-            out_queue.put({"type": "fatal", "error": str(e)})
-            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+        file_load_session.scan_and_load_images_worker(
+            root_dir,
+            cancel_event,
+            out_queue,
+            recursive_extensions=PRO_MODE_RECURSIVE_INPUT_EXTENSIONS,
+        )
 
     @staticmethod
     def _load_paths_worker(
@@ -3875,217 +2377,47 @@ class ResizeApp(customtkinter.CTk):
         cancel_event: threading.Event,
         out_queue: "queue.Queue[Dict[str, Any]]",
     ) -> None:
-        try:
-            out_queue.put({"type": "scan_done", "total": len(paths)})
-            for index, path in enumerate(paths, start=1):
-                if cancel_event.is_set():
-                    out_queue.put({"type": "done", "canceled": True})
-                    return
-                try:
-                    with Image.open(path) as opened:
-                        opened.load()
-                        img = ImageOps.exif_transpose(opened)
-                    out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
-                except Exception as e:
-                    out_queue.put({"type": "load_error", "path": path, "error": str(e), "index": index})
-
-            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
-        except Exception as e:
-            out_queue.put({"type": "fatal", "error": str(e)})
-            out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
+        file_load_session.load_paths_worker(paths, cancel_event, out_queue)
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
-        whole = max(0, int(seconds))
-        if whole < 60:
-            return f"{whole}秒"
-        minutes, sec = divmod(whole, 60)
-        if minutes < 60:
-            return f"{minutes}分{sec:02d}秒"
-        hours, minutes = divmod(minutes, 60)
-        return f"{hours}時間{minutes:02d}分"
+        return file_load_session.format_duration(seconds)
 
     def _format_path_for_display(self, path: Path) -> str:
-        if self._file_load_root_dir is not None:
-            try:
-                return path.relative_to(self._file_load_root_dir).as_posix()
-            except ValueError:
-                pass
-        return str(path)
+        return file_load_session.format_path_for_display(self, path)
 
     def _loading_hint_text(self) -> str:
-        return f"読み込み中は他操作を無効化（{OPERATION_ONLY_CANCEL_HINT}）"
+        return file_load_session.loading_hint_text(
+            operation_only_cancel_hint=OPERATION_ONLY_CANCEL_HINT
+        )
 
     def _loading_progress_status_text(self, latest_path: Optional[Path] = None, failed: bool = False) -> str:
-        total = self._file_load_total_candidates
-        loaded = self._file_load_loaded_count
-        failed_count = len(self._file_load_failed_details)
-        done_count = loaded + failed_count
-        path_text = ""
-        if latest_path is not None:
-            path_text = self._format_path_for_display(latest_path)
-
-        remaining_text = "算出中"
-        speed_text = "速度算出中"
-        if self._file_load_started_at > 0 and total > 0 and done_count > 0:
-            elapsed = max(0.001, time.monotonic() - self._file_load_started_at)
-            speed = done_count / elapsed
-            if speed > 0:
-                remaining_sec = max(0.0, (total - done_count) / speed)
-                remaining_text = self._format_duration(remaining_sec)
-                speed_text = f"{speed:.1f}件/秒"
-
-        prefix = f"{self._file_load_mode_label}: 読込中 {done_count}/{total} (成功{loaded} 失敗{failed_count})"
-        if path_text:
-            action = "失敗" if failed else "処理"
-            prefix += f" / {action}: {path_text}"
-        return f"{prefix} / 残り約{remaining_text} / {speed_text} / {self._loading_hint_text()}"
+        return file_load_session.loading_progress_status_text(
+            self,
+            operation_only_cancel_hint=OPERATION_ONLY_CANCEL_HINT,
+            latest_path=latest_path,
+            failed=failed,
+        )
 
     def _poll_file_load_queue(self) -> None:
-        if not self._is_loading_files:
-            self._file_load_after_id = None
-            return
-
-        handled = 0
-        while handled < 30:
-            try:
-                message = self._file_load_queue.get_nowait()
-            except queue.Empty:
-                break
-            handled += 1
-            self._handle_file_load_message(message)
-            if not self._is_loading_files:
-                break
-
-        if self._is_loading_files:
-            self._file_load_after_id = self.after(40, self._poll_file_load_queue)
-        else:
-            self._file_load_after_id = None
+        file_load_session.poll_file_load_queue(self)
 
     def _handle_file_load_message(self, message: Dict[str, Any]) -> None:
-        msg_type = str(message.get("type", ""))
-        if msg_type == "scan_progress":
-            detected = int(message.get("count", 0))
-            self._file_scan_pulse = (self._file_scan_pulse + 0.08) % 1.0
-            self.progress_bar.set(max(0.05, self._file_scan_pulse))
-            elapsed_text = self._format_duration(time.monotonic() - self._file_scan_started_at)
-            self.status_var.set(
-                f"{self._file_load_mode_label}: 探索中 {detected} 件検出 / 経過{elapsed_text} / {self._loading_hint_text()}"
-            )
-            return
-
-        if msg_type == "scan_done":
-            self._file_load_total_candidates = int(message.get("total", 0))
-            self._file_load_started_at = time.monotonic()
-            self._set_operation_stage("読込中")
-            if self._file_load_total_candidates == 0:
-                self.progress_bar.set(1.0)
-                self.status_var.set(
-                    f"{self._file_load_mode_label}: 対象画像（jpg/jpeg/png）は0件でした"
-                )
-            else:
-                self.progress_bar.set(0)
-                self.status_var.set(
-                    f"{self._file_load_mode_label}: 読込開始 0/{self._file_load_total_candidates} / {self._loading_hint_text()}"
-                )
-            return
-
-        if msg_type == "loaded":
-            path = Path(str(message.get("path", "")))
-            image = message.get("image")
-            if isinstance(image, Image.Image):
-                self.jobs.append(ImageJob(path, image))
-            self._file_load_loaded_count += 1
-            total = self._file_load_total_candidates
-            done_count = self._file_load_loaded_count + len(self._file_load_failed_details)
-            if total > 0:
-                self.progress_bar.set(min(1.0, done_count / total))
-                self.status_var.set(self._loading_progress_status_text(latest_path=path, failed=False))
-            else:
-                self.status_var.set(
-                    f"{self._file_load_mode_label}: 読込中 / 処理: {self._format_path_for_display(path)} / {self._loading_hint_text()}"
-                )
-            return
-
-        if msg_type == "load_error":
-            path = Path(str(message.get("path", "")))
-            error = str(message.get("error", "読み込み失敗"))
-            display_path = self._format_path_for_display(path)
-            self._file_load_failed_details.append(f"{display_path}: {error}")
-            self._file_load_failed_paths.append(path)
-            total = self._file_load_total_candidates
-            done_count = self._file_load_loaded_count + len(self._file_load_failed_details)
-            if total > 0:
-                self.progress_bar.set(min(1.0, done_count / total))
-                self.status_var.set(self._loading_progress_status_text(latest_path=path, failed=True))
-            return
-
-        if msg_type == "fatal":
-            error = str(message.get("error", "不明なエラー"))
-            self._file_load_failed_details.append(f"致命的エラー: {error}")
-            logging.error("Fatal error in recursive loader: %s", error)
-            return
-
-        if msg_type == "done":
-            canceled = bool(message.get("canceled", False))
-            self._finish_recursive_load(canceled=canceled)
+        file_load_session.handle_file_load_message(
+            self,
+            message,
+            operation_only_cancel_hint=OPERATION_ONLY_CANCEL_HINT,
+            image_job_cls=ImageJob,
+        )
 
     def _finish_recursive_load(self, canceled: bool) -> None:
-        retry_paths = list(self._file_load_failed_paths)
-        self._is_loading_files = False
-        if self._file_load_after_id is not None:
-            try:
-                self.after_cancel(self._file_load_after_id)
-            except Exception:
-                pass
-            self._file_load_after_id = None
-
-        self._end_operation_scope()
-
-        if self.jobs:
-            self._populate_listbox()
-        else:
-            self._clear_preview_panels()
-
-        total = self._file_load_total_candidates
-        loaded = self._file_load_loaded_count
-        failed = len(self._file_load_failed_details)
-        if canceled:
-            msg = f"{self._file_load_mode_label}を中止しました。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
-        else:
-            msg = f"{self._file_load_mode_label}完了。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
-        self.status_var.set(msg)
-        retry_callback: Optional[Callable[[], None]] = None
-        if (not canceled) and retry_paths:
-            def _retry_failed_only() -> None:
-                self._start_retry_failed_load_async(retry_paths)
-
-            retry_callback = _retry_failed_only
-        self._show_operation_result_dialog(
-            title="読込結果",
-            summary_text=msg,
-            failed_details=self._file_load_failed_details,
-            retry_callback=retry_callback,
-        )
-        self._refresh_status_indicators()
+        file_load_session.finish_recursive_load(self, canceled)
 
     def _cancel_file_loading(self) -> None:
-        if not self._is_loading_files:
-            return
-        self._file_load_cancel_event.set()
-        self._set_operation_stage("キャンセル中")
-        self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
-        self._refresh_status_indicators()
+        file_load_session.cancel_file_loading(self)
 
     def _copy_text_to_clipboard(self, text: str) -> bool:
-        try:
-            self.clipboard_clear()
-            self.clipboard_append(text)
-            self.update_idletasks()
-            return True
-        except Exception:
-            logging.exception("Failed to copy text to clipboard")
-            return False
+        return result_dialog.copy_text_to_clipboard(self, text)
 
     def _build_failure_report_text(
         self,
@@ -4094,51 +2426,26 @@ class ResizeApp(customtkinter.CTk):
         summary_text: str,
         failed_details: List[str],
     ) -> str:
-        timestamp = datetime.now().isoformat(timespec="seconds")
-        lines = [f"[{timestamp}] {title}", summary_text]
-        if failed_details:
-            lines.append("")
-            lines.append(f"失敗一覧 ({len(failed_details)}件):")
-            lines.extend(f"- {detail}" for detail in failed_details)
-        return "\n".join(lines)
+        return result_dialog.build_failure_report_text(
+            title=title,
+            summary_text=summary_text,
+            failed_details=failed_details,
+        )
 
     @staticmethod
     def _failure_reason_group(detail_text: str) -> str:
-        lower = detail_text.lower()
-        if any(token in lower for token in ("permission", "アクセス拒否", "access denied", "readonly")):
-            return "権限"
-        if any(token in lower for token in ("no such file", "見つかり", "not found", "path")):
-            return "パス/存在"
-        if any(token in lower for token in ("cannot identify image", "format", "unsupported", "decode", "壊れ", "破損")):
-            return "形式/破損"
-        if any(token in lower for token in ("memory", "メモリ", "resource", "リソース")):
-            return "リソース"
-        return "その他"
+        return result_dialog.failure_reason_group(detail_text)
 
     @classmethod
     def _group_failure_details(cls, failed_details: List[str]) -> Dict[str, int]:
-        grouped: Dict[str, int] = {}
-        for detail in failed_details:
-            key = cls._failure_reason_group(detail)
-            grouped[key] = grouped.get(key, 0) + 1
-        return dict(sorted(grouped.items(), key=lambda item: (-item[1], item[0])))
+        return result_dialog.group_failure_details(failed_details)
 
     @classmethod
     def _failure_center_text(cls, failed_details: List[str]) -> str:
-        if not failed_details:
-            return "失敗はありません。"
-        grouped = cls._group_failure_details(failed_details)
-        lines: List[str] = ["原因別サマリー:"]
-        for group_name, count in grouped.items():
-            lines.append(f"- {group_name}: {count}件")
-        lines.append("")
-        lines.append("失敗一覧:")
-        preview = failed_details[:FILE_LOAD_FAILURE_PREVIEW_LIMIT]
-        lines.extend(f"- {detail}" for detail in preview)
-        remaining = len(failed_details) - len(preview)
-        if remaining > 0:
-            lines.append(f"...ほか {remaining} 件")
-        return "\n".join(lines)
+        return result_dialog.failure_center_text(
+            failed_details,
+            file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
+        )
 
     def _show_operation_result_dialog(
         self,
@@ -4148,111 +2455,15 @@ class ResizeApp(customtkinter.CTk):
         failed_details: List[str],
         retry_callback: Optional[Callable[[], None]] = None,
     ) -> None:
-        if self._result_dialog is not None and self._result_dialog.winfo_exists():
-            try:
-                self._result_dialog.grab_release()
-            except Exception:
-                pass
-            self._result_dialog.destroy()
-
-        dialog = customtkinter.CTkToplevel(self)
-        self._result_dialog = dialog
-        dialog.title(title)
-        dialog.geometry("760x430")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
-        dialog.grid_columnconfigure(0, weight=1)
-
-        customtkinter.CTkLabel(
-            dialog,
-            text=title,
-            font=self.font_bold,
-            text_color=METALLIC_COLORS["text_primary"],
-            anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
-
-        customtkinter.CTkLabel(
-            dialog,
-            text=summary_text,
-            justify="left",
-            anchor="w",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-            wraplength=720,
-        ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
-
-        details_text = self._failure_center_text(failed_details)
-
-        details_box = customtkinter.CTkTextbox(
-            dialog,
-            height=230,
-            corner_radius=8,
-            border_width=1,
-            border_color=METALLIC_COLORS["border_light"],
-            fg_color=METALLIC_COLORS["input_bg"],
-            text_color=cast(Any, METALLIC_COLORS["text_primary"]),
-            font=self.font_small,
-            wrap="word",
+        result_dialog.show_operation_result_dialog(
+            self,
+            colors=METALLIC_COLORS,
+            file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
+            title=title,
+            summary_text=summary_text,
+            failed_details=failed_details,
+            retry_callback=retry_callback,
         )
-        details_box.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 10))
-        details_box.insert("1.0", details_text)
-        details_box.configure(state="disabled")
-
-        button_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        button_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 14))
-        button_row.grid_columnconfigure(0, weight=1)
-
-        def _close() -> None:
-            if dialog.winfo_exists():
-                dialog.grab_release()
-                dialog.destroy()
-            self._result_dialog = None
-
-        close_button = customtkinter.CTkButton(
-            button_row,
-            text="閉じる",
-            width=110,
-            command=_close,
-            font=self.font_default,
-        )
-        self._style_secondary_button(close_button)
-        close_button.pack(side="right", padx=(8, 0))
-
-        if retry_callback is not None:
-            retry_button = customtkinter.CTkButton(
-                button_row,
-                text="失敗のみ再試行",
-                width=140,
-                command=lambda: (_close(), retry_callback()),
-                font=self.font_default,
-            )
-            self._style_primary_button(retry_button)
-            retry_button.pack(side="right", padx=(8, 0))
-
-        if failed_details:
-            copy_button = customtkinter.CTkButton(
-                button_row,
-                text="失敗一覧をコピー",
-                width=140,
-                command=lambda: messagebox.showinfo(
-                    "コピー",
-                    "失敗一覧をクリップボードにコピーしました。"
-                    if self._copy_text_to_clipboard(
-                        self._build_failure_report_text(
-                            title=title,
-                            summary_text=summary_text,
-                            failed_details=failed_details,
-                        )
-                    )
-                    else "クリップボードへのコピーに失敗しました。",
-                    parent=dialog,
-                ),
-                font=self.font_default,
-            )
-            self._style_secondary_button(copy_button)
-            copy_button.pack(side="right", padx=(0, 8))
 
     def _reset_loaded_jobs(self) -> None:
         self.jobs.clear()
@@ -5003,348 +3214,19 @@ class ResizeApp(customtkinter.CTk):
         HelpDialog(self, HELP_CONTENT).show()
 
     def _open_settings_dialog(self) -> None:
-        if self._settings_dialog is not None and self._settings_dialog.winfo_exists():
-            self._settings_dialog.focus_set()
-            return
-
-        dialog = customtkinter.CTkToplevel(self)
-        self._settings_dialog = dialog
-        dialog.title("設定")
-        dialog.geometry("640x470")
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
-        dialog.grid_columnconfigure(1, weight=1)
-
-        ui_mode_var = customtkinter.StringVar(value=self.ui_mode_var.get())
-        appearance_var = customtkinter.StringVar(value=self.appearance_mode_var.get())
-        quality_var = customtkinter.StringVar(value=self.quality_var.get())
-        output_format_var = customtkinter.StringVar(value=self.output_format_var.get())
-        default_preset_var = customtkinter.StringVar(
-            value=self._preset_label_for_id(
-                str(self.settings.get("default_preset_id", "")).strip(),
-                PRESET_NONE_LABEL,
-            )
+        settings_dialog.open_settings_dialog(
+            self,
+            colors=METALLIC_COLORS,
+            ui_mode_id_to_label=UI_MODE_ID_TO_LABEL,
+            ui_mode_label_to_id=UI_MODE_LABEL_TO_ID,
+            appearance_id_to_label=APPEARANCE_ID_TO_LABEL,
+            appearance_label_to_id=APPEARANCE_LABEL_TO_ID,
+            format_id_to_label=FORMAT_ID_TO_LABEL,
+            pro_input_mode_id_to_label=PRO_INPUT_MODE_ID_TO_LABEL,
+            pro_input_mode_label_to_id=PRO_INPUT_MODE_LABEL_TO_ID,
+            preset_none_label=PRESET_NONE_LABEL,
+            quality_values=QUALITY_VALUES,
         )
-        pro_input_var = customtkinter.StringVar(
-            value=PRO_INPUT_MODE_ID_TO_LABEL.get(
-                self._normalized_pro_input_mode(str(self.settings.get("pro_input_mode", "recursive"))),
-                "フォルダ再帰",
-            )
-        )
-        show_tooltips_var = customtkinter.BooleanVar(
-            value=self._to_bool(self.settings.get("show_tooltips", True))
-        )
-        default_output_dir_var = customtkinter.StringVar(
-            value=str(self.settings.get("default_output_dir", ""))
-        )
-
-        def _close_dialog() -> None:
-            if dialog.winfo_exists():
-                dialog.grab_release()
-                dialog.destroy()
-            self._settings_dialog = None
-
-        def _browse_default_output_dir() -> None:
-            initial_dir = (
-                default_output_dir_var.get().strip()
-                or str(self.settings.get("last_output_dir", ""))
-                or str(Path.home())
-            )
-            selected_dir = filedialog.askdirectory(
-                title="既定の保存先フォルダを選択",
-                initialdir=initial_dir,
-            )
-            if selected_dir:
-                default_output_dir_var.set(selected_dir)
-
-        def _reset_dialog_values() -> None:
-            if not messagebox.askyesno(
-                "設定初期化の確認",
-                "設定をデフォルト値に戻しますか？\n（保存するまでは反映されません）",
-                parent=dialog,
-            ):
-                return
-            defaults = default_gui_settings()
-            ui_mode_var.set(UI_MODE_ID_TO_LABEL.get(defaults["ui_mode"], "簡易"))
-            appearance_var.set(APPEARANCE_ID_TO_LABEL.get(defaults["appearance_mode"], "システム"))
-            quality_var.set(str(defaults["quality"]))
-            output_format_var.set(FORMAT_ID_TO_LABEL.get(defaults["output_format"], "自動"))
-            pro_input_var.set(
-                PRO_INPUT_MODE_ID_TO_LABEL.get(defaults["pro_input_mode"], "フォルダ再帰")
-            )
-            show_tooltips_var.set(self._to_bool(defaults.get("show_tooltips", True)))
-            default_output_dir_var.set(str(defaults.get("default_output_dir", "")))
-            default_preset_var.set(PRESET_NONE_LABEL)
-
-        def _save_dialog_values() -> None:
-            try:
-                quality_value = normalize_quality(int(quality_var.get()))
-            except (TypeError, ValueError):
-                messagebox.showwarning("入力エラー", "品質は数値で指定してください。", parent=dialog)
-                return
-
-            ui_mode_label = ui_mode_var.get()
-            if ui_mode_label not in UI_MODE_LABEL_TO_ID:
-                ui_mode_label = "簡易"
-
-            appearance_label = appearance_var.get()
-            if appearance_label not in APPEARANCE_LABEL_TO_ID:
-                appearance_label = "システム"
-
-            format_label = output_format_var.get()
-            available_formats = self._build_output_format_labels()
-            if format_label not in available_formats:
-                format_label = "自動"
-
-            pro_input_mode = PRO_INPUT_MODE_LABEL_TO_ID.get(pro_input_var.get(), "recursive")
-            default_output_dir = default_output_dir_var.get().strip()
-            if default_output_dir:
-                default_output_dir = str(Path(default_output_dir).expanduser())
-            selected_default_label = default_preset_var.get().strip()
-            if selected_default_label == PRESET_NONE_LABEL:
-                default_preset_id = ""
-            else:
-                default_preset_id = self._preset_name_to_id.get(selected_default_label, "")
-
-            self.ui_mode_var.set(ui_mode_label)
-            self.appearance_mode_var.set(appearance_label)
-            self.quality_var.set(str(quality_value))
-            self.output_format_var.set(format_label)
-            self.settings["pro_input_mode"] = pro_input_mode
-            self.settings["default_output_dir"] = default_output_dir
-            self.settings["default_preset_id"] = default_preset_id
-            self.settings["show_tooltips"] = bool(show_tooltips_var.get())
-            if not self.settings["show_tooltips"]:
-                self._tooltip_manager.hide()
-
-            self._apply_ui_mode()
-            self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
-            self._on_output_format_changed(self.output_format_var.get())
-            self._on_quality_changed(self.quality_var.get())
-            self._update_settings_summary()
-            self._save_current_settings()
-            self.status_var.set("設定を保存しました。")
-
-            _close_dialog()
-
-        row = 0
-
-        customtkinter.CTkLabel(
-            dialog,
-            text="UIモード",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
-        ui_mode_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            values=list(UI_MODE_LABEL_TO_ID.keys()),
-            variable=ui_mode_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        ui_mode_menu.grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
-        self._register_tooltip(ui_mode_menu, "簡易/プロモードを選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="テーマ",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        appearance_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            values=list(APPEARANCE_LABEL_TO_ID.keys()),
-            variable=appearance_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        appearance_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        self._register_tooltip(appearance_menu, "外観テーマを選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="ホバー説明",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        show_tooltips_check = customtkinter.CTkCheckBox(
-            dialog,
-            text="有効にする",
-            variable=show_tooltips_var,
-            font=self.font_default,
-            fg_color=METALLIC_COLORS["primary"],
-            hover_color=METALLIC_COLORS["hover"],
-            border_color=METALLIC_COLORS["border_medium"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        show_tooltips_check.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="w")
-        self._register_tooltip(show_tooltips_check, "ホバー説明の表示を切り替えます。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="既定の出力形式",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        output_format_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            values=self._build_output_format_labels(),
-            variable=output_format_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        output_format_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        self._register_tooltip(output_format_menu, "起動時の既定出力形式を選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="既定の品質",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        quality_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            values=QUALITY_VALUES,
-            variable=quality_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        quality_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        self._register_tooltip(quality_menu, "起動時の既定品質を選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="既定プリセット",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        default_preset_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            values=self._preset_labels_with_none(),
-            variable=default_preset_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        default_preset_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        self._register_tooltip(default_preset_menu, "起動時に使うプリセットを選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="プロモード入力方式",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        pro_input_menu = customtkinter.CTkOptionMenu(
-            dialog,
-            values=list(PRO_INPUT_MODE_LABEL_TO_ID.keys()),
-            variable=pro_input_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        pro_input_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        self._register_tooltip(pro_input_menu, "プロモードの既定入力方法を選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            dialog,
-            text="既定の保存先フォルダ",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        default_output_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        default_output_frame.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        default_output_frame.grid_columnconfigure(0, weight=1)
-        default_output_entry = customtkinter.CTkEntry(
-            default_output_frame,
-            textvariable=default_output_dir_var,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        default_output_entry.grid(row=0, column=0, sticky="ew")
-        self._register_tooltip(default_output_entry, "既定の保存先フォルダを設定します。")
-        browse_button = customtkinter.CTkButton(
-            default_output_frame,
-            text="参照",
-            width=70,
-            command=_browse_default_output_dir,
-            font=self.font_small,
-        )
-        self._style_secondary_button(browse_button)
-        browse_button.grid(row=0, column=1, padx=(8, 0))
-        self._register_tooltip(browse_button, "フォルダ選択を開きます。")
-
-        button_row = row + 1
-        button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        button_frame.grid(row=button_row, column=0, columnspan=2, padx=20, pady=(18, 16), sticky="e")
-
-        reset_button = customtkinter.CTkButton(
-            button_frame,
-            text="初期化",
-            width=90,
-            command=_reset_dialog_values,
-            font=self.font_small,
-        )
-        self._style_secondary_button(reset_button)
-        reset_button.pack(side="left", padx=(0, 8))
-        self._register_tooltip(reset_button, "設定値を初期状態へ戻します。")
-
-        cancel_button = customtkinter.CTkButton(
-            button_frame,
-            text="キャンセル",
-            width=90,
-            command=_close_dialog,
-            font=self.font_small,
-        )
-        self._style_secondary_button(cancel_button)
-        cancel_button.pack(side="left", padx=(0, 8))
-        self._register_tooltip(cancel_button, "変更を保存せず閉じます。")
-
-        save_button = customtkinter.CTkButton(
-            button_frame,
-            text="保存",
-            width=90,
-            command=_save_dialog_values,
-            font=self.font_small,
-        )
-        self._style_primary_button(save_button)
-        save_button.pack(side="left")
-        self._register_tooltip(save_button, "設定を保存して反映します。")
-
-        dialog.protocol("WM_DELETE_WINDOW", _close_dialog)
-        dialog.focus_set()
 
     def _open_log_folder(self) -> None:
         log_dir = self._run_log_artifacts.log_dir
