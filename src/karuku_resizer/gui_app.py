@@ -1778,6 +1778,10 @@ class ResizeApp(customtkinter.CTk):
 
     def _max_files_for_mode(self, is_pro: bool) -> int:
         raw = self.settings.get("max_files_pro_mode" if is_pro else "max_files_simple_mode")
+        if raw is None:
+            return PRO_MODE_MAX_FILES_DEFAULT if is_pro else SIMPLE_MODE_MAX_FILES_DEFAULT
+        if isinstance(raw, bool):
+            return PRO_MODE_MAX_FILES_DEFAULT if is_pro else SIMPLE_MODE_MAX_FILES_DEFAULT
         try:
             value = int(raw)
         except (TypeError, ValueError):
@@ -1839,7 +1843,12 @@ class ResizeApp(customtkinter.CTk):
         allow_retry: bool,
     ) -> Tuple[SaveResult, int]:
         max_attempts = 2 if allow_retry else 1
-        result: SaveResult = SaveResult(False, output_path, error="未実行")
+        result: SaveResult = SaveResult(
+            success=False,
+            output_path=output_path,
+            exif_mode="keep",
+            error="未実行",
+        )
 
         for attempt in range(1, max_attempts + 1):
             result = save_image(
