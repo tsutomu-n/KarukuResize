@@ -96,7 +96,7 @@ _EXIF_TAG_DATETIME_ORIGINAL = 0x9003
 _EXIF_TAG_USER_COMMENT = 0x9286
 _WINDOWS_LONG_PATH_PREFIX = 260
 
-_WINDOWS_RETRYABLE_CODES = {32}
+_WINDOWS_RETRYABLE_CODES = {32, 33}
 _WINDOWS_UNSUPPORTED_CODES = {2, 3, 80, 123, 206, 995, 1088}
 
 def _normalize_windows_long_path(path: Path) -> Path:
@@ -177,6 +177,13 @@ def _analyze_file_error(error: BaseException) -> Tuple[Optional[int], str, bool,
                 "already_exists",
                 False,
                 "同名ファイルにアクセスできない状態です。保存先に同名のファイルがないか確認してください。",
+            )
+        if code == 80:
+            return (
+                code,
+                "already_exists",
+                False,
+                "既存ファイルまたはディレクトリと競合しています。",
             )
         if code in {28, 122, 112}:
             return (

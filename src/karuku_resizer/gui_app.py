@@ -217,6 +217,30 @@ UI_SCALE_FACTORS = {
     "normal": 1.0,
     "large125": 1.25,
 }
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
 
 BIZ_UD_GOTHIC_FONT_CANDIDATES = [
     "BIZ UDPGothic",
@@ -1768,22 +1792,22 @@ class ResizeApp(customtkinter.CTk):
     def _is_retryable_save_error(result: SaveResult) -> bool:
         if result.retryable:
             return True
-        if result.error_category in {
-            "sharing_violation",
-        }:
+        if result.error_category in {"sharing_violation"}:
             return True
 
         error_text = result.error or ""
         if not error_text:
             return False
         text = error_text.lower()
-        if (result.error_code is not None) and result.error_code in {32}:
+        if (result.error_code is not None) and result.error_code in {32, 33}:
             return True
         return any(
             token in text
             for token in (
                 "resource temporarily unavailable",
                 "temporarily unavailable",
+                "used by another process",
+                "used by another",
                 "in use",
                 "timed out",
                 "timeout",
@@ -1830,12 +1854,13 @@ class ResizeApp(customtkinter.CTk):
                 return result, attempt
             if not self._is_retryable_save_error(result):
                 return result, attempt
+            retry_delay = 0.35 * attempt
             logging.info(
                 "保存再試行: %s (%s)",
                 output_path,
                 result.error,
             )
-            time.sleep(0.25)
+            time.sleep(min(1.5, retry_delay))
 
         return result, max_attempts
 
@@ -3612,6 +3637,26 @@ class ResizeApp(customtkinter.CTk):
             detail = self._readable_os_error(exc, "保存先の事前チェックに失敗しました。")
             return detail
 
+    def _normalize_windows_output_filename(self, output_path: Path) -> Tuple[Path, Optional[str]]:
+        if os.name != "nt":
+            return output_path, None
+
+        filename = output_path.name
+        stem = output_path.stem
+        suffix = output_path.suffix
+        stem_clean = re.sub(r'[\\/:*?"<>|]+', "_", stem).strip(" .")
+        if not stem_clean:
+            stem_clean = "image"
+
+        if stem_clean.upper() in WINDOWS_RESERVED_NAMES:
+            stem_clean = f"{stem_clean}_"
+
+        if stem_clean == stem and filename == output_path.name:
+            return output_path, None
+
+        normalized = output_path.with_name(f"{stem_clean}{suffix}")
+        return normalized, "Windowsのファイル名規則により保存先名を調整しました。"
+
     def _preflight_output_directory_only(self, directory: Path, create_if_missing: bool = True) -> Optional[str]:
         return self._preflight_output_directory(directory / ".__karuku_dir_probe__", create_if_missing=create_if_missing)
 
@@ -5076,6 +5121,15 @@ class ResizeApp(customtkinter.CTk):
             return
 
         save_path = Path(save_path_str)
+        save_path, normalized_message = self._normalize_windows_output_filename(save_path)
+        if normalized_message is not None:
+            if not messagebox.askyesno(
+                "保存先名の調整",
+                f"{normalized_message}\n\n保存先を以下に変更しますか？\n{save_path}",
+                icon="warning",
+            ):
+                return
+
         self.settings["last_output_dir"] = str(save_path.parent)
 
         preflight_error = self._preflight_output_directory(save_path)
