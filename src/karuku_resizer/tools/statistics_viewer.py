@@ -43,7 +43,7 @@ class StatisticsViewer(ctk.CTkFrame):
         
         title_label = ctk.CTkLabel(
             header_frame,
-            text="📊 処理統計",
+            text="処理統計",
             font=("", 20, "bold")
         )
         title_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
@@ -87,10 +87,10 @@ class StatisticsViewer(ctk.CTkFrame):
     def _create_summary_cards(self):
         """サマリーカードを作成"""
         cards_data = [
-            ("処理ファイル数", "total_count", "#1E88E5", "📁"),
-            ("成功率", "success_rate", "#43A047", "✅"),
-            ("総削減容量", "total_saved_size", "#E53935", "💾"),
-            ("平均処理時間", "avg_processing_time", "#FB8C00", "⏱️")
+            ("処理ファイル数", "total_count", "#1E88E5", ""),
+            ("成功率", "success_rate", "#43A047", ""),
+            ("総削減容量", "total_saved_size", "#E53935", ""),
+            ("平均処理時間", "avg_processing_time", "#FB8C00", "")
         ]
         
         for i, (title, key, color, icon) in enumerate(cards_data):
@@ -107,7 +107,8 @@ class StatisticsViewer(ctk.CTkFrame):
         header = ctk.CTkFrame(card, fg_color="transparent")
         header.grid(row=0, column=0, padx=15, pady=(10, 5), sticky="w")
         
-        ctk.CTkLabel(header, text=icon, font=("", 24)).pack(side="left", padx=(0, 5))
+        if icon:
+            ctk.CTkLabel(header, text=icon, font=("", 24)).pack(side="left", padx=(0, 5))
         ctk.CTkLabel(header, text=title, font=("", 12)).pack(side="left")
         
         # 値

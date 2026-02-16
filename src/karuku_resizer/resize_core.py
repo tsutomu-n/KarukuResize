@@ -1924,9 +1924,9 @@ def main() -> None:  # noqa: D401
             success, error_detail = _interpret_resize_result(result)
             if success:
                 processed.append(img_path)
-                logger.info(f"✔ {img_path.name} → {dst_path.name}")
+                logger.info(f"成功: {img_path.name} → {dst_path.name}")
                 continue
-            logger.error(f"❌ {img_path.name}: {error_detail}")
+            logger.error(f"失敗: {img_path.name}: {error_detail}")
             remaining.append(img_path)
             failed_files.append(
                 {
@@ -1936,7 +1936,7 @@ def main() -> None:  # noqa: D401
             )
         except Exception as e:
             error_detail = get_japanese_error_message(e)
-            logger.error(f"❌ {img_path.name}: {error_detail}")
+            logger.error(f"失敗: {img_path.name}: {error_detail}")
             remaining.append(img_path)
             failed_files.append(
                 {

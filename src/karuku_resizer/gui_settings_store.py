@@ -31,6 +31,7 @@ def default_gui_settings() -> dict[str, Any]:
         "dry_run": False,
         "verbose_logging": False,
         "show_tooltips": True,
+        "ui_scale_mode": "normal",
         "exif_mode": "keep",
         "remove_gps": False,
         "exif_artist": "",

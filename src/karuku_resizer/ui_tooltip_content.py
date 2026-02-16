@@ -36,7 +36,6 @@ ENTRY_AND_ACTION_TOOLTIPS = {
 
 ADVANCED_CONTROL_TOOLTIPS = {
     "ui_mode_segment": "画面モード（簡易/プロ）を切り替えます。",
-    "appearance_mode_segment": "テーマ（システム/ライト/ダーク）を切り替えます。",
     "details_toggle_button": "詳細設定パネルの表示/非表示を切り替えます。",
     "metadata_toggle_button": "メタデータ表示を切り替えます。",
     "output_format_menu": "出力形式を選択します。",
@@ -56,12 +55,6 @@ ADVANCED_CONTROL_TOOLTIPS = {
 UI_MODE_VALUE_TOOLTIPS = {
     "簡易": "基本項目のみ表示するモードです。",
     "プロ": "再帰読込や詳細設定を使う上級モードです。",
-}
-
-APPEARANCE_VALUE_TOOLTIPS = {
-    "システム": "OS設定に合わせてライト/ダークを自動切替します。",
-    "ライト": "常にライトテーマで表示します。",
-    "ダーク": "常にダークテーマで表示します。",
 }
 
 FILE_FILTER_VALUE_TOOLTIPS = {

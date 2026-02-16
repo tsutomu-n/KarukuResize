@@ -93,8 +93,8 @@ class ResizeApp(customtkinter.CTk):
         top = customtkinter.CTkFrame(self, fg_color="transparent")
         top.pack(side="top", fill="x", padx=10, pady=5)
 
-        customtkinter.CTkButton(top, text="📂 画像を選択", width=120, command=self._select_files, font=self.font_default).pack(side="left")
-        customtkinter.CTkButton(top, text="❓ 使い方", width=100, command=self._show_help, font=self.font_default).pack(side="left", padx=10)
+        customtkinter.CTkButton(top, text="画像を選択", width=120, command=self._select_files, font=self.font_default).pack(side="left")
+        customtkinter.CTkButton(top, text="使い方", width=100, command=self._show_help, font=self.font_default).pack(side="left", padx=10)
 
         # Spacer to push subsequent widgets to the right
         spacer = customtkinter.CTkFrame(top, fg_color="transparent")
@@ -172,9 +172,9 @@ class ResizeApp(customtkinter.CTk):
             "fixed": [self.entry_w_fixed, self.entry_h_fixed],
         }
 
-        customtkinter.CTkButton(top, text="🔄 プレビュー", width=110, command=self._preview_current).pack(side="left", padx=(0, 10))
-        customtkinter.CTkButton(top, text="💾 保存", width=90, command=self._save_current).pack(side="left")
-        customtkinter.CTkButton(top, text="📁 一括保存", width=100, command=self._batch_save).pack(side="left", padx=10)
+        customtkinter.CTkButton(top, text="プレビュー", width=110, command=self._preview_current).pack(side="left", padx=(0, 10))
+        customtkinter.CTkButton(top, text="保存", width=90, command=self._save_current).pack(side="left")
+        customtkinter.CTkButton(top, text="一括保存", width=100, command=self._batch_save).pack(side="left", padx=10)
 
         # Zoom combobox
         self.zoom_var = customtkinter.StringVar(value="画面に合わせる")

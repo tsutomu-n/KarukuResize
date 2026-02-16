@@ -17,7 +17,6 @@ def setup_settings_layers(
     *,
     colors: ColorMap,
     ui_mode_labels: List[str],
-    appearance_labels: List[str],
 ) -> None:
     app.settings_header_frame = customtkinter.CTkFrame(app)
     app._style_card_frame(app.settings_header_frame, corner_radius=12)
@@ -48,22 +47,6 @@ def setup_settings_layers(
         text_color=colors["text_primary"],
     )
     app.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)
-
-    app.appearance_mode_var = customtkinter.StringVar(value="システム")
-    app.appearance_mode_segment = customtkinter.CTkSegmentedButton(
-        app.settings_header_frame,
-        values=appearance_labels,
-        variable=app.appearance_mode_var,
-        command=app._on_appearance_mode_changed,
-        width=180,
-        font=app.font_small,
-        selected_color=colors["primary"],
-        selected_hover_color=colors["hover"],
-        unselected_color=colors["bg_tertiary"],
-        unselected_hover_color=colors["accent_soft"],
-        text_color=colors["text_primary"],
-    )
-    app.appearance_mode_segment.pack(side="right", padx=(0, 8), pady=8)
 
     app.details_toggle_button = customtkinter.CTkButton(
         app.settings_header_frame,
@@ -286,4 +269,3 @@ def register_recent_setting_from_current(app: Any) -> None:
     app.settings["recent_processing_settings"] = entries[: app._recent_settings_max]
     app._save_current_settings()
     refresh_recent_settings_buttons(app)
-

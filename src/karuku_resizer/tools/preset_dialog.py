@@ -479,8 +479,8 @@ class PresetManagerDialog(ctk.CTkToplevel):
         item_frame.grid_columnconfigure(1, weight=1)
         
         # アイコン
-        icon = "🔒" if preset.is_builtin else "👤"
-        ctk.CTkLabel(item_frame, text=icon, width=30).grid(row=0, column=0, padx=5, pady=5)
+        icon_label = "標準" if preset.is_builtin else "ユーザー"
+        ctk.CTkLabel(item_frame, text=icon_label, width=40).grid(row=0, column=0, padx=5, pady=5)
         
         # 名前と説明
         info_frame = ctk.CTkFrame(item_frame, fg_color="transparent")

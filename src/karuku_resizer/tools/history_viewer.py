@@ -188,7 +188,7 @@ class HistoryViewer(ctk.CTkFrame):
         item_frame.bind("<Button-1>", lambda e, entry=entry: self._select_entry(entry))
         
         # 状態
-        status_text = "✅" if entry.success else "❌"
+        status_text = "成功" if entry.success else "失敗"
         status_label = ctk.CTkLabel(item_frame, text=status_text, width=60)
         status_label.grid(row=0, column=0, padx=5, pady=5)
         status_label.bind("<Button-1>", lambda e, entry=entry: self._select_entry(entry))

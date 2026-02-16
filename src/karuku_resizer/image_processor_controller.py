@@ -293,9 +293,9 @@ class ImageProcessorController:
         
         # 結果サマリー
         if failed_count == 0:
-            message = f"✅ 全{processed_count}ファイルの処理が完了しました"
+            message = f"全{processed_count}ファイルの処理が完了しました"
         else:
-            message = f"⚠️ {processed_count}ファイル処理完了、{failed_count}ファイル失敗"
+            message = f"処理完了: 成功{processed_count}件、失敗{failed_count}件"
             if failed_files:
                 message += f"\n失敗: {', '.join(failed_files[:3])}"
                 if len(failed_files) > 3:

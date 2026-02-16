@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, cast
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, font as tkfont, messagebox, simpledialog
 from urllib.parse import unquote, urlparse
 
 import customtkinter
@@ -76,13 +76,13 @@ from karuku_resizer.runtime_logging import (
 from karuku_resizer.tools.tooltip_manager import TooltipManager
 from karuku_resizer.ui_tooltip_content import (
     ADVANCED_CONTROL_TOOLTIPS,
-    APPEARANCE_VALUE_TOOLTIPS,
     ENTRY_AND_ACTION_TOOLTIPS,
     FILE_FILTER_VALUE_TOOLTIPS,
     SIZE_MODE_TOOLTIPS,
     TOP_AND_PRESET_TOOLTIPS,
     UI_MODE_VALUE_TOOLTIPS,
 )
+from karuku_resizer.icon_loader import load_icon
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -195,13 +195,60 @@ UI_MODE_LABEL_TO_ID = {
 UI_MODE_ID_TO_LABEL = {v: k for k, v in UI_MODE_LABEL_TO_ID.items()}
 
 APPEARANCE_LABEL_TO_ID = {
-    "システム": "system",
+    "OSに従う": "system",
     "ライト": "light",
     "ダーク": "dark",
 }
 
 APPEARANCE_ID_TO_LABEL = {v: k for k, v in APPEARANCE_LABEL_TO_ID.items()}
 
+UI_SCALE_LABEL_TO_ID = {
+    "標準": "normal",
+    "見やすい（大きめ）": "large125",
+}
+
+UI_SCALE_ID_TO_LABEL = {v: k for k, v in UI_SCALE_LABEL_TO_ID.items()}
+UI_SCALE_FACTORS = {
+    "normal": 1.0,
+    "large125": 1.25,
+}
+
+BIZ_UD_GOTHIC_FONT_CANDIDATES = [
+    "BIZ UDPGothic",
+    "BIZ UDPゴシック",
+    "BIZ UDP Gothic",
+    "BIZ UDGothic",
+    "BIZ UDGothic M",
+    "BIZ UDGothicM",
+    "BIZ UDGothic B",
+    "BIZ UDGothicB",
+    "BIZ UDゴシック",
+    "BIZ UDゴシック R",
+    "BIZ UDゴシック M",
+    "BIZ UDゴシックM",
+    "BIZ UDGothicB",
+    "BIZ UDGothic R",
+]
+BIZ_UD_GOTHIC_ASSET_FILES = (
+    "BIZUDPGothic-Regular.ttf",
+    "BIZUDPGothic-Bold.ttf",
+    "BIZUDGothic-Regular.ttf",
+    "BIZUDGothic-Bold.ttf",
+)
+BIZ_UD_GOTHIC_FALLBACK_FONT_FAMILIES = [
+    "Yu Gothic",
+    "Yu Gothic UI",
+    "Meiryo",
+    "MS PGothic",
+    "Segoe UI",
+]
+NON_WINDOWS_FONT_FAMILIES = [
+    "SF Pro Display",
+    "Hiragino Kaku Gothic ProN",
+    "Hiragino Kaku Gothic Pro",
+    "Yu Gothic",
+    "Meiryo",
+]
 PRO_INPUT_MODE_LABEL_TO_ID = {
     "フォルダ再帰": "recursive",
     "ファイル個別": "files",
@@ -294,16 +341,16 @@ class ResizeApp(customtkinter.CTk):
         self.configure(fg_color=METALLIC_COLORS["bg_primary"])
 
         # -------------------- フォント設定 --------------------
-        # システムフォントを使用（Windows: Segoe UI, macOS: SF Pro Display）
-        system_font = "Segoe UI" if platform.system() == "Windows" else "SF Pro Display"
-        self.font_default = customtkinter.CTkFont(family=system_font, size=14, weight="normal")
-        self.font_small = customtkinter.CTkFont(family=system_font, size=12, weight="normal")
-        self.font_bold = customtkinter.CTkFont(family=system_font, size=14, weight="bold")
+        # フォント設定（WindowsはBIZ UDゴシック優先。未検出時はOS既定へフォールバック）
+        self._system_font = self._resolve_system_font_family()
+        self._ui_scale_mode = self._normalize_ui_scale_mode(self.settings.get("ui_scale_mode", "normal"))
+        self._apply_ui_scale_mode(self._ui_scale_mode)
 
         self.title("画像リサイズツール (DEBUG)" if DEBUG else "画像リサイズツール")
         self.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         self._window_icon_image: Optional[ImageTk.PhotoImage] = None
         self._apply_window_icon()
+        self._setup_ui_icons()
         self._tooltip_manager = TooltipManager(
             self,
             enabled_provider=lambda: self._to_bool(self.settings.get("show_tooltips", True)),
@@ -499,11 +546,161 @@ class ResizeApp(customtkinter.CTk):
         return "#1F2A37" if appearance == "Light" else "#E8EEF5"
 
     @staticmethod
+    def _normalize_font_candidate(value: str) -> str:
+        return " ".join(str(value).strip().split()).lower()
+
+    def _available_font_families(self) -> set[str]:
+        try:
+            return set(tkfont.families())
+        except Exception:
+            return set()
+
+    @staticmethod
+    def _pick_first_existing_font(
+        candidate_fonts: List[str],
+        available: set[str],
+    ) -> Optional[str]:
+        if not available:
+            return None
+        normalized_available = {
+            ResizeApp._normalize_font_candidate(font): font for font in available
+        }
+        for candidate in candidate_fonts:
+            normalized_candidate = ResizeApp._normalize_font_candidate(candidate)
+            if normalized_candidate in normalized_available:
+                return normalized_available[normalized_candidate]
+        return None
+
+    @staticmethod
+    def _register_font_resource_windows(font_path: Path) -> bool:
+        if platform.system() != "Windows":
+            return False
+        try:
+            import ctypes
+            FR_PRIVATE = 0x10
+            result = int(ctypes.windll.gdi32.AddFontResourceExW(str(font_path), FR_PRIVATE, None))
+            if result <= 0:
+                return False
+            try:
+                HWND_BROADCAST = 0xFFFF
+                WM_FONTCHANGE = 0x001D
+                SMTO_ABORTIFHUNG = 0x0002
+                timeout = 1000
+                ctypes.windll.user32.SendMessageTimeoutW(
+                    HWND_BROADCAST,
+                    WM_FONTCHANGE,
+                    0,
+                    0,
+                    SMTO_ABORTIFHUNG,
+                    timeout,
+                    None,
+                )
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _setup_ui_icons(self) -> None:
+        self._icon_folder = load_icon("folder", 16)
+        self._icon_circle_help = load_icon("circle-help", 16)
+        self._icon_settings = load_icon("settings", 16)
+        self._icon_folder_open = load_icon("folder-open", 16)
+        self._icon_refresh = load_icon("refresh-cw", 16)
+        self._icon_save = load_icon("save", 16)
+
+    def _register_embedded_biz_ud_gothic_fonts(self) -> bool:
+        font_dir = self._runtime_base_dir() / "assets" / "fonts"
+        if not font_dir.is_dir():
+            return False
+
+        added = False
+        for filename in BIZ_UD_GOTHIC_ASSET_FILES:
+            font_path = font_dir / filename
+            if not font_path.is_file():
+                continue
+            if self._register_font_resource_windows(font_path):
+                added = True
+        return added
+
+    def _resolve_system_font_family(self) -> str:
+        if platform.system() == "Windows":
+            available = self._available_font_families()
+            if "BIZ" in "".join(name.upper() for name in available):
+                selected = self._pick_first_existing_font(BIZ_UD_GOTHIC_FONT_CANDIDATES, available)
+                if selected is not None:
+                    return selected
+
+            if self._register_embedded_biz_ud_gothic_fonts():
+                available = self._available_font_families()
+                selected = self._pick_first_existing_font(BIZ_UD_GOTHIC_FONT_CANDIDATES, available)
+                if selected is not None:
+                    return selected
+
+            selected = self._pick_first_existing_font(
+                BIZ_UD_GOTHIC_FALLBACK_FONT_FAMILIES,
+                available,
+            )
+            if selected is not None:
+                return selected
+            return "Segoe UI"
+
+        available = self._available_font_families()
+        selected = self._pick_first_existing_font(NON_WINDOWS_FONT_FAMILIES, available)
+        return selected if selected is not None else "SF Pro Display"
+
+    @staticmethod
     def _normalize_appearance_mode(value: str) -> str:
-        normalized = str(value).strip().lower()
-        if normalized not in APPEARANCE_ID_TO_LABEL:
+        raw = str(value).strip()
+        normalized = raw.lower()
+        if normalized in APPEARANCE_ID_TO_LABEL:
+            return normalized
+        if raw in APPEARANCE_LABEL_TO_ID:
+            return APPEARANCE_LABEL_TO_ID[raw]
+        if raw == "システム":
             return "system"
-        return normalized
+        return "system"
+
+    @staticmethod
+    def _normalize_ui_scale_mode(value: str) -> str:
+        raw = str(value).strip()
+        if raw in UI_SCALE_ID_TO_LABEL:
+            return raw
+        if raw in UI_SCALE_LABEL_TO_ID:
+            return UI_SCALE_LABEL_TO_ID[raw]
+        normalized = raw.lower()
+        if normalized in {"normal", "標準"}:
+            return "normal"
+        if normalized in {"125", "125%", "large", "large125"}:
+            return "large125"
+        return "normal"
+
+    def _apply_ui_scale_mode(self, mode_id: str) -> None:
+        normalized = self._normalize_ui_scale_mode(mode_id)
+        self._ui_scale_mode = normalized
+        scale = UI_SCALE_FACTORS.get(normalized, 1.0)
+
+        if hasattr(customtkinter, "set_widget_scaling"):
+            try:
+                customtkinter.set_widget_scaling(scale)
+            except Exception:
+                pass
+
+        self.font_default = customtkinter.CTkFont(
+            family=self._system_font,
+            size=max(1, round(14 * scale)),
+            weight="normal",
+        )
+        self.font_small = customtkinter.CTkFont(
+            family=self._system_font,
+            size=max(1, round(12 * scale)),
+            weight="normal",
+        )
+        self.font_bold = customtkinter.CTkFont(
+            family=self._system_font,
+            size=max(1, round(14 * scale)),
+            weight="bold",
+        )
 
     @staticmethod
     def _to_bool(value: Any) -> bool:
@@ -580,10 +777,6 @@ class ResizeApp(customtkinter.CTk):
             UI_MODE_VALUE_TOOLTIPS,
         )
         self._register_segmented_value_tooltips(
-            self.appearance_mode_segment,
-            APPEARANCE_VALUE_TOOLTIPS,
-        )
-        self._register_segmented_value_tooltips(
             self.file_filter_segment,
             FILE_FILTER_VALUE_TOOLTIPS,
         )
@@ -594,7 +787,7 @@ class ResizeApp(customtkinter.CTk):
         for preset in self.processing_presets:
             base_label = preset.name.strip() or preset.preset_id
             if preset.is_builtin:
-                base_label = f"🔒 {base_label}"
+                base_label = f"標準 {base_label}"
             label = base_label
             suffix_index = 2
             while label in label_to_id:
@@ -1261,8 +1454,24 @@ class ResizeApp(customtkinter.CTk):
         self._style_card_frame(top_container)
         top_container.pack(side="top", fill="x", padx=12, pady=(8, 6))
 
+        top_guide_frame = customtkinter.CTkFrame(top_container, fg_color="transparent")
+        top_guide_frame.pack(side="top", fill="x", padx=8, pady=(6, 4))
+        self.top_action_guide_var = customtkinter.StringVar(value="")
+        self.top_action_guide_label = customtkinter.CTkLabel(
+            top_guide_frame,
+            textvariable=self.top_action_guide_var,
+            anchor="w",
+            justify="left",
+            font=self.font_small,
+            text_color=METALLIC_COLORS["text_secondary"],
+            fg_color=METALLIC_COLORS["bg_secondary"],
+            corner_radius=10,
+            padx=10,
+        )
+        self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
+
         top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_primary.pack(side="top", fill="x", padx=8, pady=(6, 2))
+        top_row_primary.pack(side="top", fill="x", padx=8, pady=(0, 2))
 
         top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
         top_row_secondary.pack(side="top", fill="x", padx=8, pady=(2, 6))
@@ -1270,7 +1479,9 @@ class ResizeApp(customtkinter.CTk):
 
         self.select_button = customtkinter.CTkButton(
             top_row_primary,
-            text="📂 画像を選択",
+            text="画像を選択",
+            image=self._icon_folder,
+            compound="left",
             width=topbar_widths["select"],
             command=self._select_files,
             font=self.font_default,
@@ -1279,7 +1490,9 @@ class ResizeApp(customtkinter.CTk):
         self.select_button.pack(side="left", padx=(0, 6), pady=4)
         self.help_button = customtkinter.CTkButton(
             top_row_primary,
-            text="❓ 使い方",
+            text="使い方",
+            image=self._icon_circle_help,
+            compound="left",
             width=topbar_widths["help"],
             command=self._show_help,
             font=self.font_default,
@@ -1288,7 +1501,9 @@ class ResizeApp(customtkinter.CTk):
         self.help_button.pack(side="left", padx=(0, 8), pady=4)
         self.settings_button = customtkinter.CTkButton(
             top_row_primary,
-            text="⚙ 設定",
+            text="設定",
+            image=self._icon_settings,
+            compound="left",
             width=topbar_widths["settings"],
             command=self._open_settings_dialog,
             font=self.font_default,
@@ -1384,6 +1599,7 @@ class ResizeApp(customtkinter.CTk):
         self._refresh_topbar_density()
         self._setup_settings_layers()
         self._setup_main_layout()
+        self._refresh_top_action_guide()
 
     def _setup_settings_layers(self):
         """基本操作の下に設定サマリーと詳細設定（折りたたみ）を配置する。"""
@@ -1401,6 +1617,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self.settings_summary_label.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=8)
 
+        self.appearance_mode_var = customtkinter.StringVar(value="OSに従う")
         self.ui_mode_var = customtkinter.StringVar(value="簡易")
         self.ui_mode_segment = customtkinter.CTkSegmentedButton(
             self.settings_header_frame,
@@ -1416,22 +1633,6 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
         )
         self.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)
-
-        self.appearance_mode_var = customtkinter.StringVar(value="システム")
-        self.appearance_mode_segment = customtkinter.CTkSegmentedButton(
-            self.settings_header_frame,
-            values=list(APPEARANCE_LABEL_TO_ID.keys()),
-            variable=self.appearance_mode_var,
-            command=self._on_appearance_mode_changed,
-            width=180,
-            font=self.font_small,
-            selected_color=METALLIC_COLORS["primary"],
-            selected_hover_color=METALLIC_COLORS["hover"],
-            unselected_color=METALLIC_COLORS["bg_tertiary"],
-            unselected_hover_color=METALLIC_COLORS["accent_soft"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.appearance_mode_segment.pack(side="right", padx=(0, 8), pady=8)
 
         self.details_toggle_button = customtkinter.CTkButton(
             self.settings_header_frame,
@@ -1639,14 +1840,14 @@ class ResizeApp(customtkinter.CTk):
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
-        return "📁 一括保存" if density == "compact" else "📁 一括適用保存"
+        return "一括保存" if density == "compact" else "一括適用保存"
 
     def _select_button_text_for_state(self) -> str:
         if self._is_pro_mode():
             if self._topbar_density == "compact":
-                return "📂 画像/フォルダ選択"
-            return "📂 画像/フォルダを選択"
-        return "📂 画像を選択"
+                return "画像/フォルダ選択"
+            return "画像/フォルダを選択"
+        return "画像を選択"
 
     def _apply_topbar_density(self, window_width: int) -> None:
         density = self._topbar_density_for_width(window_width)
@@ -1670,6 +1871,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self.zoom_cb.configure(width=widths["zoom"])
         self.select_button.configure(text=self._select_button_text_for_state())
+        self._refresh_top_action_guide()
 
     def _refresh_topbar_density(self) -> None:
         width = max(self.winfo_width(), MIN_WINDOW_WIDTH)
@@ -1703,6 +1905,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _on_ui_mode_changed(self, _value: str):
         self._apply_ui_mode()
+        self._refresh_top_action_guide()
         self._update_settings_summary()
         if self.current_index is not None:
             self._draw_previews(self.jobs[self.current_index])
@@ -1753,7 +1956,8 @@ class ResizeApp(customtkinter.CTk):
             codec_summary = f" / AVIF speed {self.avif_speed_var.get()}"
 
         summary = (
-            f"現在設定: {mode_label}モード / テーマ {appearance_label} / 形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
+            f"現在設定: {mode_label}モード / カラーテーマ {appearance_label} / 文字サイズ {UI_SCALE_ID_TO_LABEL.get(self._ui_scale_mode, '標準')} / "
+            f"形式 {self.output_format_var.get()} / 品質 {self.quality_var.get()} / "
             f"EXIF {self.exif_mode_var.get()} / GPS削除 {'ON' if self.remove_gps_var.get() else 'OFF'} / "
             f"ドライラン {'ON' if self.dry_run_var.get() else 'OFF'}{codec_summary}"
         )
@@ -1770,6 +1974,61 @@ class ResizeApp(customtkinter.CTk):
             lines.append("プロ: フォルダー投入で再帰読込（jpg/jpeg/png）")
         lines.append(f"処理中は {OPERATION_ONLY_CANCEL_HINT}")
         return "\n".join(lines)
+
+    def _refresh_top_action_guide(self) -> None:
+        if not hasattr(self, "top_action_guide_var"):
+            return
+
+        lines = self._top_action_guide_lines()
+        mode_label = "簡易" if not self._is_pro_mode() else "プロ"
+        if self._topbar_density == "compact" and self._is_pro_mode():
+            mode_hint = f"{mode_label} / コンパクト"
+        else:
+            mode_hint = f"{mode_label}モード"
+
+        # 3行まで表示する（モードを含む）
+        max_lines = 3
+        lines = [mode_hint] + lines
+        lines = lines[:max_lines]
+        self.top_action_guide_var.set("\n".join(lines))
+
+    def _top_action_guide_lines(self) -> List[str]:
+        if self._is_loading_files:
+            return ["処理中です。完了または中止後に次の操作へ進んでください。"]
+        if self._operation_scope is not None and self._operation_scope.active:
+            return ["画像処理中です。キャンセル以外の操作はできません。"]
+
+        if not self.jobs:
+            if self._is_pro_mode():
+                return [
+                    "画像またはフォルダを読み込みます。",
+                    "比率・幅・高さ・形式を決め、品質とEXIFを設定して保存。",
+                ]
+            return [
+                "画像を読み込んだら、まず比率/幅/高さを確認。",
+                "次に形式を決め、EXIF（撮影情報）を確認して保存。",
+            ]
+
+        if self.current_index is None:
+            if self._is_pro_mode():
+                return [
+                    "左一覧から対象画像を選択します。",
+                    "形式・品質・EXIF・保存先を確認して保存します。",
+                ]
+            return [
+                "左一覧から画像を選択します。",
+                "保存先未設定なら設定へ進み、比率・形式・EXIFを確認して保存。",
+            ]
+
+        if self._is_pro_mode():
+            return [
+                "左一覧の画像変更後を確認します。",
+                "形式・品質・EXIF・ドライランを見て保存します。",
+            ]
+        return [
+            "左一覧で選んだ画像のプレビューを見ます。",
+            "比率・形式・EXIF（保持/削除）を確認し、保存先未設定なら設定で保存先指定。",
+        ]
 
     def _update_empty_state_hint(self) -> None:
         if not hasattr(self, "empty_state_label"):
@@ -1925,7 +2184,9 @@ class ResizeApp(customtkinter.CTk):
         topbar_widths = TOPBAR_WIDTHS["normal"]
         self.preview_button = customtkinter.CTkButton(
             parent,
-            text="🔄 プレビュー",
+            text="プレビュー",
+            image=self._icon_refresh,
+            compound="left",
             width=topbar_widths["preview"],
             command=self._preview_current,
             font=self.font_default
@@ -1935,7 +2196,9 @@ class ResizeApp(customtkinter.CTk):
         
         self.save_button = customtkinter.CTkButton(
             parent,
-            text="💾 保存",
+            text="保存",
+            image=self._icon_save,
+            compound="left",
             width=topbar_widths["save"],
             command=self._save_current,
             font=self.font_default
@@ -1945,6 +2208,8 @@ class ResizeApp(customtkinter.CTk):
         
         self.batch_button = customtkinter.CTkButton(
             parent,
+            image=self._icon_folder_open,
+            compound="left",
             text=self._batch_button_text_for_density(self._topbar_density),
             width=topbar_widths["batch"],
             command=self._batch_save,
@@ -2500,6 +2765,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _refresh_status_indicators(self) -> None:
         self._update_action_hint()
+        self._refresh_top_action_guide()
         self._update_session_summary()
 
     def _update_action_hint(self) -> None:
@@ -2858,6 +3124,7 @@ class ResizeApp(customtkinter.CTk):
     def _restore_settings(self):
         """保存された設定を復元"""
         # モード復元
+        self._apply_ui_scale_mode(self.settings.get("ui_scale_mode", "normal"))
         self.mode_var.set(self.settings["mode"])
         self.ui_mode_var.set(
             UI_MODE_ID_TO_LABEL.get(
@@ -2866,7 +3133,7 @@ class ResizeApp(customtkinter.CTk):
             )
         )
         saved_appearance = self._normalize_appearance_mode(self.settings.get("appearance_mode", "system"))
-        self.appearance_mode_var.set(APPEARANCE_ID_TO_LABEL.get(saved_appearance, "システム"))
+        self.appearance_mode_var.set(APPEARANCE_ID_TO_LABEL.get(saved_appearance, "OSに従う"))
         
         # 値復元
         self.pct_var.set(self.settings["ratio_value"])
@@ -2958,6 +3225,7 @@ class ResizeApp(customtkinter.CTk):
             "mode": self.mode_var.get(),
             "ui_mode": self._ui_mode_id(),
             "appearance_mode": self._appearance_mode_id(),
+            "ui_scale_mode": self._normalize_ui_scale_mode(self._ui_scale_mode),
             "ratio_value": self.pct_var.get(),
             "width_value": self.w_var.get(),
             "height_value": self.h_var.get(),
@@ -3729,7 +3997,6 @@ class ResizeApp(customtkinter.CTk):
             self.save_button,
             self.batch_button,
             self.ui_mode_segment,
-            self.appearance_mode_segment,
             self.details_toggle_button,
             self.output_format_menu,
             self.quality_menu,
@@ -4258,9 +4525,9 @@ class ResizeApp(customtkinter.CTk):
     @staticmethod
     def _file_button_label(job: ImageJob) -> str:
         if job.last_process_state == "failed":
-            return f"⚠ {job.path.name}"
+            return f"［失敗］ {job.path.name}"
         if job.last_process_state == "success":
-            return f"✓ {job.path.name}"
+            return f"［完了］ {job.path.name}"
         return job.path.name
 
     def _populate_listbox(self):
@@ -4958,7 +5225,7 @@ class ResizeApp(customtkinter.CTk):
         dialog = customtkinter.CTkToplevel(self)
         self._settings_dialog = dialog
         dialog.title("設定")
-        dialog.geometry("640x470")
+        dialog.geometry("640x505")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -4967,6 +5234,12 @@ class ResizeApp(customtkinter.CTk):
 
         ui_mode_var = customtkinter.StringVar(value=self.ui_mode_var.get())
         appearance_var = customtkinter.StringVar(value=self.appearance_mode_var.get())
+        ui_scale_var = customtkinter.StringVar(
+            value=UI_SCALE_ID_TO_LABEL.get(
+                self._normalize_ui_scale_mode(self.settings.get("ui_scale_mode", "normal")),
+                "標準",
+            )
+        )
         quality_var = customtkinter.StringVar(value=self.quality_var.get())
         output_format_var = customtkinter.StringVar(value=self.output_format_var.get())
         default_preset_var = customtkinter.StringVar(
@@ -5016,7 +5289,8 @@ class ResizeApp(customtkinter.CTk):
                 return
             defaults = default_gui_settings()
             ui_mode_var.set(UI_MODE_ID_TO_LABEL.get(defaults["ui_mode"], "簡易"))
-            appearance_var.set(APPEARANCE_ID_TO_LABEL.get(defaults["appearance_mode"], "システム"))
+            appearance_var.set(APPEARANCE_ID_TO_LABEL.get(defaults["appearance_mode"], "OSに従う"))
+            ui_scale_var.set(UI_SCALE_ID_TO_LABEL.get(defaults["ui_scale_mode"], "標準"))
             quality_var.set(str(defaults["quality"]))
             output_format_var.set(FORMAT_ID_TO_LABEL.get(defaults["output_format"], "自動"))
             pro_input_var.set(
@@ -5039,7 +5313,10 @@ class ResizeApp(customtkinter.CTk):
 
             appearance_label = appearance_var.get()
             if appearance_label not in APPEARANCE_LABEL_TO_ID:
-                appearance_label = "システム"
+                appearance_label = "OSに従う"
+            ui_scale_label = ui_scale_var.get()
+            if ui_scale_label not in UI_SCALE_LABEL_TO_ID:
+                ui_scale_label = "標準"
 
             format_label = output_format_var.get()
             available_formats = self._build_output_format_labels()
@@ -5058,6 +5335,7 @@ class ResizeApp(customtkinter.CTk):
 
             self.ui_mode_var.set(ui_mode_label)
             self.appearance_mode_var.set(appearance_label)
+            self._ui_scale_mode = UI_SCALE_LABEL_TO_ID.get(ui_scale_label, "normal")
             self.quality_var.set(str(quality_value))
             self.output_format_var.set(format_label)
             self.settings["pro_input_mode"] = pro_input_mode
@@ -5068,6 +5346,7 @@ class ResizeApp(customtkinter.CTk):
                 self._tooltip_manager.hide()
 
             self._apply_ui_mode()
+            self._apply_ui_scale_mode(self._ui_scale_mode)
             self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
             self._on_output_format_changed(self.output_format_var.get())
             self._on_quality_changed(self.quality_var.get())
@@ -5102,7 +5381,7 @@ class ResizeApp(customtkinter.CTk):
         row += 1
         customtkinter.CTkLabel(
             dialog,
-            text="テーマ",
+            text="カラーテーマ",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
         ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
@@ -5118,7 +5397,28 @@ class ResizeApp(customtkinter.CTk):
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
         appearance_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
-        self._register_tooltip(appearance_menu, "外観テーマを選択します。")
+        self._register_tooltip(appearance_menu, "OSに従う/ライト/ダークを選択します。")
+
+        row += 1
+        customtkinter.CTkLabel(
+            dialog,
+            text="文字サイズ",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ui_scale_menu = customtkinter.CTkOptionMenu(
+            dialog,
+            values=list(UI_SCALE_LABEL_TO_ID.keys()),
+            variable=ui_scale_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        )
+        ui_scale_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        self._register_tooltip(ui_scale_menu, "見やすい文字サイズに切り替えます。")
 
         row += 1
         customtkinter.CTkLabel(

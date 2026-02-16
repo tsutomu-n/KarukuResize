@@ -7,6 +7,7 @@ from typing import Optional, List
 import traceback
 import platform
 import subprocess
+from karuku_resizer.icon_loader import load_icon
 
 class ErrorDialog(ctk.CTkToplevel):
     """詳細なエラーダイアログ"""
@@ -32,10 +33,13 @@ class ErrorDialog(ctk.CTkToplevel):
         header_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         header_frame.pack(fill="x", pady=(0, 15))
         
-        # エラーアイコン（絵文字）
+        # エラーアイコン
+        icon = load_icon("circle-help", 32)
         icon_label = ctk.CTkLabel(
             header_frame,
-            text="⚠️",
+            text="" if icon is not None else "警告",
+            image=icon,
+            compound="left",
             font=("", 32)
         )
         icon_label.pack(side="left", padx=(0, 15))
@@ -57,7 +61,7 @@ class ErrorDialog(ctk.CTkToplevel):
             
             suggestions_title = ctk.CTkLabel(
                 suggestions_frame,
-                text="💡 解決方法:",
+                text="解決方法:",
                 font=("", 12, "bold")
             )
             suggestions_title.pack(anchor="w", pady=(0, 5))
@@ -79,7 +83,7 @@ class ErrorDialog(ctk.CTkToplevel):
             
             details_title = ctk.CTkLabel(
                 details_frame,
-                text="📋 詳細情報:",
+                text="詳細情報:",
                 font=("", 12, "bold")
             )
             details_title.pack(anchor="w", pady=(0, 5))
