@@ -214,7 +214,7 @@ UI_SCALE_LABEL_TO_ID = {
 
 UI_SCALE_ID_TO_LABEL = {v: k for k, v in UI_SCALE_LABEL_TO_ID.items()}
 UI_SCALE_FACTORS = {
-    "normal": 1.0,
+    "normal": 1.1,
     "large125": 1.25,
 }
 WINDOWS_RESERVED_NAMES = {
@@ -426,6 +426,19 @@ class ResizeApp(customtkinter.CTk):
         self._run_summary_payload = self._create_initial_run_summary()
         self._run_summary_finalized = False
         self._topbar_density = "normal"
+        self._ui_scale_factor = UI_SCALE_FACTORS.get(self._ui_scale_mode, 1.0)
+        self.appearance_mode_var = customtkinter.StringVar(
+            value=APPEARANCE_ID_TO_LABEL.get(
+                self._normalize_appearance_mode(self.settings.get("appearance_mode", "system")),
+                "OSに従う",
+            )
+        )
+        self.ui_mode_var = customtkinter.StringVar(
+            value=UI_MODE_ID_TO_LABEL.get(
+                str(self.settings.get("ui_mode", "simple")),
+                "簡易",
+            )
+        )
 
         self._setup_ui()
         self._setup_tooltips()
@@ -710,6 +723,7 @@ class ResizeApp(customtkinter.CTk):
         normalized = self._normalize_ui_scale_mode(mode_id)
         self._ui_scale_mode = normalized
         scale = UI_SCALE_FACTORS.get(normalized, 1.0)
+        self._ui_scale_factor = scale
 
         if hasattr(customtkinter, "set_widget_scaling"):
             try:
@@ -732,6 +746,22 @@ class ResizeApp(customtkinter.CTk):
             size=max(1, round(14 * scale)),
             weight="bold",
         )
+
+    def _scale_px(self, value: int) -> int:
+        return max(1, round(value * self._ui_scale_factor))
+
+    @staticmethod
+    def _scale_pad_values(value: Any, factor: float) -> Any:
+        if isinstance(value, (list, tuple)):
+            return tuple(max(1, round(int(v) * factor)) for v in value)
+        return max(1, round(int(value) * factor))
+
+    def _scale_pad(self, value: Any) -> Any:
+        return self._scale_pad_values(value, self._ui_scale_factor)
+
+    def _scale_topbar_widths(self, density: str) -> Dict[str, int]:
+        base = TOPBAR_WIDTHS.get(density, TOPBAR_WIDTHS["normal"])
+        return {name: self._scale_px(width) for name, width in base.items()}
 
     @staticmethod
     def _to_bool(value: Any) -> bool:
@@ -1155,7 +1185,16 @@ class ResizeApp(customtkinter.CTk):
         dialog = customtkinter.CTkToplevel(self)
         self._preset_dialog = dialog
         dialog.title("プリセット管理")
-        dialog.geometry("700x360")
+        ui_scale_factor = UI_SCALE_FACTORS.get(self._normalize_ui_scale_mode(self._ui_scale_mode), 1.0)
+        preset_base_width, preset_base_height = 700, 360
+        dialog.geometry(
+            f"{max(preset_base_width, round(preset_base_width * ui_scale_factor))}"
+            f"x{max(preset_base_height, round(preset_base_height * ui_scale_factor))}"
+        )
+        dialog.minsize(
+            max(preset_base_width, round(preset_base_width * ui_scale_factor)),
+            max(preset_base_height, round(preset_base_height * ui_scale_factor)),
+        )
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -1173,6 +1212,15 @@ class ResizeApp(customtkinter.CTk):
                 dialog.grab_release()
                 dialog.destroy()
             self._preset_dialog = None
+
+        def _scale_px(value: int) -> int:
+            scaled = round(value * ui_scale_factor)
+            return max(1, scaled)
+
+        def _scale_pad(value: Any) -> Any:
+            if isinstance(value, (list, tuple)):
+                return tuple(_scale_px(int(v)) for v in value)
+            return _scale_px(int(value))
 
         def _current_preset_id() -> str:
             return self._preset_name_to_id.get(selected_label_var.get(), "")
@@ -1341,7 +1389,7 @@ class ResizeApp(customtkinter.CTk):
             text="対象プリセット",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_pad((18, 8)), sticky="w")
         preset_option_menu = customtkinter.CTkOptionMenu(
             dialog,
             variable=selected_label_var,
@@ -1353,7 +1401,7 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        preset_option_menu.grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
+        preset_option_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_pad((18, 8)), sticky="ew")
 
         row += 1
         customtkinter.CTkLabel(
@@ -1361,7 +1409,7 @@ class ResizeApp(customtkinter.CTk):
             text="名称（ユーザーのみ変更可）",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         name_entry = customtkinter.CTkEntry(
             dialog,
             textvariable=name_var,
@@ -1369,7 +1417,7 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_light"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        name_entry.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        name_entry.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
 
         row += 1
         customtkinter.CTkLabel(
@@ -1377,7 +1425,7 @@ class ResizeApp(customtkinter.CTk):
             text="説明（任意）",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         description_entry = customtkinter.CTkEntry(
             dialog,
             textvariable=description_var,
@@ -1385,7 +1433,7 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_light"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        description_entry.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        description_entry.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
 
         row += 1
         customtkinter.CTkLabel(
@@ -1395,7 +1443,7 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_tertiary"],
             anchor="w",
             justify="left",
-        ).grid(row=row, column=0, columnspan=2, padx=20, pady=(2, 6), sticky="ew")
+        ).grid(row=row, column=0, columnspan=2, padx=_scale_px(20), pady=_scale_pad((2, 6)), sticky="ew")
 
         row += 1
         customtkinter.CTkLabel(
@@ -1405,66 +1453,66 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_tertiary"],
             anchor="w",
             justify="left",
-        ).grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+        ).grid(row=row, column=0, columnspan=2, padx=_scale_px(20), pady=_scale_pad((0, 10)), sticky="ew")
 
         row += 1
         action_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        action_frame.grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 16), sticky="e")
+        action_frame.grid(row=row, column=0, columnspan=2, padx=_scale_px(20), pady=_scale_pad((0, 16)), sticky="e")
 
         apply_button = customtkinter.CTkButton(
             action_frame,
             text="適用",
-            width=88,
+            width=_scale_px(88),
             command=_apply_dialog_preset,
             font=self.font_small,
         )
         self._style_secondary_button(apply_button)
-        apply_button.pack(side="left", padx=(0, 8))
+        apply_button.pack(side="left", padx=_scale_pad((0, 8)))
 
         set_default_button = customtkinter.CTkButton(
             action_frame,
             text="既定に設定",
-            width=108,
+            width=_scale_px(108),
             command=_set_default_preset,
             font=self.font_small,
         )
         self._style_secondary_button(set_default_button)
-        set_default_button.pack(side="left", padx=(0, 8))
+        set_default_button.pack(side="left", padx=_scale_pad((0, 8)))
 
         clear_default_button = customtkinter.CTkButton(
             action_frame,
             text="既定解除",
-            width=92,
+            width=_scale_px(92),
             command=_clear_default_preset,
             font=self.font_small,
         )
         self._style_secondary_button(clear_default_button)
-        clear_default_button.pack(side="left", padx=(0, 8))
+        clear_default_button.pack(side="left", padx=_scale_pad((0, 8)))
 
         update_button = customtkinter.CTkButton(
             action_frame,
             text="現在設定で更新",
-            width=132,
+            width=_scale_px(132),
             command=_update_user_preset_from_current,
             font=self.font_small,
         )
         self._style_primary_button(update_button)
-        update_button.pack(side="left", padx=(0, 8))
+        update_button.pack(side="left", padx=_scale_pad((0, 8)))
 
         delete_button = customtkinter.CTkButton(
             action_frame,
             text="削除",
-            width=82,
+            width=_scale_px(82),
             command=_delete_user_preset,
             font=self.font_small,
         )
         self._style_secondary_button(delete_button)
-        delete_button.pack(side="left", padx=(0, 8))
+        delete_button.pack(side="left", padx=_scale_pad((0, 8)))
 
         close_button = customtkinter.CTkButton(
             action_frame,
             text="閉じる",
-            width=82,
+            width=_scale_px(82),
             command=_close_dialog,
             font=self.font_small,
         )
@@ -1483,10 +1531,10 @@ class ResizeApp(customtkinter.CTk):
         # -------------------- UI top bar (2 rows) ------------------------
         top_container = customtkinter.CTkFrame(self)
         self._style_card_frame(top_container)
-        top_container.pack(side="top", fill="x", padx=12, pady=(8, 6))
+        top_container.pack(side="top", fill="x", padx=self._scale_px(12), pady=(self._scale_px(8), self._scale_px(6)))
 
         top_guide_frame = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_guide_frame.pack(side="top", fill="x", padx=8, pady=(6, 4))
+        top_guide_frame.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(6), self._scale_px(4)))
         self.top_action_guide_var = customtkinter.StringVar(value="")
         self.top_action_guide_label = customtkinter.CTkLabel(
             top_guide_frame,
@@ -1497,16 +1545,16 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_secondary"],
             fg_color=METALLIC_COLORS["bg_secondary"],
             corner_radius=10,
-            padx=10,
+            padx=self._scale_px(10),
         )
         self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
 
         top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_primary.pack(side="top", fill="x", padx=8, pady=(0, 2))
+        top_row_primary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(2)))
 
         top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_secondary.pack(side="top", fill="x", padx=8, pady=(2, 6))
-        topbar_widths = TOPBAR_WIDTHS["normal"]
+        top_row_secondary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(2), self._scale_px(6)))
+        topbar_widths = self._scale_topbar_widths("normal")
 
         self.select_button = customtkinter.CTkButton(
             top_row_primary,
@@ -1518,7 +1566,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
         )
         self._style_primary_button(self.select_button)
-        self.select_button.pack(side="left", padx=(0, 6), pady=4)
+        self.select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(4))
         self.help_button = customtkinter.CTkButton(
             top_row_primary,
             text="使い方",
@@ -1529,7 +1577,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
         )
         self._style_secondary_button(self.help_button)
-        self.help_button.pack(side="left", padx=(0, 8), pady=4)
+        self.help_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(4))
         self.settings_button = customtkinter.CTkButton(
             top_row_primary,
             text="設定",
@@ -1540,7 +1588,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
         )
         self._style_secondary_button(self.settings_button)
-        self.settings_button.pack(side="left", padx=(0, 8), pady=4)
+        self.settings_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(4))
 
         preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
         preset_spacer.pack(side="left", expand=True)
@@ -1550,7 +1598,7 @@ class ResizeApp(customtkinter.CTk):
             text="プリセット",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=4)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
         self.preset_var = customtkinter.StringVar(value=PRESET_NONE_LABEL)
         self.preset_menu = customtkinter.CTkOptionMenu(
             top_row_primary,
@@ -1565,7 +1613,7 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.preset_menu.pack(side="left", padx=(0, 6), pady=4)
+        self.preset_menu.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(4))
         self.preset_apply_button = customtkinter.CTkButton(
             top_row_primary,
             text="適用",
@@ -1574,7 +1622,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_apply_button)
-        self.preset_apply_button.pack(side="left", padx=(0, 4), pady=4)
+        self.preset_apply_button.pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
         self.preset_save_button = customtkinter.CTkButton(
             top_row_primary,
             text="保存",
@@ -1583,7 +1631,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_save_button)
-        self.preset_save_button.pack(side="left", padx=(0, 4), pady=4)
+        self.preset_save_button.pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
         self.preset_manage_button = customtkinter.CTkButton(
             top_row_primary,
             text="管理",
@@ -1592,7 +1640,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_manage_button)
-        self.preset_manage_button.pack(side="left", padx=(0, 0), pady=4)
+        self.preset_manage_button.pack(side="left", padx=(0, self._scale_px(0)), pady=self._scale_px(4))
 
         size_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
         size_controls_frame.pack(side="left", fill="x", expand=True)
@@ -1619,7 +1667,7 @@ class ResizeApp(customtkinter.CTk):
                 border_color=METALLIC_COLORS["border_medium"],
                 text_color=METALLIC_COLORS["text_primary"],
             )
-            mode_radio.pack(side="left", padx=(0, 6))
+            mode_radio.pack(side="left", padx=(0, self._scale_px(6)))
             self.mode_radio_buttons.append(mode_radio)
 
         self._setup_entry_widgets(size_controls_frame)
@@ -1636,7 +1684,12 @@ class ResizeApp(customtkinter.CTk):
         """基本操作の下に設定サマリーと詳細設定（折りたたみ）を配置する。"""
         self.settings_header_frame = customtkinter.CTkFrame(self)
         self._style_card_frame(self.settings_header_frame, corner_radius=12)
-        self.settings_header_frame.pack(side="top", fill="x", padx=12, pady=(0, 6))
+        self.settings_header_frame.pack(
+            side="top",
+            fill="x",
+            padx=self._scale_px(12),
+            pady=(0, self._scale_px(6)),
+        )
 
         self.settings_summary_var = customtkinter.StringVar(value="")
         self.settings_summary_label = customtkinter.CTkLabel(
@@ -1646,16 +1699,22 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
         )
-        self.settings_summary_label.pack(side="left", fill="x", expand=True, padx=(10, 0), pady=8)
+        self.settings_summary_label.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            padx=(self._scale_px(10), 0),
+            pady=self._scale_px(8),
+        )
 
-        self.appearance_mode_var = customtkinter.StringVar(value="OSに従う")
-        self.ui_mode_var = customtkinter.StringVar(value="簡易")
+        self.appearance_mode_var.set("OSに従う")
+        self.ui_mode_var.set("簡易")
         self.ui_mode_segment = customtkinter.CTkSegmentedButton(
             self.settings_header_frame,
             values=list(UI_MODE_LABEL_TO_ID.keys()),
             variable=self.ui_mode_var,
             command=self._on_ui_mode_changed,
-            width=120,
+            width=self._scale_px(120),
             font=self.font_small,
             selected_color=METALLIC_COLORS["primary"],
             selected_hover_color=METALLIC_COLORS["hover"],
@@ -1663,20 +1722,25 @@ class ResizeApp(customtkinter.CTk):
             unselected_hover_color=METALLIC_COLORS["accent_soft"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        self.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)
+        self.ui_mode_segment.pack(side="right", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
 
         self.details_toggle_button = customtkinter.CTkButton(
             self.settings_header_frame,
             text="詳細設定を表示",
-            width=140,
+            width=self._scale_px(140),
             command=self._toggle_details_panel,
             font=self.font_small,
         )
         self._style_secondary_button(self.details_toggle_button)
-        self.details_toggle_button.pack(side="right", padx=(0, 6), pady=8)
+        self.details_toggle_button.pack(side="right", padx=(0, self._scale_px(6)), pady=self._scale_px(8))
 
         self.recent_settings_row = customtkinter.CTkFrame(self.settings_header_frame, fg_color="transparent")
-        self.recent_settings_row.pack(side="bottom", fill="x", padx=10, pady=(0, 8))
+        self.recent_settings_row.pack(
+            side="bottom",
+            fill="x",
+            padx=self._scale_px(10),
+            pady=(0, self._scale_px(8)),
+        )
         self.recent_settings_title_label = customtkinter.CTkLabel(
             self.recent_settings_row,
             text="最近使った設定",
@@ -1982,7 +2046,7 @@ class ResizeApp(customtkinter.CTk):
         if density == self._topbar_density:
             return
         self._topbar_density = density
-        widths = TOPBAR_WIDTHS[density]
+        widths = self._scale_topbar_widths(density)
 
         self.select_button.configure(width=widths["select"])
         self.help_button.configure(width=widths["help"])
@@ -2062,9 +2126,9 @@ class ResizeApp(customtkinter.CTk):
 
         if pro_mode:
             if self.advanced_controls_frame.winfo_manager() != "pack":
-                self.advanced_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+                self.advanced_controls_frame.pack(side="top", fill="x", padx=self._scale_px(10), pady=(0, self._scale_px(6)))
             if self.codec_controls_frame.winfo_manager() != "pack":
-                self.codec_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+                self.codec_controls_frame.pack(side="top", fill="x", padx=self._scale_px(10), pady=(0, self._scale_px(6)))
         else:
             self.advanced_controls_frame.pack_forget()
             self.codec_controls_frame.pack_forget()
@@ -2315,7 +2379,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _setup_action_buttons(self, parent):
         """アクションボタンをセットアップ"""
-        topbar_widths = TOPBAR_WIDTHS["normal"]
+        topbar_widths = self._scale_topbar_widths("normal")
         self.preview_button = customtkinter.CTkButton(
             parent,
             text="プレビュー",
@@ -2326,7 +2390,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default
         )
         self._style_primary_button(self.preview_button)
-        self.preview_button.pack(side="left", padx=(0, 8), pady=8)
+        self.preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
         
         self.save_button = customtkinter.CTkButton(
             parent,
@@ -2338,7 +2402,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default
         )
         self._style_primary_button(self.save_button)
-        self.save_button.pack(side="left", pady=8)
+        self.save_button.pack(side="left", pady=self._scale_px(8))
         
         self.batch_button = customtkinter.CTkButton(
             parent,
@@ -2350,7 +2414,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default
         )
         self._style_primary_button(self.batch_button)
-        self.batch_button.pack(side="left", padx=8, pady=8)
+        self.batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(8))
 
         # Zoom combobox
         self.zoom_var = customtkinter.StringVar(value="画面に合わせる")
@@ -2370,13 +2434,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.zoom_cb.pack(side="left", padx=(4, 8), pady=8)
+        self.zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=self._scale_px(8))
 
     def _setup_output_controls(self, parent):
         """保存関連の設定コントロールをセットアップ"""
         self.basic_controls_frame = customtkinter.CTkFrame(parent)
         self._style_card_frame(self.basic_controls_frame, corner_radius=10)
-        self.basic_controls_frame.pack(side="top", fill="x", padx=10, pady=(10, 6))
+        self.basic_controls_frame.pack(
+            side="top",
+            fill="x",
+            padx=self._scale_px(10),
+            pady=(self._scale_px(10), self._scale_px(6)),
+        )
 
         self.output_format_var = customtkinter.StringVar(value="自動")
         self.quality_var = customtkinter.StringVar(value="85")
@@ -2393,12 +2462,12 @@ class ResizeApp(customtkinter.CTk):
             text="出力形式",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(10, 4), pady=8)
+        ).pack(side="left", padx=(self._scale_px(10), self._scale_px(4)), pady=self._scale_px(8))
         self.output_format_menu = customtkinter.CTkOptionMenu(
             self.basic_controls_frame,
             variable=self.output_format_var,
             values=self._build_output_format_labels(),
-            width=110,
+            width=self._scale_px(110),
             command=self._on_output_format_changed,
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -2408,19 +2477,19 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.output_format_menu.pack(side="left", padx=(0, 12), pady=8)
+        self.output_format_menu.pack(side="left", padx=(0, self._scale_px(12)), pady=self._scale_px(8))
 
         customtkinter.CTkLabel(
             self.basic_controls_frame,
             text="品質",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(8))
         self.quality_menu = customtkinter.CTkOptionMenu(
             self.basic_controls_frame,
             variable=self.quality_var,
             values=QUALITY_VALUES,
-            width=90,
+            width=self._scale_px(90),
             command=self._on_quality_changed,
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -2430,19 +2499,19 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.quality_menu.pack(side="left", padx=(0, 12), pady=8)
+        self.quality_menu.pack(side="left", padx=(0, self._scale_px(12)), pady=self._scale_px(8))
 
         customtkinter.CTkLabel(
             self.basic_controls_frame,
             text="EXIF",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(8))
         self.exif_mode_menu = customtkinter.CTkOptionMenu(
             self.basic_controls_frame,
             variable=self.exif_mode_var,
             values=list(EXIF_LABEL_TO_ID.keys()),
-            width=90,
+            width=self._scale_px(90),
             command=self._on_exif_mode_changed,
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -2452,7 +2521,7 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.exif_mode_menu.pack(side="left", padx=(0, 10), pady=8)
+        self.exif_mode_menu.pack(side="left", padx=(0, self._scale_px(10)), pady=self._scale_px(8))
 
         self.remove_gps_check = customtkinter.CTkCheckBox(
             self.basic_controls_frame,
@@ -2464,7 +2533,7 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_medium"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        self.remove_gps_check.pack(side="left", padx=(0, 10), pady=8)
+        self.remove_gps_check.pack(side="left", padx=(0, self._scale_px(10)), pady=self._scale_px(8))
 
         self.dry_run_check = customtkinter.CTkCheckBox(
             self.basic_controls_frame,
@@ -2476,11 +2545,16 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_medium"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        self.dry_run_check.pack(side="left", padx=(0, 12), pady=8)
+        self.dry_run_check.pack(side="left", padx=(0, self._scale_px(12)), pady=self._scale_px(8))
 
         self.advanced_controls_frame = customtkinter.CTkFrame(parent)
         self._style_card_frame(self.advanced_controls_frame, corner_radius=10)
-        self.advanced_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        self.advanced_controls_frame.pack(
+            side="top",
+            fill="x",
+            padx=self._scale_px(10),
+            pady=(0, self._scale_px(6)),
+        )
 
         self.verbose_log_check = customtkinter.CTkCheckBox(
             self.advanced_controls_frame,
@@ -2493,42 +2567,47 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_medium"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        self.verbose_log_check.pack(side="left", padx=(10, 8), pady=8)
+        self.verbose_log_check.pack(side="left", padx=(self._scale_px(10), self._scale_px(8)), pady=self._scale_px(8))
         self.exif_preview_button = customtkinter.CTkButton(
             self.advanced_controls_frame,
             text="EXIF差分",
-            width=95,
+            width=self._scale_px(95),
             command=self._show_exif_preview_dialog,
             font=self.font_small,
         )
         self._style_secondary_button(self.exif_preview_button)
-        self.exif_preview_button.pack(side="left", padx=(0, 10), pady=8)
+        self.exif_preview_button.pack(side="left", padx=(0, self._scale_px(10)), pady=self._scale_px(8))
 
         self.open_log_folder_button = customtkinter.CTkButton(
             self.advanced_controls_frame,
             text="ログフォルダ",
-            width=110,
+            width=self._scale_px(110),
             command=self._open_log_folder,
             font=self.font_small,
         )
         self._style_secondary_button(self.open_log_folder_button)
-        self.open_log_folder_button.pack(side="left", padx=(0, 10), pady=8)
+        self.open_log_folder_button.pack(side="left", padx=(0, self._scale_px(10)), pady=self._scale_px(8))
 
         self.codec_controls_frame = customtkinter.CTkFrame(parent)
         self._style_card_frame(self.codec_controls_frame, corner_radius=10)
-        self.codec_controls_frame.pack(side="top", fill="x", padx=10, pady=(0, 6))
+        self.codec_controls_frame.pack(
+            side="top",
+            fill="x",
+            padx=self._scale_px(10),
+            pady=(0, self._scale_px(6)),
+        )
 
         customtkinter.CTkLabel(
             self.codec_controls_frame,
             text="WEBP method",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(10, 4), pady=8)
+        ).pack(side="left", padx=(self._scale_px(10), self._scale_px(4)), pady=self._scale_px(8))
         self.webp_method_menu = customtkinter.CTkOptionMenu(
             self.codec_controls_frame,
             variable=self.webp_method_var,
             values=WEBP_METHOD_VALUES,
-            width=80,
+            width=self._scale_px(80),
             command=self._on_webp_method_changed,
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -2538,7 +2617,7 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.webp_method_menu.pack(side="left", padx=(0, 8), pady=8)
+        self.webp_method_menu.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
 
         self.webp_lossless_check = customtkinter.CTkCheckBox(
             self.codec_controls_frame,
@@ -2551,19 +2630,19 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_medium"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        self.webp_lossless_check.pack(side="left", padx=(0, 14), pady=8)
+        self.webp_lossless_check.pack(side="left", padx=(0, self._scale_px(14)), pady=self._scale_px(8))
 
         customtkinter.CTkLabel(
             self.codec_controls_frame,
             text="AVIF speed",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(8))
         self.avif_speed_menu = customtkinter.CTkOptionMenu(
             self.codec_controls_frame,
             variable=self.avif_speed_var,
             values=AVIF_SPEED_VALUES,
-            width=80,
+            width=self._scale_px(80),
             command=self._on_avif_speed_changed,
             font=self.font_small,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -2573,13 +2652,13 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.avif_speed_menu.pack(side="left", padx=(0, 8), pady=8)
+        self.avif_speed_menu.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
         customtkinter.CTkLabel(
             self.codec_controls_frame,
             text="(低速=高品質)",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_tertiary"],
-        ).pack(side="left", pady=8)
+        ).pack(side="left", pady=self._scale_px(8))
 
         self._update_codec_controls_state()
         self._setup_exif_edit_fields(parent)
@@ -2599,65 +2678,65 @@ class ResizeApp(customtkinter.CTk):
             text="撮影者",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(10, 4), pady=8)
+        ).pack(side="left", padx=(self._scale_px(10), self._scale_px(4)), pady=self._scale_px(8))
         self.exif_artist_entry = customtkinter.CTkEntry(
             self.exif_edit_frame,
             textvariable=self.exif_artist_var,
-            width=124,
+            width=self._scale_px(124),
             font=self.font_small,
             fg_color=METALLIC_COLORS["input_bg"],
             border_color=METALLIC_COLORS["border_light"],
             text_color=METALLIC_COLORS["text_primary"],
             corner_radius=8,
         )
-        self.exif_artist_entry.pack(side="left", padx=(0, 8), pady=8)
+        self.exif_artist_entry.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
 
         customtkinter.CTkLabel(
             self.exif_edit_frame,
             text="著作権",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(8))
         self.exif_copyright_entry = customtkinter.CTkEntry(
             self.exif_edit_frame,
             textvariable=self.exif_copyright_var,
-            width=144,
+            width=self._scale_px(144),
             font=self.font_small,
             fg_color=METALLIC_COLORS["input_bg"],
             border_color=METALLIC_COLORS["border_light"],
             text_color=METALLIC_COLORS["text_primary"],
             corner_radius=8,
         )
-        self.exif_copyright_entry.pack(side="left", padx=(0, 8), pady=8)
+        self.exif_copyright_entry.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
 
         customtkinter.CTkLabel(
             self.exif_edit_frame,
             text="コメント",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(8))
         self.exif_comment_entry = customtkinter.CTkEntry(
             self.exif_edit_frame,
             textvariable=self.exif_user_comment_var,
-            width=184,
+            width=self._scale_px(184),
             font=self.font_small,
             fg_color=METALLIC_COLORS["input_bg"],
             border_color=METALLIC_COLORS["border_light"],
             text_color=METALLIC_COLORS["text_primary"],
             corner_radius=8,
         )
-        self.exif_comment_entry.pack(side="left", padx=(0, 8), pady=8)
+        self.exif_comment_entry.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(8))
 
         customtkinter.CTkLabel(
             self.exif_edit_frame,
             text="撮影日時",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="left", padx=(0, 4), pady=8)
+        ).pack(side="left", padx=(0, self._scale_px(4)), pady=self._scale_px(8))
         self.exif_datetime_entry = customtkinter.CTkEntry(
             self.exif_edit_frame,
             textvariable=self.exif_datetime_original_var,
-            width=150,
+            width=self._scale_px(150),
             placeholder_text="YYYY:MM:DD HH:MM:SS",
             font=self.font_small,
             fg_color=METALLIC_COLORS["input_bg"],
@@ -2665,7 +2744,7 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_primary"],
             corner_radius=8,
         )
-        self.exif_datetime_entry.pack(side="left", pady=8)
+        self.exif_datetime_entry.pack(side="left", pady=self._scale_px(8))
 
         self._toggle_exif_edit_fields()
 
@@ -4742,12 +4821,30 @@ class ResizeApp(customtkinter.CTk):
         dialog = customtkinter.CTkToplevel(self)
         self._result_dialog = dialog
         dialog.title(title)
-        dialog.geometry("760x430")
+        ui_scale_factor = UI_SCALE_FACTORS.get(self._normalize_ui_scale_mode(self._ui_scale_mode), 1.0)
+        result_base_width, result_base_height = 760, 430
+        dialog.geometry(
+            f"{max(result_base_width, round(result_base_width * ui_scale_factor))}"
+            f"x{max(result_base_height, round(result_base_height * ui_scale_factor))}"
+        )
+        dialog.minsize(
+            max(result_base_width, round(result_base_width * ui_scale_factor)),
+            max(result_base_height, round(result_base_height * ui_scale_factor)),
+        )
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
         dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
         dialog.grid_columnconfigure(0, weight=1)
+
+        def _scale_px(value: int) -> int:
+            scaled = round(value * ui_scale_factor)
+            return max(1, scaled)
+
+        def _scale_pad(value: Any) -> Any:
+            if isinstance(value, (list, tuple)):
+                return tuple(_scale_px(int(v)) for v in value)
+            return _scale_px(int(value))
 
         customtkinter.CTkLabel(
             dialog,
@@ -4755,7 +4852,13 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_bold,
             text_color=METALLIC_COLORS["text_primary"],
             anchor="w",
-        ).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
+        ).grid(
+            row=0,
+            column=0,
+            sticky="ew",
+            padx=_scale_pad((16, 16)),
+            pady=_scale_pad((14, 6)),
+        )
 
         customtkinter.CTkLabel(
             dialog,
@@ -4764,14 +4867,14 @@ class ResizeApp(customtkinter.CTk):
             anchor="w",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-            wraplength=720,
-        ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+            wraplength=_scale_px(720),
+        ).grid(row=1, column=0, sticky="ew", padx=_scale_pad((16, 16)), pady=_scale_pad((0, 8)))
 
         details_text = self._failure_center_text(failed_details)
 
         details_box = customtkinter.CTkTextbox(
             dialog,
-            height=230,
+            height=_scale_px(230),
             corner_radius=8,
             border_width=1,
             border_color=METALLIC_COLORS["border_light"],
@@ -4780,12 +4883,12 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
             wrap="word",
         )
-        details_box.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 10))
+        details_box.grid(row=2, column=0, sticky="nsew", padx=_scale_pad((16, 16)), pady=_scale_pad((0, 10)))
         details_box.insert("1.0", details_text)
         details_box.configure(state="disabled")
 
         button_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        button_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 14))
+        button_row.grid(row=3, column=0, sticky="ew", padx=_scale_pad((16, 16)), pady=_scale_pad((0, 14)))
         button_row.grid_columnconfigure(0, weight=1)
 
         def _close() -> None:
@@ -4797,29 +4900,29 @@ class ResizeApp(customtkinter.CTk):
         close_button = customtkinter.CTkButton(
             button_row,
             text="閉じる",
-            width=110,
+            width=_scale_px(110),
             command=_close,
             font=self.font_default,
         )
         self._style_secondary_button(close_button)
-        close_button.pack(side="right", padx=(8, 0))
+        close_button.pack(side="right", padx=_scale_pad((8, 0)))
 
         if retry_callback is not None:
             retry_button = customtkinter.CTkButton(
                 button_row,
                 text="失敗のみ再試行",
-                width=140,
+                width=_scale_px(140),
                 command=lambda: (_close(), retry_callback()),
                 font=self.font_default,
             )
             self._style_primary_button(retry_button)
-            retry_button.pack(side="right", padx=(8, 0))
+            retry_button.pack(side="right", padx=_scale_pad((8, 0)))
 
         if failed_details:
             copy_button = customtkinter.CTkButton(
                 button_row,
                 text="失敗一覧をコピー",
-                width=140,
+                width=_scale_px(140),
                 command=lambda: messagebox.showinfo(
                     "コピー",
                     "失敗一覧をクリップボードにコピーしました。"
@@ -4836,7 +4939,7 @@ class ResizeApp(customtkinter.CTk):
                 font=self.font_default,
             )
             self._style_secondary_button(copy_button)
-            copy_button.pack(side="right", padx=(0, 8))
+            copy_button.pack(side="right", padx=_scale_pad((0, 8)))
 
     def _reset_loaded_jobs(self) -> None:
         self.jobs.clear()
@@ -5652,12 +5755,28 @@ class ResizeApp(customtkinter.CTk):
         dialog = customtkinter.CTkToplevel(self)
         self._settings_dialog = dialog
         dialog.title("設定")
-        dialog.geometry("640x505")
-        dialog.resizable(False, False)
+        ui_scale_factor = UI_SCALE_FACTORS.get(self._normalize_ui_scale_mode(self._ui_scale_mode), 1.0)
+        base_width, base_height = 680, 565
+        dialog.geometry(f"{max(base_width, round(base_width * ui_scale_factor))}x{max(base_height, round(base_height * ui_scale_factor))}")
+        dialog.minsize(max(base_width, round(base_width * ui_scale_factor)), max(base_height, round(base_height * ui_scale_factor)))
+        dialog.resizable(True, True)
         dialog.transient(self)
         dialog.grab_set()
         dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
-        dialog.grid_columnconfigure(1, weight=1)
+        dialog.grid_rowconfigure(0, weight=1)
+        dialog.grid_rowconfigure(1, weight=0)
+        dialog.grid_columnconfigure(0, weight=1)
+
+        settings_content = customtkinter.CTkScrollableFrame(dialog, fg_color="transparent")
+        settings_content.grid(
+            row=0,
+            column=0,
+            padx=self._scale_px(8),
+            pady=(0, 0),
+            sticky="nsew",
+        )
+        settings_content.grid_columnconfigure(0, weight=0)
+        settings_content.grid_columnconfigure(1, weight=1)
 
         ui_mode_var = customtkinter.StringVar(value=self.ui_mode_var.get())
         appearance_var = customtkinter.StringVar(value=self.appearance_mode_var.get())
@@ -5693,6 +5812,15 @@ class ResizeApp(customtkinter.CTk):
                 dialog.grab_release()
                 dialog.destroy()
             self._settings_dialog = None
+
+        def _scale_px(value: int) -> int:
+            scaled = round(value * ui_scale_factor)
+            return max(1, scaled)
+
+        def _scale_pad(value: Any) -> Any:
+            if isinstance(value, (list, tuple)):
+                return tuple(_scale_px(int(v)) for v in value)
+            return _scale_px(int(value))
 
         def _browse_default_output_dir() -> None:
             initial_dir = (
@@ -5786,13 +5914,13 @@ class ResizeApp(customtkinter.CTk):
         row = 0
 
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="UIモード",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=(18, 8), sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_pad((18, 8)), sticky="w")
         ui_mode_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=list(UI_MODE_LABEL_TO_ID.keys()),
             variable=ui_mode_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5802,18 +5930,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        ui_mode_menu.grid(row=row, column=1, padx=(0, 20), pady=(18, 8), sticky="ew")
+        ui_mode_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_pad((18, 8)), sticky="ew")
         self._register_tooltip(ui_mode_menu, "簡易/プロモードを選択します。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="カラーテーマ",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         appearance_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=list(APPEARANCE_LABEL_TO_ID.keys()),
             variable=appearance_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5823,18 +5951,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        appearance_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        appearance_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(appearance_menu, "OSに従う/ライト/ダークを選択します。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="文字サイズ",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         ui_scale_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=list(UI_SCALE_LABEL_TO_ID.keys()),
             variable=ui_scale_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5844,18 +5972,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        ui_scale_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        ui_scale_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(ui_scale_menu, "見やすい文字サイズに切り替えます。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="ホバー説明",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         show_tooltips_check = customtkinter.CTkCheckBox(
-            dialog,
+            settings_content,
             text="有効にする",
             variable=show_tooltips_var,
             font=self.font_default,
@@ -5864,18 +5992,18 @@ class ResizeApp(customtkinter.CTk):
             border_color=METALLIC_COLORS["border_medium"],
             text_color=METALLIC_COLORS["text_primary"],
         )
-        show_tooltips_check.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="w")
+        show_tooltips_check.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
         self._register_tooltip(show_tooltips_check, "ホバー説明の表示を切り替えます。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="既定の出力形式",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         output_format_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=self._build_output_format_labels(),
             variable=output_format_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5885,18 +6013,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        output_format_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        output_format_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(output_format_menu, "起動時の既定出力形式を選択します。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="既定の品質",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         quality_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=QUALITY_VALUES,
             variable=quality_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5906,18 +6034,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        quality_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        quality_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(quality_menu, "起動時の既定品質を選択します。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="既定プリセット",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         default_preset_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=self._preset_labels_with_none(),
             variable=default_preset_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5927,18 +6055,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        default_preset_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        default_preset_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(default_preset_menu, "起動時に使うプリセットを選択します。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="プロモード入力方式",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
         pro_input_menu = customtkinter.CTkOptionMenu(
-            dialog,
+            settings_content,
             values=list(PRO_INPUT_MODE_LABEL_TO_ID.keys()),
             variable=pro_input_var,
             fg_color=METALLIC_COLORS["bg_tertiary"],
@@ -5948,18 +6076,18 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        pro_input_menu.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        pro_input_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(pro_input_menu, "プロモードの既定入力方法を選択します。")
 
         row += 1
         customtkinter.CTkLabel(
-            dialog,
+            settings_content,
             text="既定の保存先フォルダ",
             font=self.font_default,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=(20, 10), pady=8, sticky="w")
-        default_output_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        default_output_frame.grid(row=row, column=1, padx=(0, 20), pady=8, sticky="ew")
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+        default_output_frame = customtkinter.CTkFrame(settings_content, fg_color="transparent")
+        default_output_frame.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         default_output_frame.grid_columnconfigure(0, weight=1)
         default_output_entry = customtkinter.CTkEntry(
             default_output_frame,
@@ -5973,44 +6101,49 @@ class ResizeApp(customtkinter.CTk):
         browse_button = customtkinter.CTkButton(
             default_output_frame,
             text="参照",
-            width=70,
+            width=_scale_px(70),
             command=_browse_default_output_dir,
             font=self.font_small,
         )
         self._style_secondary_button(browse_button)
-        browse_button.grid(row=0, column=1, padx=(8, 0))
+        browse_button.grid(row=0, column=1, padx=_scale_pad((8, 0)))
         self._register_tooltip(browse_button, "フォルダ選択を開きます。")
 
-        button_row = row + 1
         button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        button_frame.grid(row=button_row, column=0, columnspan=2, padx=20, pady=(18, 16), sticky="e")
+        button_frame.grid(
+            row=1,
+            column=0,
+            padx=_scale_px(20),
+            pady=_scale_pad((18, 16)),
+            sticky="e",
+        )
 
         reset_button = customtkinter.CTkButton(
             button_frame,
             text="初期化",
-            width=90,
+            width=_scale_px(90),
             command=_reset_dialog_values,
             font=self.font_small,
         )
         self._style_secondary_button(reset_button)
-        reset_button.pack(side="left", padx=(0, 8))
+        reset_button.pack(side="left", padx=_scale_pad((0, 8)))
         self._register_tooltip(reset_button, "設定値を初期状態へ戻します。")
 
         cancel_button = customtkinter.CTkButton(
             button_frame,
             text="キャンセル",
-            width=90,
+            width=_scale_px(90),
             command=_close_dialog,
             font=self.font_small,
         )
         self._style_secondary_button(cancel_button)
-        cancel_button.pack(side="left", padx=(0, 8))
+        cancel_button.pack(side="left", padx=_scale_pad((0, 8)))
         self._register_tooltip(cancel_button, "変更を保存せず閉じます。")
 
         save_button = customtkinter.CTkButton(
             button_frame,
             text="保存",
-            width=90,
+            width=_scale_px(90),
             command=_save_dialog_values,
             font=self.font_small,
         )
