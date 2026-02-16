@@ -38,6 +38,8 @@ def default_gui_settings() -> dict[str, Any]:
         "exif_copyright": "",
         "exif_user_comment": "",
         "exif_datetime_original": "",
+        "max_files_simple_mode": 120,
+        "max_files_pro_mode": 600,
         "details_expanded": False,
         "metadata_panel_expanded": False,
         "window_geometry": "1200x800",

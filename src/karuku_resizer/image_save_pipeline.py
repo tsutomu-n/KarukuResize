@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import logging
+import time
 from pathlib import Path
+import uuid
 from typing import Any, Dict, Iterable, Literal, Optional, Tuple
 
 from PIL import ExifTags, Image, features
@@ -60,6 +63,10 @@ class SaveResult:
     edited_fields: Tuple[str, ...] = ()
     skipped_reason: Optional[str] = None
     error: Optional[str] = None
+    error_code: Optional[int] = None
+    error_category: Optional[str] = None
+    retryable: bool = False
+    error_guidance: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +94,135 @@ _EXIF_TAG_ARTIST = 0x013B
 _EXIF_TAG_COPYRIGHT = 0x8298
 _EXIF_TAG_DATETIME_ORIGINAL = 0x9003
 _EXIF_TAG_USER_COMMENT = 0x9286
+_WINDOWS_LONG_PATH_PREFIX = 260
+
+_WINDOWS_RETRYABLE_CODES = {32}
+_WINDOWS_UNSUPPORTED_CODES = {2, 3, 80, 123, 206, 995, 1088}
+
+def _normalize_windows_long_path(path: Path) -> Path:
+    """Windowsの長いパス向けに `\\?\\` プレフィックスを付与する。
+
+    保存時のみ短い文字数では不要ですが、260文字を超える場合は先に
+    プレフィックスを付けることで `File name too long` 系の失敗を
+    回避しやすくする。
+    """
+    if os.name != "nt":
+        return path
+
+    path_str = os.path.abspath(str(path))
+    if path_str.startswith("\\\\?\\"):
+        return Path(path_str)
+
+    if len(path_str) < _WINDOWS_LONG_PATH_PREFIX - 4:
+        return Path(path_str)
+
+    if path_str.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + path_str[2:])
+
+    return Path("\\\\?\\" + path_str)
+
+
+def _build_temp_save_path(target_path: Path) -> Path:
+    """同一ディレクトリ内の一時保存パスを作る。"""
+    base_name = target_path.name or "karuku_output"
+    token = f"{os.getpid()}_{time.time_ns()}_{uuid.uuid4().hex[:10]}"
+    return target_path.with_name(f".{base_name}.{token}.tmp")
+
+
+def _analyze_file_error(error: BaseException) -> Tuple[Optional[int], str, bool, str]:
+    """ファイル保存に使えるエラー分類を返す。
+
+    Returns:
+        (error_code, error_category, retryable, guidance)
+    """
+    if not isinstance(error, OSError):
+        return None, "unknown", False, "再試行しても解決しない場合は画像ファイルの破損や権限を確認してください。"
+
+    win_error = getattr(error, "winerror", None)
+    errno = getattr(error, "errno", None)
+
+    if os.name == "nt" and win_error:
+        code = int(win_error)
+        if code in _WINDOWS_RETRYABLE_CODES:
+            return (
+                code,
+                "sharing_violation",
+                True,
+                "他のアプリによるロックが疑われます。数秒後に再試行するか、関連アプリを閉じてください。",
+            )
+        if code == 206:
+            return (
+                code,
+                "path_too_long",
+                False,
+                "保存先のパスが長すぎる可能性があります。保存先を短いパスに変更してください。",
+            )
+        if code == 5:
+            return (
+                code,
+                "permission_denied",
+                False,
+                "保存先のアクセス権限が不足しています。ファイルの利用権限や書き込み権限を確認してください。",
+            )
+        if code == 2:
+            return (
+                code,
+                "not_found",
+                False,
+                "保存先フォルダが見つからないため保存できません。保存先フォルダを確認してください。",
+            )
+        if code == 183:
+            return (
+                code,
+                "already_exists",
+                False,
+                "同名ファイルにアクセスできない状態です。保存先に同名のファイルがないか確認してください。",
+            )
+        if code in {28, 122, 112}:
+            return (
+                code,
+                "no_space",
+                False,
+                "保存先の空き容量不足が疑われます。空き容量を確認してください。",
+            )
+        return code, "windows_os_error", False, "Windows側のI/Oエラーが発生しました。保存先を変更して再試行してください。"
+
+    code = None
+    if isinstance(errno, int):
+        code = int(errno)
+        if code in _WINDOWS_UNSUPPORTED_CODES:
+            return (
+                code,
+                "path_invalid",
+                False,
+                "ファイル名・パス文字列を確認してください（予約語/不正文字が含まれる可能性）。",
+            )
+        if code in {28, 122, 112}:
+            return code, "no_space", False, "保存先の空き容量不足が疑われます。空き容量を確認してください。"
+
+    if code in {13, 5, 30}:
+        return code, "permission_denied", False, "権限設定をご確認ください。"
+
+    return code, "unknown", False, "再試行しても解決しない場合は保存先を変更してください。"
+
+
+def _save_with_atomic_replace(
+    save_img: Image.Image,
+    final_path: Path,
+    save_kwargs: Dict[str, Any],
+) -> None:
+    """保存を一時ファイル→置換で実行し、壊れた最終ファイルを防ぐ。"""
+    tmp_path = _build_temp_save_path(final_path)
+    try:
+        # 拡張子に依存した場合を避けるため format を明示しておく
+        save_img.save(tmp_path, **save_kwargs)
+        os.replace(str(tmp_path), str(final_path))
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                logger.warning("一時保存ファイルの削除に失敗: %s", tmp_path)
 
 
 def supported_output_formats() -> list[SaveFormat]:
@@ -238,6 +374,7 @@ def save_image(
         webp_lossless=options.webp_lossless,
         avif_speed=options.avif_speed,
     )
+    write_target = _normalize_windows_long_path(final_path)
 
     if options.output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
         # 透過を持つ画像は白背景へ合成して保存する
@@ -254,7 +391,11 @@ def save_image(
 
     # EXIF付与に失敗した場合は、メタデータなし保存へフォールバックする。
     try:
-        save_img.save(final_path, **save_kwargs)
+        _save_with_atomic_replace(
+            save_img=save_img,
+            final_path=write_target,
+            save_kwargs=save_kwargs,
+        )
         exif_attached = "exif" in save_kwargs
         return SaveResult(
             success=True,
@@ -274,7 +415,11 @@ def save_image(
             save_kwargs_without_exif = dict(save_kwargs)
             save_kwargs_without_exif.pop("exif", None)
             try:
-                save_img.save(final_path, **save_kwargs_without_exif)
+                _save_with_atomic_replace(
+                    save_img=save_img,
+                    final_path=write_target,
+                    save_kwargs=save_kwargs_without_exif,
+                )
                 return SaveResult(
                     success=True,
                     output_path=final_path,
@@ -290,11 +435,16 @@ def save_image(
                 )
             except Exception:
                 pass
+        error_code, error_category, retryable, _retry_guidance = _analyze_file_error(e)
         return SaveResult(
             success=False,
             output_path=final_path,
             exif_mode=options.exif_mode,
             error=str(e),
+            error_code=error_code,
+            error_category=error_category,
+            retryable=retryable,
+            error_guidance=_retry_guidance,
             dry_run=False,
             had_source_exif=exif_meta.had_source_exif,
             exif_requested=exif_requested,

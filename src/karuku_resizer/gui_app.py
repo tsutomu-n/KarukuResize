@@ -17,11 +17,13 @@ import logging
 import os
 import platform
 import queue
+import hashlib
 import re
 import subprocess
 import sys
 import threading
 import time
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +32,7 @@ from tkinter import filedialog, font as tkfont, messagebox, simpledialog
 from urllib.parse import unquote, urlparse
 
 import customtkinter
-from PIL import Image, ImageOps, ImageTk
+from PIL import Image, ImageOps, ImageTk, UnidentifiedImageError
 try:
     from tkinterdnd2 import COPY, DND_FILES, TkinterDnD
     TKDND_AVAILABLE = True
@@ -83,6 +85,7 @@ from karuku_resizer.ui_tooltip_content import (
     UI_MODE_VALUE_TOOLTIPS,
 )
 from karuku_resizer.icon_loader import load_icon
+from karuku_resizer.resize_core import analyze_os_error
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -162,6 +165,8 @@ SELECTABLE_INPUT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
 FILE_LOAD_FAILURE_PREVIEW_LIMIT = 20
 RECENT_SETTINGS_MAX = 6
 OPERATION_ONLY_CANCEL_HINT = "中止のみ可能"
+SIMPLE_MODE_MAX_FILES_DEFAULT = 120
+PRO_MODE_MAX_FILES_DEFAULT = 600
 FILE_FILTER_LABEL_TO_ID = {
     "全件": "all",
     "失敗": "failed",
@@ -375,6 +380,8 @@ class ResizeApp(customtkinter.CTk):
         self._file_load_loaded_count = 0
         self._file_load_failed_details: List[str] = []
         self._file_load_failed_paths: List[Path] = []
+        self._file_load_limited = False
+        self._file_load_limit = 0
         self._file_load_root_dir: Optional[Path] = None
         self._file_load_mode_label = "再帰読み込み"
         self._file_scan_started_at = 0.0
@@ -1744,6 +1751,93 @@ class ResizeApp(customtkinter.CTk):
             if len(entries) >= RECENT_SETTINGS_MAX:
                 break
         return entries
+
+    def _max_files_for_mode(self, is_pro: bool) -> int:
+        raw = self.settings.get("max_files_pro_mode" if is_pro else "max_files_simple_mode")
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return PRO_MODE_MAX_FILES_DEFAULT if is_pro else SIMPLE_MODE_MAX_FILES_DEFAULT
+        if value < 0:
+            return PRO_MODE_MAX_FILES_DEFAULT if is_pro else SIMPLE_MODE_MAX_FILES_DEFAULT
+        if value == 0:
+            return 0
+        return value
+
+    @staticmethod
+    def _is_retryable_save_error(result: SaveResult) -> bool:
+        if result.retryable:
+            return True
+        if result.error_category in {
+            "sharing_violation",
+        }:
+            return True
+
+        error_text = result.error or ""
+        if not error_text:
+            return False
+        text = error_text.lower()
+        if (result.error_code is not None) and result.error_code in {32}:
+            return True
+        return any(
+            token in text
+            for token in (
+                "resource temporarily unavailable",
+                "temporarily unavailable",
+                "in use",
+                "timed out",
+                "timeout",
+                "アクセスが拒否",
+            )
+        )
+
+    @staticmethod
+    def _build_save_failure_hint(result: SaveResult) -> str:
+        if result.error_guidance:
+            return f"対処: {result.error_guidance}"
+        if result.error_category == "sharing_violation":
+            return "対処: 他のアプリや同期機能で開かれた状態の可能性があります。閉じてから再試行してください。"
+        if result.error_category == "path_too_long":
+            return "対処: 保存先のパス文字数を短くしてください。"
+        if result.error_category == "permission_denied":
+            return "対処: 保存先ファイル/フォルダの権限を確認してください。"
+        if result.error_category == "no_space":
+            return "対処: 空き容量不足が疑われます。保存先を変更してください。"
+        return "対処: 保存先を変更して再試行してください。"
+
+    def _save_with_retry(
+        self,
+        *,
+        source_image: Image.Image,
+        resized_image: Image.Image,
+        output_path: Path,
+        options: SaveOptions,
+        allow_retry: bool,
+    ) -> Tuple[SaveResult, int]:
+        max_attempts = 2 if allow_retry else 1
+        result: SaveResult = SaveResult(False, output_path, error="未実行")
+
+        for attempt in range(1, max_attempts + 1):
+            result = save_image(
+                source_image=source_image,
+                resized_image=resized_image,
+                output_path=output_path,
+                options=options,
+            )
+            if result.success:
+                return result, attempt
+            if not allow_retry or attempt >= max_attempts:
+                return result, attempt
+            if not self._is_retryable_save_error(result):
+                return result, attempt
+            logging.info(
+                "保存再試行: %s (%s)",
+                output_path,
+                result.error,
+            )
+            time.sleep(0.25)
+
+        return result, max_attempts
 
     def _recent_settings_entries(self) -> List[Dict[str, Any]]:
         entries = self._normalize_recent_settings_entries(self.settings.get("recent_processing_settings", []))
@@ -3489,6 +3583,46 @@ class ResizeApp(customtkinter.CTk):
             avif_speed=self._current_avif_speed() if pro_mode else 6,
         )
 
+    def _preflight_output_directory(self, output_path: Path, create_if_missing: bool = True) -> Optional[str]:
+        try:
+            parent = output_path.parent
+            if parent is None:
+                return "保存先フォルダの取得に失敗しました。"
+
+            if output_path.exists() and output_path.is_dir():
+                return (
+                    f"保存先「{output_path.name}」は既存のフォルダです。"
+                    "ファイル名を変更してください。"
+                )
+
+            if not parent.exists():
+                if not create_if_missing:
+                    return f"保存先フォルダ「{parent}」が存在しません。"
+                parent.mkdir(parents=True, exist_ok=True)
+
+            if not parent.is_dir():
+                return f"保存先「{parent}」はフォルダではありません。"
+            if os.path.exists(parent) and not os.access(parent, os.W_OK):
+                return f"保存先フォルダ「{parent}」に書き込み権限がありません。"
+
+            with tempfile.NamedTemporaryFile(prefix=".krkrw_", dir=parent, delete=True) as probe:
+                probe.write(b"")
+            return None
+        except Exception as exc:
+            detail = self._readable_os_error(exc, "保存先の事前チェックに失敗しました。")
+            return detail
+
+    def _preflight_output_directory_only(self, directory: Path, create_if_missing: bool = True) -> Optional[str]:
+        return self._preflight_output_directory(directory / ".__karuku_dir_probe__", create_if_missing=create_if_missing)
+
+    def _is_windows_path_length_risky(self, output_path: Path) -> bool:
+        if os.name != "nt":
+            return False
+        candidate = str(output_path)
+        if candidate.startswith("\\\\?\\"):
+            candidate = candidate[4:]
+        return len(candidate) > 220
+
     def _build_single_save_filetypes(self):
         filetypes = [("JPEG", "*.jpg *.jpeg"), ("PNG", "*.png")]
         if "webp" in self.available_formats:
@@ -3505,7 +3639,14 @@ class ResizeApp(customtkinter.CTk):
         output_format: SaveFormat,
         dry_run: bool,
     ) -> Path:
-        base = output_dir / f"{stem}_resized"
+        safe_stem = re.sub(r'[\\/:*?"<>|]+', "_", str(stem).strip())
+        safe_stem = safe_stem.strip(" .")
+        if not safe_stem:
+            safe_stem = "image"
+        if len(safe_stem) > 72:
+            digest = hashlib.sha1(safe_stem.encode("utf-8")).hexdigest()[:8]
+            safe_stem = f"{safe_stem[:60]}_{digest}"
+        base = output_dir / f"{safe_stem}_resized"
         if dry_run:
             return base
 
@@ -3743,12 +3884,23 @@ class ResizeApp(customtkinter.CTk):
         if not files and not dirs:
             return
 
+        max_files = self._max_files_for_mode(self._is_pro_mode())
+        if files and max_files > 0 and len(files) > max_files:
+            messagebox.showwarning(
+                "読み込み上限",
+                f"対象画像は {len(files)} 枚ですが、モード上限 {max_files} 枚で制限して読み込みます。",
+            )
+            files = files[:max_files]
+
         root_dir = dirs[0] if len(dirs) == 1 else None
         self._begin_file_load_session(
             mode_label="ドラッグ&ドロップ読込",
             root_dir=root_dir,
             clear_existing_jobs=True,
         )
+        self._file_load_limited = False
+        self._file_load_limit = max_files
+        limit_text = str(max_files) if max_files > 0 else "無制限"
         if root_dir is None and files:
             self.settings["last_input_dir"] = str(files[0].parent)
         elif root_dir is not None:
@@ -3756,13 +3908,19 @@ class ResizeApp(customtkinter.CTk):
 
         self.status_var.set(
             f"ドラッグ&ドロップ読込開始: フォルダー{len(dirs)}件 / ファイル{len(files)}件 / "
-            f"{self._loading_hint_text()}"
+            f"上限 {limit_text}枚 / {self._loading_hint_text()}"
         )
 
         if dirs:
             worker = threading.Thread(
                 target=self._scan_and_load_drop_items_worker,
-                args=(files, dirs, self._file_load_cancel_event, self._file_load_queue),
+                args=(
+                    files,
+                    dirs,
+                    self._file_load_cancel_event,
+                    self._file_load_queue,
+                    max_files,
+                ),
                 daemon=True,
                 name="karuku-dnd-loader",
             )
@@ -3782,10 +3940,13 @@ class ResizeApp(customtkinter.CTk):
         dropped_dirs: List[Path],
         cancel_event: threading.Event,
         out_queue: "queue.Queue[Dict[str, Any]]",
+        max_files: int,
     ) -> None:
         try:
             candidates: List[Path] = []
             seen: set[str] = set()
+            reached_limit = False
+            scan_errors: List[str] = []
 
             def _add_candidate(path: Path) -> None:
                 marker = str(path).lower()
@@ -3804,12 +3965,28 @@ class ResizeApp(customtkinter.CTk):
                     detected += 1
                     if detected % 40 == 0:
                         out_queue.put({"type": "scan_progress", "count": detected})
+                    if max_files > 0 and detected >= max_files:
+                        reached_limit = True
+                        break
+
+                if reached_limit:
+                    break
 
             for root_dir in dropped_dirs:
                 if cancel_event.is_set():
                     out_queue.put({"type": "done", "canceled": True})
                     return
-                for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
+                if reached_limit:
+                    break
+
+                def _onerror(exc: OSError) -> None:
+                    message = ResizeApp._build_load_error_detail(
+                        path=Path(str(getattr(exc, "filename", root_dir))),
+                        error=exc,
+                    )
+                    scan_errors.append(f"{message}")
+
+                for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True, onerror=_onerror):
                     if cancel_event.is_set():
                         out_queue.put({"type": "done", "canceled": True})
                         return
@@ -3823,9 +4000,24 @@ class ResizeApp(customtkinter.CTk):
                             detected += 1
                             if detected % 40 == 0:
                                 out_queue.put({"type": "scan_progress", "count": detected})
+                            if max_files > 0 and detected >= max_files:
+                                reached_limit = True
+                                break
+                    if reached_limit:
+                        break
+
+            if scan_errors:
+                for message in scan_errors[:10]:
+                    logging.warning("Recursive scan (drag&drop) warning: %s", message)
 
             candidates.sort(key=lambda p: str(p).lower())
-            out_queue.put({"type": "scan_done", "total": len(candidates)})
+            out_queue.put(
+                {
+                    "type": "scan_done",
+                    "total": len(candidates),
+                    "reached_limit": reached_limit,
+                }
+            )
 
             for index, path in enumerate(candidates, start=1):
                 if cancel_event.is_set():
@@ -3837,7 +4029,9 @@ class ResizeApp(customtkinter.CTk):
                         img = ImageOps.exif_transpose(opened)
                     out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
                 except Exception as exc:
-                    out_queue.put({"type": "load_error", "path": path, "error": str(exc), "index": index})
+                    out_queue.put(
+                        ResizeApp._build_file_load_error_payload(path=path, error=exc, index=index)
+                    )
 
             out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
         except Exception as exc:
@@ -3851,12 +4045,15 @@ class ResizeApp(customtkinter.CTk):
             return
 
         initial_dir = self.settings.get("last_input_dir", "")
+        file_limit = self._max_files_for_mode(self._is_pro_mode())
         if self._is_pro_mode():
             paths, remembered_dir, started_async = self._select_files_in_pro_mode(initial_dir)
             if started_async:
                 return
         else:
-            paths, remembered_dir = self._select_files_in_simple_mode(initial_dir)
+            paths, remembered_dir = self._select_files_in_simple_mode(
+                initial_dir, max_files=file_limit
+            )
         if not paths:
             return
 
@@ -3866,7 +4063,11 @@ class ResizeApp(customtkinter.CTk):
         self._load_selected_paths(paths)
         self._populate_listbox()
 
-    def _select_files_in_simple_mode(self, initial_dir: str) -> Tuple[List[Path], Optional[Path]]:
+    def _select_files_in_simple_mode(
+        self,
+        initial_dir: str,
+        max_files: Optional[int] = None,
+    ) -> Tuple[List[Path], Optional[Path]]:
         selected = filedialog.askopenfilenames(
             title="画像を選択",
             initialdir=initial_dir,
@@ -3875,6 +4076,12 @@ class ResizeApp(customtkinter.CTk):
         if not selected:
             return [], None
         paths = [Path(p) for p in selected]
+        if max_files is not None and len(paths) > max_files:
+            messagebox.showwarning(
+                "読み込み上限",
+                f"選択した画像は {len(paths)} 枚ですが、モード上限 {max_files} 枚で制限して読み込みます。",
+            )
+            paths = paths[:max_files]
         return paths, paths[0].parent
 
     def _select_files_in_pro_mode(self, initial_dir: str) -> Tuple[List[Path], Optional[Path], bool]:
@@ -3891,7 +4098,10 @@ class ResizeApp(customtkinter.CTk):
             return [], None, False
         if choice is False:
             self.settings["pro_input_mode"] = "files"
-            paths, remembered_dir = self._select_files_in_simple_mode(initial_dir)
+            file_limit = self._max_files_for_mode(is_pro=True)
+            paths, remembered_dir = self._select_files_in_simple_mode(
+                initial_dir, max_files=file_limit
+            )
             return paths, remembered_dir, False
 
         self.settings["pro_input_mode"] = "recursive"
@@ -3916,13 +4126,17 @@ class ResizeApp(customtkinter.CTk):
     def _start_recursive_load_async(self, root_dir: Path) -> None:
         self._begin_file_load_session(mode_label="再帰読み込み", root_dir=root_dir, clear_existing_jobs=True)
         self._is_loading_files = True
+        self._file_load_limited = False
+        max_files = self._max_files_for_mode(is_pro=True)
+        self._file_load_limit = max_files
+        limit_text = str(max_files) if max_files > 0 else "無制限"
         self.status_var.set(
-            f"再帰探索開始: {root_dir} / 読み込み中は他操作を無効化（中止可）"
+            f"再帰探索開始: {root_dir} / 上限 {limit_text}枚 / 読み込み中は他操作を無効化（中止可）"
         )
 
         worker = threading.Thread(
             target=self._scan_and_load_images_worker,
-            args=(root_dir, self._file_load_cancel_event, self._file_load_queue),
+            args=(root_dir, self._file_load_cancel_event, self._file_load_queue, max_files),
             daemon=True,
             name="karuku-recursive-loader",
         )
@@ -3951,6 +4165,53 @@ class ResizeApp(customtkinter.CTk):
         worker.start()
         self._file_load_after_id = self.after(40, self._poll_file_load_queue)
 
+    @staticmethod
+    def _readable_os_error(error: BaseException, default_message: str) -> str:
+        if isinstance(error, OSError):
+            analyzed = analyze_os_error(error)
+            return analyzed if analyzed else default_message
+        if isinstance(error, UnidentifiedImageError):
+            return "未対応または破損した画像です。"
+        return default_message
+
+    @classmethod
+    def _build_load_error_detail(cls, path: Path, error: BaseException) -> str:
+        detail = cls._readable_os_error(error, str(error))
+        if not detail:
+            detail = "読み込みに失敗しました"
+        source_path = str(path)
+        error_path = getattr(error, "filename", None)
+        if not error_path:
+            error_path = getattr(error, "filename2", None)
+        if error_path:
+            source_path = str(error_path)
+
+        if source_path:
+            detail = f"{source_path}: {detail}"
+
+        if isinstance(error, OSError):
+            win_error = getattr(error, "winerror", None)
+            errno = getattr(error, "errno", None)
+            if isinstance(win_error, int) and win_error == 32:
+                return f"{detail}（ファイル使用中の可能性）"
+            if isinstance(win_error, int) and win_error == 206:
+                return f"{detail}（パス長エラー）"
+            if win_error in {3, 2} or errno == 2:
+                return f"{detail}（ファイルが存在しない）"
+            if win_error in {5} or errno in {5, 13}:
+                return f"{detail}（アクセス拒否）"
+
+        return detail
+
+    @classmethod
+    def _build_file_load_error_payload(cls, path: Path, error: BaseException, index: int) -> Dict[str, Any]:
+        return {
+            "type": "load_error",
+            "path": path,
+            "error": cls._build_load_error_detail(path, error),
+            "index": index,
+        }
+
     def _begin_file_load_session(
         self,
         mode_label: str,
@@ -3969,6 +4230,8 @@ class ResizeApp(customtkinter.CTk):
         self._file_load_loaded_count = 0
         self._file_load_failed_details = []
         self._file_load_failed_paths = []
+        self._file_load_limited = False
+        self._file_load_limit = 0
         self._file_scan_pulse = 0.0
         self._file_scan_started_at = time.monotonic()
         self._file_load_started_at = 0.0
@@ -4045,11 +4308,22 @@ class ResizeApp(customtkinter.CTk):
         root_dir: Path,
         cancel_event: threading.Event,
         out_queue: "queue.Queue[Dict[str, Any]]",
+        max_files: int,
     ) -> None:
         try:
             candidates: List[Path] = []
             detected = 0
-            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
+            reached_limit = False
+            scan_errors: List[str] = []
+
+            def _onerror(exc: OSError) -> None:
+                message = ResizeApp._build_load_error_detail(
+                    path=Path(str(getattr(exc, "filename", root_dir))),
+                    error=exc,
+                )
+                scan_errors.append(f"{message}")
+
+            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True, onerror=_onerror):
                 if cancel_event.is_set():
                     out_queue.put({"type": "done", "canceled": True})
                     return
@@ -4064,9 +4338,24 @@ class ResizeApp(customtkinter.CTk):
                         detected += 1
                         if detected % 40 == 0:
                             out_queue.put({"type": "scan_progress", "count": detected})
+                        if max_files > 0 and detected >= max_files:
+                            reached_limit = True
+                            break
+                if reached_limit:
+                    break
+
+            if scan_errors:
+                for message in scan_errors[:10]:
+                    logging.warning("Recursive scan warning: %s", message)
 
             candidates.sort(key=lambda p: str(p).lower())
-            out_queue.put({"type": "scan_done", "total": len(candidates)})
+            out_queue.put(
+                {
+                    "type": "scan_done",
+                    "total": len(candidates),
+                    "reached_limit": reached_limit,
+                }
+            )
 
             for index, path in enumerate(candidates, start=1):
                 if cancel_event.is_set():
@@ -4078,7 +4367,9 @@ class ResizeApp(customtkinter.CTk):
                         img = ImageOps.exif_transpose(opened)
                     out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
                 except Exception as e:
-                    out_queue.put({"type": "load_error", "path": path, "error": str(e), "index": index})
+                    out_queue.put(
+                        ResizeApp._build_file_load_error_payload(path=path, error=e, index=index)
+                    )
 
             out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
         except Exception as e:
@@ -4103,7 +4394,9 @@ class ResizeApp(customtkinter.CTk):
                         img = ImageOps.exif_transpose(opened)
                     out_queue.put({"type": "loaded", "path": path, "image": img, "index": index})
                 except Exception as e:
-                    out_queue.put({"type": "load_error", "path": path, "error": str(e), "index": index})
+                    out_queue.put(
+                        ResizeApp._build_file_load_error_payload(path=path, error=e, index=index)
+                    )
 
             out_queue.put({"type": "done", "canceled": cancel_event.is_set()})
         except Exception as e:
@@ -4192,6 +4485,9 @@ class ResizeApp(customtkinter.CTk):
 
         if msg_type == "scan_done":
             self._file_load_total_candidates = int(message.get("total", 0))
+            self._file_load_limited = bool(message.get("reached_limit", False))
+            if self._file_load_limit <= 0:
+                self._file_load_limit = self._file_load_total_candidates
             self._file_load_started_at = time.monotonic()
             self._set_operation_stage("読込中")
             if self._file_load_total_candidates == 0:
@@ -4269,7 +4565,13 @@ class ResizeApp(customtkinter.CTk):
         if canceled:
             msg = f"{self._file_load_mode_label}を中止しました。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
         else:
-            msg = f"{self._file_load_mode_label}完了。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
+            limit_suffix = (
+                f"（上限到達: {self._file_load_limit}枚）" if self._file_load_limited else ""
+            )
+            msg = (
+                f"{self._file_load_mode_label}完了。成功: {loaded}件 / "
+                f"失敗: {failed}件 / 対象: {total}件{limit_suffix}"
+            )
         self.status_var.set(msg)
         retry_callback: Optional[Callable[[], None]] = None
         if (not canceled) and retry_paths:
@@ -4321,6 +4623,12 @@ class ResizeApp(customtkinter.CTk):
     @staticmethod
     def _failure_reason_group(detail_text: str) -> str:
         lower = detail_text.lower()
+        if "path_too_long" in lower or "パス長" in detail_text:
+            return "パス長"
+        if "ファイル使用中" in detail_text or "in use" in lower:
+            return "ロック競合"
+        if "ファイルが見つか" in detail_text or "not found" in lower or "見つから" in lower:
+            return "存在"
         if any(token in lower for token in ("permission", "アクセス拒否", "access denied", "readonly")):
             return "権限"
         if any(token in lower for token in ("no such file", "見つかり", "not found", "path")):
@@ -4483,8 +4791,15 @@ class ResizeApp(customtkinter.CTk):
     @staticmethod
     def _discover_recursive_image_paths(root_dir: Path) -> List[Path]:
         paths: List[Path] = []
+        walk_errors: List[Tuple[str, str]] = []
         try:
-            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True):
+            def _onerror(exc: OSError) -> None:
+                message = str(exc)
+                if not message:
+                    message = "権限またはパスアクセスでエラー"
+                walk_errors.append((str(getattr(exc, "filename", "") or ""), message))
+
+            for dirpath, _dirnames, filenames in os.walk(root_dir, topdown=True, onerror=_onerror):
                 base_dir = Path(dirpath)
                 for name in filenames:
                     if Path(name).suffix.lower() in PRO_MODE_RECURSIVE_INPUT_EXTENSIONS:
@@ -4492,6 +4807,9 @@ class ResizeApp(customtkinter.CTk):
         except OSError:
             logging.exception("Recursive scan failed: %s", root_dir)
             return []
+        if walk_errors:
+            for filename, message in walk_errors[:10]:
+                logging.warning("Recursive scan warning on '%s': %s", filename or str(root_dir), message)
         paths.sort(key=lambda p: str(p).lower())
         return paths
 
@@ -4506,7 +4824,8 @@ class ResizeApp(customtkinter.CTk):
                     # EXIF Orientationを正規化して表示/処理を統一する。
                     img = ImageOps.exif_transpose(opened)
             except Exception as e:  # pragma: no cover
-                messagebox.showerror("エラー", f"{path} の読み込みに失敗しました: {e}")
+                detail = self._build_load_error_detail(path=path, error=e)
+                messagebox.showerror("エラー", f"{path} の読み込みに失敗しました: {detail}")
                 continue
             self.jobs.append(ImageJob(path, img))
 
@@ -4758,21 +5077,44 @@ class ResizeApp(customtkinter.CTk):
 
         save_path = Path(save_path_str)
         self.settings["last_output_dir"] = str(save_path.parent)
+
+        preflight_error = self._preflight_output_directory(save_path)
+        if preflight_error is not None:
+            messagebox.showerror("保存先エラー", preflight_error)
+            return
+        if self._is_windows_path_length_risky(save_path):
+            result = messagebox.askyesno(
+                "パス長警告",
+                "保存先パスが長く、保存失敗の可能性があります。\n"
+                "そのまま実行しますか？",
+                icon="warning",
+            )
+            if not result:
+                return
+
         options = self._build_save_options(output_format)
         if options is None:
             return
-        result = save_image(
+        result, attempts = self._save_with_retry(
             source_image=job.image,
             resized_image=job.resized,
             output_path=save_path,
             options=options,
+            allow_retry=self._is_pro_mode(),
         )
 
         if not result.success:
             job.last_process_state = "failed"
-            job.last_error_detail = result.error or "保存失敗"
+            retry_note = "（再試行あり）" if attempts > 1 else ""
+            error_detail = result.error or "保存失敗"
+            if result.error_guidance:
+                error_detail = f"{error_detail}\n{result.error_guidance}"
+            job.last_error_detail = f"{error_detail}{retry_note}"
             self._populate_listbox()
-            messagebox.showerror("保存エラー", f"ファイルの保存に失敗しました:\n{result.error}")
+            messagebox.showerror(
+                "保存エラー",
+                f"ファイルの保存に失敗しました:{' 再試行後' if attempts > 1 else ''}\n{error_detail}\n{self._build_save_failure_hint(result)}",
+            )
             return
 
         job.last_process_state = "success"
@@ -4781,6 +5123,8 @@ class ResizeApp(customtkinter.CTk):
             msg = f"ドライラン完了: {result.output_path.name} を生成予定です"
         else:
             msg = f"{result.output_path.name} を保存しました"
+        if attempts > 1:
+            msg = f"{msg}（再試行後に成功）"
         msg = f"{msg}\n{self._exif_status_text(result)}"
         self._register_recent_setting_from_current()
         self._populate_listbox()
@@ -4886,11 +5230,12 @@ class ResizeApp(customtkinter.CTk):
             output_format=reference_output_format,
             dry_run=batch_options.dry_run,
         )
-        result = save_image(
+        result, attempts = self._save_with_retry(
             source_image=job.image,
             resized_image=resized_img,
             output_path=out_base,
             options=batch_options,
+            allow_retry=self._is_pro_mode(),
         )
         if result.success:
             job.last_process_state = "success"
@@ -4899,6 +5244,10 @@ class ResizeApp(customtkinter.CTk):
             return
 
         error_detail = result.error or "保存処理で不明なエラー"
+        if result.error_guidance:
+            error_detail = f"{error_detail}\n{result.error_guidance}"
+        if attempts > 1:
+            error_detail = f"{error_detail}（再試行後失敗）"
         job.last_process_state = "failed"
         job.last_error_detail = error_detail
         stats.record_failure(job.path.name, error_detail, file_path=job.path)
@@ -5056,6 +5405,15 @@ class ResizeApp(customtkinter.CTk):
         if output_dir is None:
             return
         self.settings["last_output_dir"] = str(output_dir)
+        output_dir_preflight = self._preflight_output_directory_only(output_dir, create_if_missing=True)
+        if output_dir_preflight is not None:
+            messagebox.showerror("保存先エラー", output_dir_preflight)
+            return
+        if self._is_windows_path_length_risky(output_dir / "probe"):
+            messagebox.showwarning(
+                "パス長注意",
+                "保存先パスが長い環境です。実行は継続しますが、必要に応じて保存先を短くしてください。",
+            )
 
         if not self._confirm_batch_save(
             reference_job=reference_job,
