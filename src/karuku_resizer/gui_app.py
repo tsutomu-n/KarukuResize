@@ -2006,13 +2006,19 @@ class ResizeApp(customtkinter.CTk):
         self._apply_topbar_density(width)
 
     def _ui_mode_id(self) -> str:
-        return UI_MODE_LABEL_TO_ID.get(self.ui_mode_var.get(), "simple")
+        ui_mode_var = getattr(self, "ui_mode_var", None)
+        if ui_mode_var is None:
+            return "simple"
+        return UI_MODE_LABEL_TO_ID.get(ui_mode_var.get(), "simple")
 
     def _is_pro_mode(self) -> bool:
         return self._ui_mode_id() == "pro"
 
     def _appearance_mode_id(self) -> str:
-        return APPEARANCE_LABEL_TO_ID.get(self.appearance_mode_var.get(), "system")
+        appearance_mode_var = getattr(self, "appearance_mode_var", None)
+        if appearance_mode_var is None:
+            return "system"
+        return APPEARANCE_LABEL_TO_ID.get(appearance_mode_var.get(), "system")
 
     def _on_appearance_mode_changed(self, _value: str):
         self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
