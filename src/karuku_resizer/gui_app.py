@@ -86,7 +86,10 @@ from karuku_resizer.ui_tooltip_content import (
 )
 from karuku_resizer.icon_loader import load_icon
 from karuku_resizer.resize_core import analyze_os_error
-from karuku_resizer.ui_topbar import TopBarController
+from karuku_resizer.ui_topbar import (
+    TOPBAR_DENSITY_COMPACT_MAX_WIDTH,
+    TopBarController,
+)
 from karuku_resizer.ui_settings_dialog import (
     SettingsDialogCallbacks,
     SettingsDialogMappings,
@@ -110,7 +113,6 @@ MIN_WINDOW_WIDTH = 1200
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
-TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1366
 TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
     "normal": {
         "select": 128,

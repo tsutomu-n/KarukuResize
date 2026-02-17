@@ -18,5 +18,7 @@ def test_batch_button_text_changes_with_density() -> None:
 def test_topbar_density_accounts_for_scaled_ui_density_1366_baseline() -> None:
     app = ResizeApp.__new__(ResizeApp)
     app._ui_scale_factor = 1.125
-    assert app._topbar_density_window_width(1366) == 1214
-    assert ResizeApp._topbar_density_for_width(app._topbar_density_window_width(1366)) == "compact"
+    compact_width = app._topbar_density_window_width(1537)
+    assert compact_width == 1366
+    assert ResizeApp._topbar_density_for_width(compact_width) == "compact"
+    assert ResizeApp._topbar_density_for_width(app._topbar_density_window_width(1538)) == "normal"
