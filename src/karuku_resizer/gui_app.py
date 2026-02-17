@@ -1557,10 +1557,10 @@ class ResizeApp(customtkinter.CTk):
         # -------------------- UI top bar (2 rows) ------------------------
         top_container = customtkinter.CTkFrame(self)
         self._style_card_frame(top_container)
-        top_container.pack(side="top", fill="x", padx=self._scale_px(10), pady=(self._scale_px(2), self._scale_px(3)))
+        top_container.pack(side="top", fill="x", padx=self._scale_px(10), pady=(self._scale_px(1), self._scale_px(2)))
 
         self.top_guide_frame = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        self.top_guide_frame.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(2), self._scale_px(1)))
+        self.top_guide_frame.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(1), self._scale_px(1)))
         self.top_action_guide_var = customtkinter.StringVar(value="")
         self.top_action_guide_label = customtkinter.CTkLabel(
             self.top_guide_frame,
@@ -1577,9 +1577,6 @@ class ResizeApp(customtkinter.CTk):
 
         top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
         top_row_primary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(0)))
-
-        top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_secondary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(0), self._scale_px(2)))
         topbar_widths = self._scale_topbar_widths("normal")
 
         self.select_button = customtkinter.CTkButton(
@@ -1592,10 +1589,10 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
         )
         self._style_primary_button(self.select_button)
-        self.select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(2))
+        self.select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(1))
 
-        preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent", width=self._scale_px(12))
-        preset_spacer.pack(side="left", padx=(0, self._scale_px(4)))
+        size_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        size_controls_frame.pack(side="left", padx=(0, self._scale_px(8)))
 
         # --- Right side: auxiliary buttons (pack side="right", so order is reversed) ---
         self.settings_button = customtkinter.CTkButton(
@@ -1608,7 +1605,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
         )
         self._style_secondary_button(self.settings_button)
-        self.settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(2))
+        self.settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
         self.help_button = customtkinter.CTkButton(
             top_row_primary,
             text="使い方",
@@ -1645,17 +1642,14 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(4))
+        self.preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
         self.preset_caption_label = customtkinter.CTkLabel(
             top_row_primary,
             text="プリセット",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
         )
-        self.preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
-
-        size_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
-        size_controls_frame.pack(side="left", fill="x", expand=True)
+        self.preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(1))
 
         # Mode radio buttons
         self.mode_var = customtkinter.StringVar(value="ratio")
@@ -1684,7 +1678,7 @@ class ResizeApp(customtkinter.CTk):
 
         self._setup_entry_widgets(size_controls_frame)
 
-        action_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
+        action_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
         action_controls_frame.pack(side="right")
         self._setup_action_buttons(action_controls_frame)
         self._refresh_topbar_density()
@@ -1700,7 +1694,7 @@ class ResizeApp(customtkinter.CTk):
             side="top",
             fill="x",
             padx=self._scale_px(12),
-            pady=(0, self._scale_px(6)),
+            pady=(0, self._scale_px(3)),
         )
 
         self.settings_summary_var = customtkinter.StringVar(value="")
@@ -1716,7 +1710,7 @@ class ResizeApp(customtkinter.CTk):
             fill="x",
             expand=True,
             padx=(self._scale_px(10), 0),
-            pady=self._scale_px(8),
+            pady=self._scale_px(4),
         )
 
         self.appearance_mode_var.set("OSに従う")
@@ -1730,7 +1724,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self._style_secondary_button(self.details_toggle_button)
-        self.details_toggle_button.pack(side="right", padx=(0, self._scale_px(6)), pady=self._scale_px(8))
+        self.details_toggle_button.pack(side="right", padx=(0, self._scale_px(6)), pady=self._scale_px(4))
 
         self.recent_settings_row = customtkinter.CTkFrame(self.settings_header_frame, fg_color="transparent")
         self.recent_settings_title_label = customtkinter.CTkLabel(
@@ -2392,7 +2386,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default
         )
         self._style_primary_button(self.preview_button)
-        self.preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(4))
+        self.preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(2))
         
         self.save_button = customtkinter.CTkButton(
             parent,
@@ -2404,7 +2398,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default
         )
         self._style_primary_button(self.save_button)
-        self.save_button.pack(side="left", pady=self._scale_px(4))
+        self.save_button.pack(side="left", pady=self._scale_px(2))
         
         self.batch_button = customtkinter.CTkButton(
             parent,
@@ -2416,7 +2410,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default
         )
         self._style_primary_button(self.batch_button)
-        self.batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(4))
+        self.batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
 
         # Zoom combobox
         self.zoom_var = customtkinter.StringVar(value="画面に合わせる")
@@ -2436,7 +2430,7 @@ class ResizeApp(customtkinter.CTk):
             dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
-        self.zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=self._scale_px(4))
+        self.zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=self._scale_px(2))
         # ズーム操作は低頻度のため、トップでは常時表示しない
         self.zoom_cb.pack_forget()
 
