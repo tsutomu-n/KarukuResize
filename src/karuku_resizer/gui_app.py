@@ -1557,13 +1557,13 @@ class ResizeApp(customtkinter.CTk):
         # -------------------- UI top bar (2 rows) ------------------------
         top_container = customtkinter.CTkFrame(self)
         self._style_card_frame(top_container)
-        top_container.pack(side="top", fill="x", padx=self._scale_px(12), pady=(self._scale_px(4), self._scale_px(4)))
+        top_container.pack(side="top", fill="x", padx=self._scale_px(10), pady=(self._scale_px(2), self._scale_px(3)))
 
-        top_guide_frame = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_guide_frame.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(4), self._scale_px(2)))
+        self.top_guide_frame = customtkinter.CTkFrame(top_container, fg_color="transparent")
+        self.top_guide_frame.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(2), self._scale_px(1)))
         self.top_action_guide_var = customtkinter.StringVar(value="")
         self.top_action_guide_label = customtkinter.CTkLabel(
-            top_guide_frame,
+            self.top_guide_frame,
             textvariable=self.top_action_guide_var,
             anchor="w",
             justify="left",
@@ -1576,10 +1576,10 @@ class ResizeApp(customtkinter.CTk):
         self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
 
         top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_primary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(1)))
+        top_row_primary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(0)))
 
         top_row_secondary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_secondary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(1), self._scale_px(3)))
+        top_row_secondary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(0), self._scale_px(2)))
         topbar_widths = self._scale_topbar_widths("normal")
 
         self.select_button = customtkinter.CTkButton(
@@ -1594,8 +1594,8 @@ class ResizeApp(customtkinter.CTk):
         self._style_primary_button(self.select_button)
         self.select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(2))
 
-        preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
-        preset_spacer.pack(side="left", expand=True)
+        preset_spacer = customtkinter.CTkFrame(top_row_primary, fg_color="transparent", width=self._scale_px(12))
+        preset_spacer.pack(side="left", padx=(0, self._scale_px(4)))
 
         # --- Right side: auxiliary buttons (pack side="right", so order is reversed) ---
         self.settings_button = customtkinter.CTkButton(
@@ -2183,12 +2183,12 @@ class ResizeApp(customtkinter.CTk):
 
     def _empty_state_text(self) -> str:
         lines = [
-            "1. 画像を選択 / ドラッグ&ドロップ",
-            "2. サイズ・形式を指定",
+            "1. 画像を選択",
+            "2. サイズを指定",
             "3. プレビュー後に保存",
         ]
         if self._is_pro_mode():
-            lines.append("Pro: フォルダー再帰読込（jpg/jpeg/png）")
+            lines.append("Pro: フォルダー再帰読込")
         lines.append(f"処理中: {OPERATION_ONLY_CANCEL_HINT}")
         return "\n".join(lines)
 
@@ -2199,21 +2199,26 @@ class ResizeApp(customtkinter.CTk):
         text = self._top_action_guide_text()
         self.top_action_guide_var.set(text)
         if text:
+            if hasattr(self, "top_guide_frame") and self.top_guide_frame.winfo_manager() != "pack":
+                self.top_guide_frame.pack(
+                    side="top",
+                    fill="x",
+                    padx=self._scale_px(8),
+                    pady=(self._scale_px(2), self._scale_px(1)),
+                )
             if not self.top_action_guide_label.winfo_manager():
                 self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
         else:
             if self.top_action_guide_label.winfo_manager():
                 self.top_action_guide_label.pack_forget()
+            if hasattr(self, "top_guide_frame") and self.top_guide_frame.winfo_manager():
+                self.top_guide_frame.pack_forget()
 
     def _top_action_guide_text(self) -> str:
         if self._is_loading_files:
             return "画像読み込み中…"
         if self._operation_scope is not None and self._operation_scope.active:
             return "処理中 — キャンセル以外の操作はできません"
-
-        if not self.jobs:
-            return "画像を選択して、幅を決め、プレビュー後に保存します。"
-
         return ""
 
     def _update_empty_state_hint(self) -> None:
