@@ -1619,15 +1619,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_default,
         )
         self._style_secondary_button(self.help_button)
-        self.help_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(4))
-
-        # Separator between auxiliary and preset
-        customtkinter.CTkLabel(
-            top_row_primary,
-            text="|",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["border_light"],
-        ).pack(side="right", padx=(self._scale_px(4), self._scale_px(4)), pady=self._scale_px(4))
+        # 使い方は設定画面から利用する想定のため、トップでは常時表示しない
 
         self.preset_manage_button = customtkinter.CTkButton(
             top_row_primary,
@@ -1637,7 +1629,7 @@ class ResizeApp(customtkinter.CTk):
             font=self.font_small,
         )
         self._style_secondary_button(self.preset_manage_button)
-        self.preset_manage_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(4))
+        # プリセット管理は低頻度操作のため、トップでは常時表示しない
         self.preset_var = customtkinter.StringVar(value=PRESET_NONE_LABEL)
         self.preset_menu = customtkinter.CTkOptionMenu(
             top_row_primary,
@@ -1654,12 +1646,13 @@ class ResizeApp(customtkinter.CTk):
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
         self.preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(4))
-        customtkinter.CTkLabel(
+        self.preset_caption_label = customtkinter.CTkLabel(
             top_row_primary,
             text="プリセット",
             font=self.font_small,
             text_color=METALLIC_COLORS["text_secondary"],
-        ).pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
+        )
+        self.preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
 
         size_controls_frame = customtkinter.CTkFrame(top_row_secondary, fg_color="transparent")
         size_controls_frame.pack(side="left", fill="x", expand=True)
@@ -1740,12 +1733,6 @@ class ResizeApp(customtkinter.CTk):
         self.details_toggle_button.pack(side="right", padx=(0, self._scale_px(6)), pady=self._scale_px(8))
 
         self.recent_settings_row = customtkinter.CTkFrame(self.settings_header_frame, fg_color="transparent")
-        self.recent_settings_row.pack(
-            side="bottom",
-            fill="x",
-            padx=self._scale_px(10),
-            pady=(0, self._scale_px(8)),
-        )
         self.recent_settings_title_label = customtkinter.CTkLabel(
             self.recent_settings_row,
             text="最近使った設定",
@@ -1765,6 +1752,7 @@ class ResizeApp(customtkinter.CTk):
             text_color=METALLIC_COLORS["text_tertiary"],
         )
         self.recent_settings_empty_label.pack(side="left")
+        self.recent_settings_row.pack_forget()
 
         self.detail_settings_frame = customtkinter.CTkFrame(self)
         self._style_card_frame(self.detail_settings_frame, corner_radius=12)
@@ -2138,6 +2126,21 @@ class ResizeApp(customtkinter.CTk):
             self.select_button.configure(state="disabled")
 
         if pro_mode:
+            if self.batch_button.winfo_manager() != "pack":
+                self.batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(8))
+            if self.preset_menu.winfo_manager() != "pack":
+                self.preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(4))
+            if self.preset_caption_label.winfo_manager() != "pack":
+                self.preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(4))
+        else:
+            if self.batch_button.winfo_manager():
+                self.batch_button.pack_forget()
+            if self.preset_menu.winfo_manager():
+                self.preset_menu.pack_forget()
+            if self.preset_caption_label.winfo_manager():
+                self.preset_caption_label.pack_forget()
+
+        if pro_mode:
             if self.advanced_controls_frame.winfo_manager() != "pack":
                 self.advanced_controls_frame.pack(side="top", fill="x", padx=self._scale_px(10), pady=(0, self._scale_px(6)))
             if self.codec_controls_frame.winfo_manager() != "pack":
@@ -2236,9 +2239,18 @@ class ResizeApp(customtkinter.CTk):
             else:
                 self.detail_settings_frame.pack(**pack_kwargs)
             self.details_toggle_button.configure(text="詳細設定を隠す")
+            if hasattr(self, "recent_settings_row") and self.recent_settings_row.winfo_manager() != "pack":
+                self.recent_settings_row.pack(
+                    side="bottom",
+                    fill="x",
+                    padx=self._scale_px(10),
+                    pady=(0, self._scale_px(8)),
+                )
         else:
             self.detail_settings_frame.pack_forget()
             self.details_toggle_button.configure(text="詳細設定を表示")
+            if hasattr(self, "recent_settings_row") and self.recent_settings_row.winfo_manager():
+                self.recent_settings_row.pack_forget()
 
     def _setup_entry_widgets(self, parent):
         """入力ウィジェットをセットアップ"""
@@ -2420,6 +2432,8 @@ class ResizeApp(customtkinter.CTk):
             dropdown_text_color=METALLIC_COLORS["text_primary"],
         )
         self.zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=self._scale_px(8))
+        # ズーム操作は低頻度のため、トップでは常時表示しない
+        self.zoom_cb.pack_forget()
 
     def _setup_output_controls(self, parent):
         """保存関連の設定コントロールをセットアップ"""
@@ -5771,6 +5785,7 @@ class ResizeApp(customtkinter.CTk):
                 "通常",
             )
         )
+        zoom_pref_var = customtkinter.StringVar(value=self.zoom_var.get())
         quality_var = customtkinter.StringVar(value=self.quality_var.get())
         output_format_var = customtkinter.StringVar(value=self.output_format_var.get())
         default_preset_var = customtkinter.StringVar(
@@ -5831,6 +5846,7 @@ class ResizeApp(customtkinter.CTk):
             ui_mode_var.set(UI_MODE_ID_TO_LABEL.get(defaults["ui_mode"], "オフ"))
             appearance_var.set(APPEARANCE_ID_TO_LABEL.get(defaults["appearance_mode"], "OSに従う"))
             ui_scale_var.set(UI_SCALE_ID_TO_LABEL.get(defaults["ui_scale_mode"], "通常"))
+            zoom_pref_var.set(str(defaults.get("zoom_preference", "画面に合わせる")))
             quality_var.set(str(defaults["quality"]))
             output_format_var.set(FORMAT_ID_TO_LABEL.get(defaults["output_format"], "自動"))
             pro_input_var.set(
@@ -5857,6 +5873,9 @@ class ResizeApp(customtkinter.CTk):
             ui_scale_label = ui_scale_var.get()
             if ui_scale_label not in UI_SCALE_LABEL_TO_ID:
                 ui_scale_label = "通常"
+            zoom_pref_label = zoom_pref_var.get()
+            if zoom_pref_label not in {"画面に合わせる", "100%", "200%", "300%"}:
+                zoom_pref_label = "画面に合わせる"
 
             format_label = output_format_var.get()
             available_formats = self._build_output_format_labels()
@@ -5876,6 +5895,7 @@ class ResizeApp(customtkinter.CTk):
             self.ui_mode_var.set(ui_mode_label)
             self.appearance_mode_var.set(appearance_label)
             self._ui_scale_mode = UI_SCALE_LABEL_TO_ID.get(ui_scale_label, "normal")
+            self.zoom_var.set(zoom_pref_label)
             self.quality_var.set(str(quality_value))
             self.output_format_var.set(format_label)
             self.settings["pro_input_mode"] = pro_input_mode
@@ -5888,6 +5908,7 @@ class ResizeApp(customtkinter.CTk):
             self._apply_ui_mode()
             self._apply_ui_scale_mode(self._ui_scale_mode)
             self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
+            self._apply_zoom_selection()
             self._on_output_format_changed(self.output_format_var.get())
             self._on_quality_changed(self.quality_var.get())
             self._update_settings_summary()
@@ -5959,6 +5980,57 @@ class ResizeApp(customtkinter.CTk):
         )
         ui_scale_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
         self._register_tooltip(ui_scale_menu, "通常 / 大きめ の文字サイズを切り替えます。")
+
+        row += 1
+        customtkinter.CTkLabel(
+            settings_content,
+            text="プレビュー拡大率",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+        zoom_pref_menu = customtkinter.CTkOptionMenu(
+            settings_content,
+            values=["画面に合わせる", "100%", "200%", "300%"],
+            variable=zoom_pref_var,
+            fg_color=METALLIC_COLORS["bg_tertiary"],
+            button_color=METALLIC_COLORS["primary"],
+            button_hover_color=METALLIC_COLORS["hover"],
+            text_color=METALLIC_COLORS["text_primary"],
+            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
+            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        )
+        zoom_pref_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+        self._register_tooltip(zoom_pref_menu, "プレビューの既定拡大率を設定します。")
+
+        row += 1
+        customtkinter.CTkLabel(
+            settings_content,
+            text="ヘルプ/管理",
+            font=self.font_default,
+            text_color=METALLIC_COLORS["text_secondary"],
+        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+        support_actions = customtkinter.CTkFrame(settings_content, fg_color="transparent")
+        support_actions.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
+        help_in_settings_button = customtkinter.CTkButton(
+            support_actions,
+            text="使い方を開く",
+            width=_scale_px(132),
+            command=self._show_help,
+            font=self.font_default,
+        )
+        self._style_secondary_button(help_in_settings_button)
+        help_in_settings_button.pack(side="left", padx=(0, _scale_px(8)))
+        preset_manage_in_settings_button = customtkinter.CTkButton(
+            support_actions,
+            text="プリセット管理",
+            width=_scale_px(132),
+            command=self._open_preset_manager_dialog,
+            font=self.font_default,
+        )
+        self._style_secondary_button(preset_manage_in_settings_button)
+        preset_manage_in_settings_button.pack(side="left")
+        self._register_tooltip(help_in_settings_button, "使い方ガイドを表示します。")
+        self._register_tooltip(preset_manage_in_settings_button, "プリセットの追加・編集・削除を行います。")
 
         row += 1
         customtkinter.CTkLabel(
