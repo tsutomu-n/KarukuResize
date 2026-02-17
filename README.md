@@ -11,9 +11,11 @@ KarukuResize は、画像のリサイズ・圧縮・保存を GUI / CLI で扱�
 - EXIF の保持 / 編集 / 削除、GPS削除、ドライラン
 - 一括適用保存（現在画像の設定を読込済み全画像に適用）
 - プロモードでのフォルダ再帰読込（`jpg/jpeg/png`）
-- ドラッグ&ドロップ（ファイル / フォルダ）
+- ドラッグ&ドロップ（ファイル / フォルダ）— 受理拡張子: `png/jpg/jpeg/webp/avif`
 - 読込中の進捗表示、キャンセル、失敗のみ再試行
 - 最近使った設定（最大6件）
+- ファイル上限: 簡易モード 120件 / プロモード 600件（設定で変更可）
+- プリセット管理（組み込み + ユーザー定義）、起動時自動適用
 
 ### CLI
 - フォルダ内画像の一括リサイズ
@@ -74,6 +76,23 @@ uv run karukuresize-cli -s input -d output -w 1280 -q 85
 - プロモード再帰読込の対象は `jpg/jpeg/png`
 - D&Dの単体ファイルは `png/jpg/jpeg/webp/avif` を受理
 
+## 設定ダイアログ（⚙ボタン）
+
+| 項目 | 説明 |
+|---|---|
+| Proモード | Pro向け機能（フォルダ再帰読込・EXIF編集等）のオン/オフ |
+| カラーテーマ | OSに従う / ライト / ダーク |
+| 文字サイズ | 通常 / 大きめ |
+| プレビュー拡大率 | 画面に合わせる / 100% / 200% / 300% |
+| ホバー説明 | ツールチップの表示オン/オフ |
+| 既定の出力形式 | 起動時の出力形式 |
+| 既定の品質 | 起動時の品質（5〜100） |
+| 既定プリセット | 起動時に自動適用するプリセット |
+| プロモード入力方式 | フォルダ再帰 / ファイル個別 |
+| 既定の保存先フォルダ | 保存ダイアログの初期フォルダ |
+| 使い方を開く | ヘルプダイアログを表示 |
+| プリセット管理 | プリセットの追加・編集・削除 |
+
 ## CLI オプション
 
 | オプション | 説明 | 既定値 |
@@ -105,17 +124,12 @@ uv run karukuresize-cli -s input -d output --failures-file failures.json --json
 
 ## ログ出力
 
-### GUI
-- 実行ログとサマリは OS 標準ログディレクトリへ保存
-  - Windows: `%LOCALAPPDATA%\\KarukuResize\\logs`
-  - Linux: `~/.local/state/karukuresize/logs`
+実行ログとサマリは OS 標準ログディレクトリへ保存（GUI / CLI 共通）:
 
-### CLI
-- 開発環境（リポジトリ実行）では `src/logs/process_*.log`
-- `KARUKU_LOG_DIR` 環境変数で上書き可能
-- ローテーション: `10 MB`
-- 保持期間: `14 days`
-- 圧縮: `zip`
+- Windows: `%LOCALAPPDATA%\KarukuResize\logs`
+- Linux/macOS: `~/.local/state/karukuresize/logs`（`XDG_STATE_HOME` で上書き可）
+
+保持ポリシー: 最大 `100` ファイル / `30` 日
 
 ## Windows ビルド
 
@@ -123,8 +137,8 @@ uv run karukuresize-cli -s input -d output --failures-file failures.json --json
 uv run karukuresize-build-exe
 ```
 
-- 生成物: `dist\\KarukuResize.exe`
-- EXEアイコン: `assets\\app.ico`
+- 生成物: `dist\KarukuResize.exe`
+- EXEアイコン: `assets\app.ico`
 - UI確認推奨: Windows 100% / 125% / 150% DPI（200%は任意）
 
 詳細: `docs/WINDOWS_GUIDE.md`, `docs/BUILDING.md`

@@ -86,6 +86,14 @@ from karuku_resizer.ui_tooltip_content import (
 )
 from karuku_resizer.icon_loader import load_icon
 from karuku_resizer.resize_core import analyze_os_error
+from karuku_resizer.ui_topbar import TopBarController
+from karuku_resizer.ui_settings_dialog import (
+    SettingsDialogCallbacks,
+    SettingsDialogMappings,
+    SettingsDialogResult,
+    SettingsDialogState,
+    open_settings_dialog,
+)
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -426,6 +434,7 @@ class ResizeApp(customtkinter.CTk):
         self._run_summary_payload = self._create_initial_run_summary()
         self._run_summary_finalized = False
         self._topbar_density = "normal"
+        self._topbar_controller: Optional[TopBarController] = None
         self._ui_scale_factor = UI_SCALE_FACTORS.get(self._ui_scale_mode, 1.0)
         self.appearance_mode_var = customtkinter.StringVar(
             value=APPEARANCE_ID_TO_LABEL.get(
@@ -1555,132 +1564,56 @@ class ResizeApp(customtkinter.CTk):
     def _setup_ui(self):
         """UI要素をセットアップ"""
         # -------------------- UI top bar (2 rows) ------------------------
-        top_container = customtkinter.CTkFrame(self)
-        self._style_card_frame(top_container)
-        top_container.pack(side="top", fill="x", padx=self._scale_px(10), pady=(self._scale_px(1), self._scale_px(2)))
-
-        self.top_guide_frame = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        self.top_guide_frame.pack(side="top", fill="x", padx=self._scale_px(8), pady=(self._scale_px(1), self._scale_px(1)))
-        self.top_action_guide_var = customtkinter.StringVar(value="")
-        self.top_action_guide_label = customtkinter.CTkLabel(
-            self.top_guide_frame,
-            textvariable=self.top_action_guide_var,
-            anchor="w",
-            justify="left",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_secondary"],
-            fg_color=METALLIC_COLORS["bg_secondary"],
-            corner_radius=10,
-            padx=self._scale_px(10),
-        )
-        self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
-
-        top_row_primary = customtkinter.CTkFrame(top_container, fg_color="transparent")
-        top_row_primary.pack(side="top", fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(0)))
-        topbar_widths = self._scale_topbar_widths("normal")
-
-        self.select_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="画像を選択",
-            image=self._icon_folder,
-            compound="left",
-            width=topbar_widths["select"],
-            command=self._select_files,
-            font=self.font_default,
-        )
-        self._style_primary_button(self.select_button)
-        self.select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(1))
-
-        size_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
-        size_controls_frame.pack(side="left", padx=(0, self._scale_px(8)))
-
-        # --- Right side: auxiliary buttons (pack side="right", so order is reversed) ---
-        self.settings_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="設定",
-            image=self._icon_settings,
-            compound="left",
-            width=topbar_widths["settings"],
-            command=self._open_settings_dialog,
-            font=self.font_default,
-        )
-        self._style_secondary_button(self.settings_button)
-        self.settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
-        self.help_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="使い方",
-            image=self._icon_circle_help,
-            compound="left",
-            width=topbar_widths["help"],
-            command=self._show_help,
-            font=self.font_default,
-        )
-        self._style_secondary_button(self.help_button)
-        # 使い方は設定画面から利用する想定のため、トップでは常時表示しない
-
-        self.preset_manage_button = customtkinter.CTkButton(
-            top_row_primary,
-            text="管理",
-            width=topbar_widths["preset_action"],
-            command=self._open_preset_manager_dialog,
-            font=self.font_small,
-        )
-        self._style_secondary_button(self.preset_manage_button)
-        # プリセット管理は低頻度操作のため、トップでは常時表示しない
+        self.zoom_var = customtkinter.StringVar(value="画面に合わせる")
         self.preset_var = customtkinter.StringVar(value=PRESET_NONE_LABEL)
-        self.preset_menu = customtkinter.CTkOptionMenu(
-            top_row_primary,
-            variable=self.preset_var,
-            values=[PRESET_NONE_LABEL],
-            width=topbar_widths["preset_menu"],
-            command=self._on_preset_menu_changed,
-            font=self.font_small,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
+        self._topbar_controller = TopBarController(
+            on_select=self._select_files,
+            on_help=self._show_help,
+            on_settings=self._open_settings_dialog,
+            on_preset_manage=self._open_preset_manager_dialog,
+            on_preset_changed=self._on_preset_menu_changed,
+            on_preview=self._preview_current,
+            on_save=self._save_current,
+            on_batch=self._batch_save,
+            on_zoom_changed=self._apply_zoom_selection,
+            scale_px=self._scale_px,
+            scale_topbar_widths=self._scale_topbar_widths,
+            style_primary_button=self._style_primary_button,
+            style_secondary_button=self._style_secondary_button,
+            style_card_frame=self._style_card_frame,
+            font_default=self.font_default,
+            font_small=self.font_small,
+            colors=METALLIC_COLORS,
+            get_topbar_density=lambda: self._topbar_density,
+            set_topbar_density=lambda density: setattr(self, "_topbar_density", density),
+            select_button_text=self._select_button_text_for_state,
+            icon_folder=self._icon_folder,
+            icon_circle_help=self._icon_circle_help,
+            icon_settings=self._icon_settings,
+            icon_refresh=self._icon_refresh,
+            icon_save=self._icon_save,
+            icon_folder_open=self._icon_folder_open,
+            preset_var=self.preset_var,
+            zoom_var=self.zoom_var,
         )
-        self.preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
-        self.preset_caption_label = customtkinter.CTkLabel(
-            top_row_primary,
-            text="プリセット",
-            font=self.font_small,
-            text_color=METALLIC_COLORS["text_secondary"],
+        topbar_widgets = self._topbar_controller.build(
+            self,
+            setup_entry_widgets=lambda parent: self._setup_entry_widgets(parent, on_mode_changed=self._update_mode),
         )
-        self.preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(1))
 
-        # Mode radio buttons
-        self.mode_var = customtkinter.StringVar(value="ratio")
-        self.mode_radio_buttons: List[customtkinter.CTkRadioButton] = []
-        modes = [
-            ("比率 %", "ratio"),
-            ("幅 px", "width"),
-            ("高さ px", "height"),
-            ("幅×高", "fixed"),
-        ]
-        for text, val in modes:
-            mode_radio = customtkinter.CTkRadioButton(
-                size_controls_frame,
-                text=text,
-                variable=self.mode_var,
-                value=val,
-                command=self._update_mode,
-                font=self.font_default,
-                fg_color=METALLIC_COLORS["primary"],
-                hover_color=METALLIC_COLORS["hover"],
-                border_color=METALLIC_COLORS["border_medium"],
-                text_color=METALLIC_COLORS["text_primary"],
-            )
-            mode_radio.pack(side="left", padx=(0, self._scale_px(6)))
-            self.mode_radio_buttons.append(mode_radio)
-
-        self._setup_entry_widgets(size_controls_frame)
-
-        action_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
-        action_controls_frame.pack(side="right")
-        self._setup_action_buttons(action_controls_frame)
+        self.top_guide_frame = topbar_widgets.top_guide_frame
+        self.top_action_guide_var = topbar_widgets.top_action_guide_var
+        self.top_action_guide_label = topbar_widgets.top_action_guide_label
+        self.select_button = topbar_widgets.select_button
+        self.help_button = topbar_widgets.help_button
+        self.settings_button = topbar_widgets.settings_button
+        self.preset_manage_button = topbar_widgets.preset_manage_button
+        self.preset_menu = topbar_widgets.preset_menu
+        self.preset_caption_label = topbar_widgets.preset_caption_label
+        self.preview_button = topbar_widgets.preview_button
+        self.save_button = topbar_widgets.save_button
+        self.batch_button = topbar_widgets.batch_button
+        self.zoom_cb = topbar_widgets.zoom_cb
         self._refresh_topbar_density()
         self._setup_settings_layers()
         self._setup_main_layout()
@@ -2015,11 +1948,11 @@ class ResizeApp(customtkinter.CTk):
 
     @staticmethod
     def _topbar_density_for_width(window_width: int) -> str:
-        return "compact" if window_width <= TOPBAR_DENSITY_COMPACT_MAX_WIDTH else "normal"
+        return TopBarController._density_for_width(window_width)
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
-        return "一括保存" if density == "compact" else "一括適用保存"
+        return TopBarController._batch_button_text_for_density(density)
 
     def _select_button_text_for_state(self) -> str:
         if self._is_pro_mode():
@@ -2029,26 +1962,27 @@ class ResizeApp(customtkinter.CTk):
         return "画像を選択"
 
     def _apply_topbar_density(self, window_width: int) -> None:
-        density = self._topbar_density_for_width(window_width)
-        if density == self._topbar_density:
+        if self._topbar_controller is None:
+            density = self._topbar_density_for_width(window_width)
+            if density == self._topbar_density:
+                return
+            self._topbar_density = density
+            widths = self._scale_topbar_widths(density)
+            self.select_button.configure(width=widths["select"])
+            self.help_button.configure(width=widths["help"])
+            self.settings_button.configure(width=widths["settings"])
+            self.preset_menu.configure(width=widths["preset_menu"])
+            self.preset_manage_button.configure(width=widths["preset_action"])
+            self.preview_button.configure(width=widths["preview"])
+            self.save_button.configure(width=widths["save"])
+            self.batch_button.configure(
+                width=widths["batch"],
+                text=self._batch_button_text_for_density(density),
+            )
+            self.zoom_cb.configure(width=widths["zoom"])
+            self.select_button.configure(text=self._select_button_text_for_state())
             return
-        self._topbar_density = density
-        widths = self._scale_topbar_widths(density)
-
-        self.select_button.configure(width=widths["select"])
-        self.help_button.configure(width=widths["help"])
-        self.settings_button.configure(width=widths["settings"])
-        self.preset_menu.configure(width=widths["preset_menu"])
-        self.preset_manage_button.configure(width=widths["preset_action"])
-        self.preview_button.configure(width=widths["preview"])
-        self.save_button.configure(width=widths["save"])
-        self.batch_button.configure(
-            width=widths["batch"],
-            text=self._batch_button_text_for_density(density),
-        )
-        self.zoom_cb.configure(width=widths["zoom"])
-        self.select_button.configure(text=self._select_button_text_for_state())
-        self._refresh_top_action_guide()
+        self._topbar_controller.apply_density(window_width)
 
     def _refresh_topbar_density(self) -> None:
         width = max(self.winfo_width(), MIN_WINDOW_WIDTH)
@@ -2115,24 +2049,42 @@ class ResizeApp(customtkinter.CTk):
     def _apply_ui_mode(self):
         pro_mode = self._is_pro_mode()
         self._update_exif_mode_options_for_ui_mode()
-        self.select_button.configure(text=self._select_button_text_for_state())
-        if self._is_loading_files:
-            self.select_button.configure(state="disabled")
-
-        if pro_mode:
-            if self.batch_button.winfo_manager() != "pack":
-                self.batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(8))
-            if self.preset_menu.winfo_manager() != "pack":
-                self.preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(2))
-            if self.preset_caption_label.winfo_manager() != "pack":
-                self.preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(2))
+        if self._topbar_controller is not None:
+            self._topbar_controller.apply_ui_mode(
+                is_pro_mode=pro_mode,
+                is_loading=self._is_loading_files,
+            )
         else:
-            if self.batch_button.winfo_manager():
-                self.batch_button.pack_forget()
-            if self.preset_menu.winfo_manager():
-                self.preset_menu.pack_forget()
-            if self.preset_caption_label.winfo_manager():
-                self.preset_caption_label.pack_forget()
+            self.select_button.configure(text=self._select_button_text_for_state())
+            if self._is_loading_files:
+                self.select_button.configure(state="disabled")
+
+            if pro_mode:
+                if self.batch_button.winfo_manager() != "pack":
+                    self.batch_button.pack(
+                        side="left",
+                        padx=self._scale_px(8),
+                        pady=self._scale_px(8),
+                    )
+                if self.preset_menu.winfo_manager() != "pack":
+                    self.preset_menu.pack(
+                        side="right",
+                        padx=(self._scale_px(4), 0),
+                        pady=self._scale_px(2),
+                    )
+                if self.preset_caption_label.winfo_manager() != "pack":
+                    self.preset_caption_label.pack(
+                        side="right",
+                        padx=(0, self._scale_px(4)),
+                        pady=self._scale_px(2),
+                    )
+            else:
+                if self.batch_button.winfo_manager():
+                    self.batch_button.pack_forget()
+                if self.preset_menu.winfo_manager():
+                    self.preset_menu.pack_forget()
+                if self.preset_caption_label.winfo_manager():
+                    self.preset_caption_label.pack_forget()
 
         if pro_mode:
             if self.advanced_controls_frame.winfo_manager() != "pack":
@@ -2189,24 +2141,30 @@ class ResizeApp(customtkinter.CTk):
     def _refresh_top_action_guide(self) -> None:
         if not hasattr(self, "top_action_guide_var"):
             return
-
-        text = self._top_action_guide_text()
-        self.top_action_guide_var.set(text)
-        if text:
-            if hasattr(self, "top_guide_frame") and self.top_guide_frame.winfo_manager() != "pack":
-                self.top_guide_frame.pack(
-                    side="top",
-                    fill="x",
-                    padx=self._scale_px(8),
-                    pady=(self._scale_px(2), self._scale_px(1)),
-                )
-            if not self.top_action_guide_label.winfo_manager():
-                self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
-        else:
+        if self._topbar_controller is None:
+            text = self._top_action_guide_text()
+            self.top_action_guide_var.set(text)
+            if text:
+                if (
+                    hasattr(self, "top_guide_frame")
+                    and self.top_guide_frame.winfo_manager() != "pack"
+                ):
+                    self.top_guide_frame.pack(
+                        side="top",
+                        fill="x",
+                        padx=self._scale_px(8),
+                        pady=(self._scale_px(2), self._scale_px(1)),
+                    )
+                if not self.top_action_guide_label.winfo_manager():
+                    self.top_action_guide_label.pack(fill="x", padx=(0, 0), pady=(0, 0))
+                return
             if self.top_action_guide_label.winfo_manager():
                 self.top_action_guide_label.pack_forget()
             if hasattr(self, "top_guide_frame") and self.top_guide_frame.winfo_manager():
                 self.top_guide_frame.pack_forget()
+            return
+
+        self._topbar_controller.refresh_top_action_guide(self._top_action_guide_text())
 
     def _top_action_guide_text(self) -> str:
         if self._is_loading_files:
@@ -2251,8 +2209,35 @@ class ResizeApp(customtkinter.CTk):
             if hasattr(self, "recent_settings_row") and self.recent_settings_row.winfo_manager():
                 self.recent_settings_row.pack_forget()
 
-    def _setup_entry_widgets(self, parent):
+    def _setup_entry_widgets(self, parent, on_mode_changed: Optional[Callable[[], None]] = None):
         """入力ウィジェットをセットアップ"""
+        mode_change_handler = on_mode_changed if on_mode_changed is not None else self._update_mode
+
+        # Mode radio buttons
+        self.mode_var = customtkinter.StringVar(value="ratio")
+        self.mode_radio_buttons: List[customtkinter.CTkRadioButton] = []
+        modes = [
+            ("比率 %", "ratio"),
+            ("幅 px", "width"),
+            ("高さ px", "height"),
+            ("幅×高", "fixed"),
+        ]
+        for text, val in modes:
+            mode_radio = customtkinter.CTkRadioButton(
+                parent,
+                text=text,
+                variable=self.mode_var,
+                value=val,
+                command=mode_change_handler,
+                font=self.font_default,
+                fg_color=METALLIC_COLORS["primary"],
+                hover_color=METALLIC_COLORS["hover"],
+                border_color=METALLIC_COLORS["border_medium"],
+                text_color=METALLIC_COLORS["text_primary"],
+            )
+            mode_radio.pack(side="left", padx=(0, self._scale_px(6)))
+            self.mode_radio_buttons.append(mode_radio)
+
         # Size entry fields
         self.entry_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
         self.entry_frame.pack(side="left", padx=(8, 10))
@@ -2372,67 +2357,6 @@ class ResizeApp(customtkinter.CTk):
             "height": [self.entry_h_single],
             "fixed": [self.entry_w_fixed, self.entry_h_fixed],
         }
-
-    def _setup_action_buttons(self, parent):
-        """アクションボタンをセットアップ"""
-        topbar_widths = self._scale_topbar_widths("normal")
-        self.preview_button = customtkinter.CTkButton(
-            parent,
-            text="プレビュー",
-            image=self._icon_refresh,
-            compound="left",
-            width=topbar_widths["preview"],
-            command=self._preview_current,
-            font=self.font_default
-        )
-        self._style_primary_button(self.preview_button)
-        self.preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(2))
-        
-        self.save_button = customtkinter.CTkButton(
-            parent,
-            text="保存",
-            image=self._icon_save,
-            compound="left",
-            width=topbar_widths["save"],
-            command=self._save_current,
-            font=self.font_default
-        )
-        self._style_primary_button(self.save_button)
-        self.save_button.pack(side="left", pady=self._scale_px(2))
-        
-        self.batch_button = customtkinter.CTkButton(
-            parent,
-            image=self._icon_folder_open,
-            compound="left",
-            text=self._batch_button_text_for_density(self._topbar_density),
-            width=topbar_widths["batch"],
-            command=self._batch_save,
-            font=self.font_default
-        )
-        self._style_primary_button(self.batch_button)
-        self.batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
-
-        # Zoom combobox
-        self.zoom_var = customtkinter.StringVar(value="画面に合わせる")
-        self.zoom_cb = customtkinter.CTkComboBox(
-            parent,
-            variable=self.zoom_var,
-            values=["画面に合わせる", "100%", "200%", "300%"],
-            width=topbar_widths["zoom"],
-            state="readonly",
-            command=self._apply_zoom_selection,
-            font=self.font_default,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            border_color=METALLIC_COLORS["border_light"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        self.zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=self._scale_px(2))
-        # ズーム操作は低頻度のため、トップでは常時表示しない
-        self.zoom_cb.pack_forget()
 
     def _setup_output_controls(self, parent):
         """保存関連の設定コントロールをセットアップ"""
@@ -5745,470 +5669,101 @@ class ResizeApp(customtkinter.CTk):
         """使い方ヘルプを表示する"""
         HelpDialog(self, HELP_CONTENT).show()
 
+    def _settings_dialog_state(self) -> SettingsDialogState:
+        return SettingsDialogState(
+            ui_mode_label=self.ui_mode_var.get(),
+            appearance_label=self.appearance_mode_var.get(),
+            ui_scale_mode=self._normalize_ui_scale_mode(self._ui_scale_mode),
+            zoom_preference=self.zoom_var.get(),
+            quality=self.quality_var.get(),
+            output_format_label=self.output_format_var.get(),
+            default_output_dir=str(self.settings.get("default_output_dir", "")),
+            default_preset_label=self._preset_label_for_id(
+                str(self.settings.get("default_preset_id", "")).strip(),
+                PRESET_NONE_LABEL,
+            ),
+            pro_input_mode=self._normalized_pro_input_mode(
+                str(self.settings.get("pro_input_mode", "recursive"))
+            ),
+            show_tooltips=self._to_bool(self.settings.get("show_tooltips", True)),
+        )
+
+    def _settings_dialog_mappings(self) -> SettingsDialogMappings:
+        default_output_label = FORMAT_ID_TO_LABEL.get(
+            default_gui_settings()["output_format"], "自動"
+        )
+        return SettingsDialogMappings(
+            ui_mode_label_to_id=UI_MODE_LABEL_TO_ID,
+            appearance_label_to_id=APPEARANCE_LABEL_TO_ID,
+            ui_scale_label_to_id=UI_SCALE_LABEL_TO_ID,
+            pro_input_label_to_id=PRO_INPUT_MODE_LABEL_TO_ID,
+            ui_mode_id_to_label=UI_MODE_ID_TO_LABEL,
+            appearance_id_to_label=APPEARANCE_ID_TO_LABEL,
+            ui_scale_id_to_label=UI_SCALE_ID_TO_LABEL,
+            pro_input_id_to_label=PRO_INPUT_MODE_ID_TO_LABEL,
+            preset_name_to_id=self._preset_name_to_id,
+            preset_labels_with_none=self._preset_labels_with_none,
+            build_output_format_labels=self._build_output_format_labels,
+            output_format_fallback_label=default_output_label,
+            zoom_preference_values=("画面に合わせる", "100%", "200%", "300%"),
+            quality_values=QUALITY_VALUES,
+            pro_input_default_fallback_label="フォルダ再帰",
+            preset_none_label=PRESET_NONE_LABEL,
+            ui_scale_factor=self._ui_scale_factor,
+            settings_getter=lambda: self.settings,
+        )
+
+    def _apply_settings_dialog_result(self, result: SettingsDialogResult) -> None:
+        self.ui_mode_var.set(result.ui_mode_label)
+        self.appearance_mode_var.set(result.appearance_label)
+        self._apply_ui_scale_mode(
+            UI_SCALE_LABEL_TO_ID.get(result.ui_scale_label, self._normalize_ui_scale_mode("normal"))
+        )
+        self.zoom_var.set(result.zoom_preference)
+        self.quality_var.set(result.quality)
+        self.output_format_var.set(result.output_format_label)
+        self.settings["pro_input_mode"] = result.pro_input_mode_id
+        self.settings["default_output_dir"] = result.default_output_dir
+        self.settings["default_preset_id"] = result.default_preset_id
+        self.settings["show_tooltips"] = bool(result.show_tooltips)
+        if not self.settings["show_tooltips"]:
+            self._tooltip_manager.hide()
+
+        self._apply_ui_mode()
+        self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
+        self._apply_zoom_selection()
+        self._on_output_format_changed(self.output_format_var.get())
+        self._on_quality_changed(self.quality_var.get())
+        self._update_settings_summary()
+        self._save_current_settings()
+        self._refresh_status_indicators()
+
     def _open_settings_dialog(self) -> None:
         if self._settings_dialog is not None and self._settings_dialog.winfo_exists():
             self._settings_dialog.focus_set()
             return
 
-        dialog = customtkinter.CTkToplevel(self)
-        self._settings_dialog = dialog
-        dialog.title("設定")
-        ui_scale_factor = UI_SCALE_FACTORS.get(self._normalize_ui_scale_mode(self._ui_scale_mode), 1.0)
-        base_width, base_height = 680, 565
-        dialog.geometry(f"{max(base_width, round(base_width * ui_scale_factor))}x{max(base_height, round(base_height * ui_scale_factor))}")
-        dialog.minsize(max(base_width, round(base_width * ui_scale_factor)), max(base_height, round(base_height * ui_scale_factor)))
-        dialog.resizable(True, True)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.configure(fg_color=METALLIC_COLORS["bg_primary"])
-        dialog.grid_rowconfigure(0, weight=1)
-        dialog.grid_rowconfigure(1, weight=0)
-        dialog.grid_columnconfigure(0, weight=1)
-
-        settings_content = customtkinter.CTkScrollableFrame(dialog, fg_color="transparent")
-        settings_content.grid(
-            row=0,
-            column=0,
-            padx=self._scale_px(8),
-            pady=(0, 0),
-            sticky="nsew",
+        callbacks = SettingsDialogCallbacks(
+            register_tooltip=self._register_tooltip,
+            style_primary_button=self._style_primary_button,
+            style_secondary_button=self._style_secondary_button,
+            scale_px=self._scale_px,
+            on_show_help=self._show_help,
+            on_open_preset_manager=self._open_preset_manager_dialog,
+            on_apply=self._apply_settings_dialog_result,
+            on_status_set=self.status_var.set,
+            on_dialog_closed=lambda: setattr(self, "_settings_dialog", None),
+            font_default=self.font_default,
+            font_small=self.font_small,
+            colors=METALLIC_COLORS,
         )
-        settings_content.grid_columnconfigure(0, weight=0)
-        settings_content.grid_columnconfigure(1, weight=1)
-
-        ui_mode_var = customtkinter.StringVar(value=self.ui_mode_var.get())
-        appearance_var = customtkinter.StringVar(value=self.appearance_mode_var.get())
-        ui_scale_var = customtkinter.StringVar(
-            value=UI_SCALE_ID_TO_LABEL.get(
-                self._normalize_ui_scale_mode(self.settings.get("ui_scale_mode", "normal")),
-                "通常",
-            )
-        )
-        zoom_pref_var = customtkinter.StringVar(value=self.zoom_var.get())
-        quality_var = customtkinter.StringVar(value=self.quality_var.get())
-        output_format_var = customtkinter.StringVar(value=self.output_format_var.get())
-        default_preset_var = customtkinter.StringVar(
-            value=self._preset_label_for_id(
-                str(self.settings.get("default_preset_id", "")).strip(),
-                PRESET_NONE_LABEL,
-            )
-        )
-        pro_input_var = customtkinter.StringVar(
-            value=PRO_INPUT_MODE_ID_TO_LABEL.get(
-                self._normalized_pro_input_mode(str(self.settings.get("pro_input_mode", "recursive"))),
-                "フォルダ再帰",
-            )
-        )
-        show_tooltips_var = customtkinter.BooleanVar(
-            value=self._to_bool(self.settings.get("show_tooltips", True))
-        )
-        default_output_dir_var = customtkinter.StringVar(
-            value=str(self.settings.get("default_output_dir", ""))
+        self._settings_dialog = open_settings_dialog(
+            self,
+            state=self._settings_dialog_state(),
+            mappings=self._settings_dialog_mappings(),
+            callbacks=callbacks,
         )
 
-        def _close_dialog() -> None:
-            if dialog.winfo_exists():
-                dialog.grab_release()
-                dialog.destroy()
-            self._settings_dialog = None
-
-        def _scale_px(value: int) -> int:
-            scaled = round(value * ui_scale_factor)
-            return max(1, scaled)
-
-        def _scale_pad(value: Any) -> Any:
-            if isinstance(value, (list, tuple)):
-                return tuple(_scale_px(int(v)) for v in value)
-            return _scale_px(int(value))
-
-        def _browse_default_output_dir() -> None:
-            initial_dir = (
-                default_output_dir_var.get().strip()
-                or str(self.settings.get("last_output_dir", ""))
-                or str(Path.home())
-            )
-            selected_dir = filedialog.askdirectory(
-                title="既定の保存先フォルダを選択",
-                initialdir=initial_dir,
-            )
-            if selected_dir:
-                default_output_dir_var.set(selected_dir)
-
-        def _reset_dialog_values() -> None:
-            if not messagebox.askyesno(
-                "設定初期化の確認",
-                "設定をデフォルト値に戻しますか？\n（保存するまでは反映されません）",
-                parent=dialog,
-            ):
-                return
-            defaults = default_gui_settings()
-            ui_mode_var.set(UI_MODE_ID_TO_LABEL.get(defaults["ui_mode"], "オフ"))
-            appearance_var.set(APPEARANCE_ID_TO_LABEL.get(defaults["appearance_mode"], "OSに従う"))
-            ui_scale_var.set(UI_SCALE_ID_TO_LABEL.get(defaults["ui_scale_mode"], "通常"))
-            zoom_pref_var.set(str(defaults.get("zoom_preference", "画面に合わせる")))
-            quality_var.set(str(defaults["quality"]))
-            output_format_var.set(FORMAT_ID_TO_LABEL.get(defaults["output_format"], "自動"))
-            pro_input_var.set(
-                PRO_INPUT_MODE_ID_TO_LABEL.get(defaults["pro_input_mode"], "フォルダ再帰")
-            )
-            show_tooltips_var.set(self._to_bool(defaults.get("show_tooltips", True)))
-            default_output_dir_var.set(str(defaults.get("default_output_dir", "")))
-            default_preset_var.set(PRESET_NONE_LABEL)
-
-        def _save_dialog_values() -> None:
-            try:
-                quality_value = normalize_quality(int(quality_var.get()))
-            except (TypeError, ValueError):
-                messagebox.showwarning("入力エラー", "品質は数値で指定してください。", parent=dialog)
-                return
-
-            ui_mode_label = ui_mode_var.get()
-            if ui_mode_label not in UI_MODE_LABEL_TO_ID:
-                ui_mode_label = "オフ"
-
-            appearance_label = appearance_var.get()
-            if appearance_label not in APPEARANCE_LABEL_TO_ID:
-                appearance_label = "OSに従う"
-            ui_scale_label = ui_scale_var.get()
-            if ui_scale_label not in UI_SCALE_LABEL_TO_ID:
-                ui_scale_label = "通常"
-            zoom_pref_label = zoom_pref_var.get()
-            if zoom_pref_label not in {"画面に合わせる", "100%", "200%", "300%"}:
-                zoom_pref_label = "画面に合わせる"
-
-            format_label = output_format_var.get()
-            available_formats = self._build_output_format_labels()
-            if format_label not in available_formats:
-                format_label = "自動"
-
-            pro_input_mode = PRO_INPUT_MODE_LABEL_TO_ID.get(pro_input_var.get(), "recursive")
-            default_output_dir = default_output_dir_var.get().strip()
-            if default_output_dir:
-                default_output_dir = str(Path(default_output_dir).expanduser())
-            selected_default_label = default_preset_var.get().strip()
-            if selected_default_label == PRESET_NONE_LABEL:
-                default_preset_id = ""
-            else:
-                default_preset_id = self._preset_name_to_id.get(selected_default_label, "")
-
-            self.ui_mode_var.set(ui_mode_label)
-            self.appearance_mode_var.set(appearance_label)
-            self._ui_scale_mode = UI_SCALE_LABEL_TO_ID.get(ui_scale_label, "normal")
-            self.zoom_var.set(zoom_pref_label)
-            self.quality_var.set(str(quality_value))
-            self.output_format_var.set(format_label)
-            self.settings["pro_input_mode"] = pro_input_mode
-            self.settings["default_output_dir"] = default_output_dir
-            self.settings["default_preset_id"] = default_preset_id
-            self.settings["show_tooltips"] = bool(show_tooltips_var.get())
-            if not self.settings["show_tooltips"]:
-                self._tooltip_manager.hide()
-
-            self._apply_ui_mode()
-            self._apply_ui_scale_mode(self._ui_scale_mode)
-            self._apply_user_appearance_mode(self._appearance_mode_id(), redraw=True)
-            self._apply_zoom_selection()
-            self._on_output_format_changed(self.output_format_var.get())
-            self._on_quality_changed(self.quality_var.get())
-            self._update_settings_summary()
-            self._save_current_settings()
-            self.status_var.set("設定を保存しました。")
-
-            _close_dialog()
-
-        row = 0
-
-        customtkinter.CTkLabel(
-            settings_content,
-            text="Proモード",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_pad((18, 8)), sticky="w")
-        ui_mode_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=list(UI_MODE_LABEL_TO_ID.keys()),
-            variable=ui_mode_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        ui_mode_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_pad((18, 8)), sticky="ew")
-        self._register_tooltip(ui_mode_menu, "Pro向け機能のオン/オフを切り替えます。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="カラーテーマ",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        appearance_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=list(APPEARANCE_LABEL_TO_ID.keys()),
-            variable=appearance_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        appearance_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(appearance_menu, "OSに従う/ライト/ダークを選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="文字サイズ",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        ui_scale_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=list(UI_SCALE_LABEL_TO_ID.keys()),
-            variable=ui_scale_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        ui_scale_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(ui_scale_menu, "通常 / 大きめ の文字サイズを切り替えます。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="プレビュー拡大率",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        zoom_pref_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=["画面に合わせる", "100%", "200%", "300%"],
-            variable=zoom_pref_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        zoom_pref_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(zoom_pref_menu, "プレビューの既定拡大率を設定します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="ヘルプ/管理",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        support_actions = customtkinter.CTkFrame(settings_content, fg_color="transparent")
-        support_actions.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
-        help_in_settings_button = customtkinter.CTkButton(
-            support_actions,
-            text="使い方を開く",
-            width=_scale_px(132),
-            command=self._show_help,
-            font=self.font_default,
-        )
-        self._style_secondary_button(help_in_settings_button)
-        help_in_settings_button.pack(side="left", padx=(0, _scale_px(8)))
-        preset_manage_in_settings_button = customtkinter.CTkButton(
-            support_actions,
-            text="プリセット管理",
-            width=_scale_px(132),
-            command=self._open_preset_manager_dialog,
-            font=self.font_default,
-        )
-        self._style_secondary_button(preset_manage_in_settings_button)
-        preset_manage_in_settings_button.pack(side="left")
-        self._register_tooltip(help_in_settings_button, "使い方ガイドを表示します。")
-        self._register_tooltip(preset_manage_in_settings_button, "プリセットの追加・編集・削除を行います。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="ホバー説明",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        show_tooltips_check = customtkinter.CTkCheckBox(
-            settings_content,
-            text="有効にする",
-            variable=show_tooltips_var,
-            font=self.font_default,
-            fg_color=METALLIC_COLORS["primary"],
-            hover_color=METALLIC_COLORS["hover"],
-            border_color=METALLIC_COLORS["border_medium"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        show_tooltips_check.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
-        self._register_tooltip(show_tooltips_check, "ホバー説明の表示を切り替えます。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="既定の出力形式",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        output_format_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=self._build_output_format_labels(),
-            variable=output_format_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        output_format_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(output_format_menu, "起動時の既定出力形式を選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="既定の品質",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        quality_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=QUALITY_VALUES,
-            variable=quality_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        quality_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(quality_menu, "起動時の既定品質を選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="既定プリセット",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        default_preset_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=self._preset_labels_with_none(),
-            variable=default_preset_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        default_preset_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(default_preset_menu, "起動時に使うプリセットを選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="プロモード入力方式",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        pro_input_menu = customtkinter.CTkOptionMenu(
-            settings_content,
-            values=list(PRO_INPUT_MODE_LABEL_TO_ID.keys()),
-            variable=pro_input_var,
-            fg_color=METALLIC_COLORS["bg_tertiary"],
-            button_color=METALLIC_COLORS["primary"],
-            button_hover_color=METALLIC_COLORS["hover"],
-            text_color=METALLIC_COLORS["text_primary"],
-            dropdown_fg_color=METALLIC_COLORS["bg_secondary"],
-            dropdown_text_color=METALLIC_COLORS["text_primary"],
-        )
-        pro_input_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        self._register_tooltip(pro_input_menu, "プロモードの既定入力方法を選択します。")
-
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text="既定の保存先フォルダ",
-            font=self.font_default,
-            text_color=METALLIC_COLORS["text_secondary"],
-        ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-        default_output_frame = customtkinter.CTkFrame(settings_content, fg_color="transparent")
-        default_output_frame.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-        default_output_frame.grid_columnconfigure(0, weight=1)
-        default_output_entry = customtkinter.CTkEntry(
-            default_output_frame,
-            textvariable=default_output_dir_var,
-            fg_color=METALLIC_COLORS["input_bg"],
-            border_color=METALLIC_COLORS["border_light"],
-            text_color=METALLIC_COLORS["text_primary"],
-        )
-        default_output_entry.grid(row=0, column=0, sticky="ew")
-        self._register_tooltip(default_output_entry, "既定の保存先フォルダを設定します。")
-        browse_button = customtkinter.CTkButton(
-            default_output_frame,
-            text="参照",
-            width=_scale_px(70),
-            command=_browse_default_output_dir,
-            font=self.font_small,
-        )
-        self._style_secondary_button(browse_button)
-        browse_button.grid(row=0, column=1, padx=_scale_pad((8, 0)))
-        self._register_tooltip(browse_button, "フォルダ選択を開きます。")
-
-        button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
-        button_frame.grid(
-            row=1,
-            column=0,
-            padx=_scale_px(20),
-            pady=_scale_pad((18, 16)),
-            sticky="e",
-        )
-
-        reset_button = customtkinter.CTkButton(
-            button_frame,
-            text="初期化",
-            width=_scale_px(90),
-            command=_reset_dialog_values,
-            font=self.font_small,
-        )
-        self._style_secondary_button(reset_button)
-        reset_button.pack(side="left", padx=_scale_pad((0, 8)))
-        self._register_tooltip(reset_button, "設定値を初期状態へ戻します。")
-
-        cancel_button = customtkinter.CTkButton(
-            button_frame,
-            text="キャンセル",
-            width=_scale_px(90),
-            command=_close_dialog,
-            font=self.font_small,
-        )
-        self._style_secondary_button(cancel_button)
-        cancel_button.pack(side="left", padx=_scale_pad((0, 8)))
-        self._register_tooltip(cancel_button, "変更を保存せず閉じます。")
-
-        save_button = customtkinter.CTkButton(
-            button_frame,
-            text="保存",
-            width=_scale_px(90),
-            command=_save_dialog_values,
-            font=self.font_small,
-        )
-        self._style_primary_button(save_button)
-        save_button.pack(side="left")
-        self._register_tooltip(save_button, "設定を保存して反映します。")
-
-        dialog.protocol("WM_DELETE_WINDOW", _close_dialog)
-        dialog.focus_set()
 
     def _open_log_folder(self) -> None:
         log_dir = self._run_log_artifacts.log_dir
