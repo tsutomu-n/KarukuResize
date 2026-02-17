@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict
 import customtkinter
 
 
-TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1310
+TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1366
 TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
     "normal": {
         "select": 128,

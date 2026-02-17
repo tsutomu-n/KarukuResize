@@ -110,7 +110,7 @@ MIN_WINDOW_WIDTH = 1200
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
-TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1310
+TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1366
 TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
     "normal": {
         "select": 128,
@@ -779,6 +779,10 @@ class ResizeApp(customtkinter.CTk):
     def _scale_topbar_widths(self, density: str) -> Dict[str, int]:
         base = TOPBAR_WIDTHS.get(density, TOPBAR_WIDTHS["normal"])
         return {name: self._scale_px(width) for name, width in base.items()}
+
+    def _topbar_density_window_width(self, window_width: int) -> int:
+        scale = self._ui_scale_factor if self._ui_scale_factor > 1.0 else 1.0
+        return max(1, round(window_width / scale))
 
     @staticmethod
     def _to_bool(value: Any) -> bool:
@@ -1962,8 +1966,9 @@ class ResizeApp(customtkinter.CTk):
         return "画像を選択"
 
     def _apply_topbar_density(self, window_width: int) -> None:
+        scaled_window_width = self._topbar_density_window_width(window_width)
         if self._topbar_controller is None:
-            density = self._topbar_density_for_width(window_width)
+            density = self._topbar_density_for_width(scaled_window_width)
             if density == self._topbar_density:
                 return
             self._topbar_density = density
@@ -1982,7 +1987,7 @@ class ResizeApp(customtkinter.CTk):
             self.zoom_cb.configure(width=widths["zoom"])
             self.select_button.configure(text=self._select_button_text_for_state())
             return
-        self._topbar_controller.apply_density(window_width)
+        self._topbar_controller.apply_density(scaled_window_width)
 
     def _refresh_topbar_density(self) -> None:
         width = max(self.winfo_width(), MIN_WINDOW_WIDTH)
