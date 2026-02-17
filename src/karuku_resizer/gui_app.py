@@ -5704,6 +5704,7 @@ class ResizeApp(customtkinter.CTk):
             preset_name_to_id=self._preset_name_to_id,
             preset_labels_with_none=self._preset_labels_with_none,
             build_output_format_labels=self._build_output_format_labels,
+            output_format_id_to_label=FORMAT_ID_TO_LABEL,
             output_format_fallback_label=default_output_label,
             zoom_preference_values=("画面に合わせる", "100%", "200%", "300%"),
             quality_values=QUALITY_VALUES,
