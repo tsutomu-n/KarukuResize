@@ -58,7 +58,7 @@ def build_settings_summary_text(
     elif is_pro_mode and format_id == "avif":
         parts.append(f"AVIF speed {avif_speed}")
 
-    return "現在: " + " / ".join(parts)
+    return "  ".join(f"[{p}]" for p in parts)
 
 
 def build_session_status_text(

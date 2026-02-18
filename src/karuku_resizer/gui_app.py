@@ -686,6 +686,7 @@ class ResizeApp(customtkinter.CTk):
         self._result_dialog: Optional[customtkinter.CTkToplevel] = None
         self._operation_scope: Optional[OperationScope] = None
         self._action_hint_reason = ""
+        self._auto_preview_after_id: Optional[str] = None
         self._recent_setting_buttons: List[customtkinter.CTkButton] = []
         self._run_log_artifacts: RunLogArtifacts = create_run_log_artifacts(
             app_name=LOG_APP_NAME,
@@ -1350,6 +1351,7 @@ class ResizeApp(customtkinter.CTk):
 
     def _on_setting_var_changed(self, *_args: Any) -> None:
         self._update_settings_summary()
+        self._schedule_auto_preview()
 
     def _update_exif_mode_options_for_ui_mode(self):
         if self._is_pro_mode():
@@ -1925,6 +1927,28 @@ class ResizeApp(customtkinter.CTk):
         actives = self._entry_widgets.get(mode, [])
         if actives:
             actives[0].focus_set()
+        self._schedule_auto_preview()
+
+    def _schedule_auto_preview(self) -> None:
+        """Schedule an automatic preview update with 500ms debounce."""
+        if self._auto_preview_after_id is not None:
+            try:
+                self.after_cancel(self._auto_preview_after_id)
+            except Exception:
+                pass
+            self._auto_preview_after_id = None
+        if self.current_index is None or self._is_loading_files:
+            return
+        self._auto_preview_after_id = self.after(500, self._auto_preview)
+
+    def _auto_preview(self) -> None:
+        """Execute automatic preview after debounce delay."""
+        self._auto_preview_after_id = None
+        if self.current_index is None or self._is_loading_files:
+            return
+        job = self.jobs[self.current_index]
+        job.resized = self._process_image(job.image)
+        self._draw_previews(job)
 
     def _setup_drag_and_drop(self) -> None:
         ui_bootstrap.bootstrap_setup_drag_and_drop(

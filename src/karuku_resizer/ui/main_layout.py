@@ -81,7 +81,7 @@ def setup_status_bar(app: Any, *, colors: ColorMap) -> None:
         textvariable=app.action_hint_var,
         anchor="w",
         font=app.font_small,
-        text_color=colors["warning"],
+        text_color=colors["primary"],
         fg_color=colors["bg_secondary"],
         corner_radius=10,
         padx=10,
@@ -421,7 +421,7 @@ def setup_right_panel(app: Any, *, colors: ColorMap) -> None:
         command=app._toggle_metadata_panel,
         font=app.font_small,
     )
-    app._style_tertiary_button(app.metadata_toggle_button)
+    app._style_secondary_button(app.metadata_toggle_button)
     app.metadata_toggle_button.pack(side="right")
 
     app.metadata_status_var = customtkinter.StringVar(value="画像を選択するとメタデータを表示できます")

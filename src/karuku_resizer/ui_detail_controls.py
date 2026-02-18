@@ -272,9 +272,11 @@ def apply_output_controls_state_for_app(
     if refs is None:
         return
     output_format_id = output_format_to_id.get(refs.output_format_var.get(), "auto")
+    details_expanded = getattr(app, "details_expanded", False)
     apply_detail_output_state(
         refs,
         is_pro_mode=app._is_pro_mode(),
+        details_expanded=details_expanded,
         output_format_id=output_format_id,
         is_exif_edit_mode=exif_label_to_id.get(app.exif_mode_var.get(), "keep") == "edit",
         is_exif_remove_mode=exif_label_to_id.get(app.exif_mode_var.get(), "keep") == "remove",
@@ -291,9 +293,11 @@ def apply_detail_panel_visibility(
     refs = getattr(app, "detail_form_refs", None)
     if refs is None:
         return
+    is_pro = getattr(app, "_is_pro_mode", lambda: False)()
     apply_detail_controls_visibility(
         refs,
         expanded=expanded,
+        is_pro_mode=is_pro,
         scale_px=app._scale_px,
     )
 
@@ -302,6 +306,7 @@ def apply_detail_controls_visibility(
     refs: DetailFormRefs,
     *,
     expanded: bool,
+    is_pro_mode: bool = False,
     scale_px: Callable[[int], int],
 ) -> None:
     if expanded:
@@ -313,6 +318,21 @@ def apply_detail_controls_visibility(
                 padx=scale_px(12),
                 pady=(0, scale_px(8)),
             )
+        if is_pro_mode:
+            if refs.output.advanced_controls_frame.winfo_manager() != "pack":
+                refs.output.advanced_controls_frame.pack(
+                    side="top",
+                    fill="x",
+                    padx=scale_px(10),
+                    pady=(0, scale_px(6)),
+                )
+            if refs.output.codec_controls_frame.winfo_manager() != "pack":
+                refs.output.codec_controls_frame.pack(
+                    side="top",
+                    fill="x",
+                    padx=scale_px(10),
+                    pady=(0, scale_px(6)),
+                )
         refs.header.details_toggle_button.configure(text="詳細設定を隠す")
         if refs.header.recent_settings_row.winfo_manager() != "pack":
             refs.header.recent_settings_row.pack(
@@ -325,6 +345,10 @@ def apply_detail_controls_visibility(
 
     if refs.output.basic_controls_frame.winfo_manager():
         refs.output.basic_controls_frame.pack_forget()
+    if refs.output.advanced_controls_frame.winfo_manager():
+        refs.output.advanced_controls_frame.pack_forget()
+    if refs.output.codec_controls_frame.winfo_manager():
+        refs.output.codec_controls_frame.pack_forget()
     refs.header.details_toggle_button.configure(text="詳細設定を表示")
     if refs.header.recent_settings_row.winfo_manager():
         refs.header.recent_settings_row.pack_forget()
@@ -334,6 +358,7 @@ def apply_detail_output_state(
     output_refs: DetailOutputRefs,
     *,
     is_pro_mode: bool,
+    details_expanded: bool = True,
     output_format_id: str,
     is_exif_edit_mode: bool,
     is_exif_remove_mode: bool,
@@ -343,6 +368,7 @@ def apply_detail_output_state(
     apply_detail_mode(
         output_refs,
         is_pro_mode=is_pro_mode,
+        details_expanded=details_expanded,
         scale_px=scale_px,
     )
     webp_state = "normal" if output_format_id == "webp" else "disabled"
@@ -398,8 +424,8 @@ def build_detail_header(
         settings_header_frame,
         textvariable=settings_summary_var,
         anchor="w",
-        font=state.font_small,
-        text_color=state.colors["text_secondary"],
+        font=state.font_default,
+        text_color=state.colors["primary"],
     )
     settings_summary_label.pack(
         side="left",
@@ -817,7 +843,7 @@ def build_detail_output_controls(
 
     customtkinter.CTkLabel(
         codec_controls_frame,
-        text="AVIF speed",
+        text="AVIF speed（低速=高品質）",
         font=state.font_small,
         text_color=state.colors["text_secondary"],
     ).pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
@@ -836,12 +862,6 @@ def build_detail_output_controls(
         dropdown_text_color=state.colors["text_primary"],
     )
     avif_speed_menu.pack(side="left", padx=(0, state.scale_px(8)), pady=state.scale_px(8))
-    customtkinter.CTkLabel(
-        codec_controls_frame,
-        text="(低速=高品質)",
-        font=state.font_small,
-        text_color=state.colors["text_tertiary"],
-    ).pack(side="left", pady=state.scale_px(8))
 
     exif_artist_var = customtkinter.StringVar(value="")
     exif_copyright_var = customtkinter.StringVar(value="")
@@ -964,9 +984,10 @@ def apply_detail_mode(
     output_refs: DetailOutputRefs,
     *,
     is_pro_mode: bool,
+    details_expanded: bool = True,
     scale_px: Callable[[int], int],
 ) -> None:
-    if is_pro_mode:
+    if is_pro_mode and details_expanded:
         if output_refs.advanced_controls_frame.winfo_manager() != "pack":
             output_refs.advanced_controls_frame.pack(
                 side="top",

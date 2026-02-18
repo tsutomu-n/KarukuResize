@@ -50,13 +50,12 @@ def build_preview_panel(
     preview_pane = customtkinter.CTkFrame(parent, fg_color="transparent")
     preview_pane.pack(side="right", fill="both", expand=True, padx=(5, 0))
     preview_pane.grid_rowconfigure(0, weight=1)
-    preview_pane.grid_rowconfigure(1, weight=1)
-    preview_pane.grid_rowconfigure(2, weight=0)
     preview_pane.grid_columnconfigure(0, weight=1)
+    preview_pane.grid_columnconfigure(1, weight=1)
 
     frame_original = customtkinter.CTkFrame(preview_pane, corner_radius=12)
     state.style_card_frame(frame_original, corner_radius=12)
-    frame_original.grid(row=0, column=0, sticky="nswe", pady=(0, 5))
+    frame_original.grid(row=0, column=0, sticky="nswe", padx=(0, 3))
     frame_original.grid_rowconfigure(1, weight=1)
     frame_original.grid_columnconfigure(0, weight=1)
     customtkinter.CTkLabel(
@@ -82,7 +81,7 @@ def build_preview_panel(
 
     frame_resized = customtkinter.CTkFrame(preview_pane, corner_radius=12)
     state.style_card_frame(frame_resized, corner_radius=12)
-    frame_resized.grid(row=1, column=0, sticky="nswe", pady=(5, 0))
+    frame_resized.grid(row=0, column=1, sticky="nswe", padx=(3, 0))
     frame_resized.grid_rowconfigure(1, weight=1)
     frame_resized.grid_columnconfigure(0, weight=1)
     resized_title_label = customtkinter.CTkLabel(

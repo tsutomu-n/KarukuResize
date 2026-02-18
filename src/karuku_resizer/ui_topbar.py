@@ -217,7 +217,8 @@ class TopBarController:
             dropdown_fg_color=self._colors["bg_secondary"],
             dropdown_text_color=self._colors["text_primary"],
         )
-        preset_menu.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
+        preset_menu.pack(side="right", padx=(0, 0), pady=self._scale_px(1))
+        preset_manage_button.pack(side="right", padx=(self._scale_px(2), self._scale_px(2)), pady=self._scale_px(1))
         preset_caption_label = customtkinter.CTkLabel(
             top_row_primary,
             text="プリセット",
@@ -239,7 +240,7 @@ class TopBarController:
             command=self._on_preview,
             font=self._font_default,
         )
-        self._style_primary_button(preview_button)
+        self._style_secondary_button(preview_button)
         preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(2))
         save_button = customtkinter.CTkButton(
             action_controls_frame,
@@ -261,7 +262,7 @@ class TopBarController:
             command=self._on_batch,
             font=self._font_default,
         )
-        self._style_primary_button(batch_button)
+        self._style_secondary_button(batch_button)
         batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
 
         zoom_cb = customtkinter.CTkComboBox(

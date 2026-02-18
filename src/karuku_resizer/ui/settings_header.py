@@ -55,7 +55,7 @@ def setup_settings_layers(
         command=app._toggle_details_panel,
         font=app.font_small,
     )
-    app._style_tertiary_button(app.details_toggle_button)
+    app._style_secondary_button(app.details_toggle_button)
     app.details_toggle_button.pack(side="right", padx=(0, 6), pady=8)
 
     app.recent_settings_row = customtkinter.CTkFrame(app.settings_header_frame, fg_color="transparent")

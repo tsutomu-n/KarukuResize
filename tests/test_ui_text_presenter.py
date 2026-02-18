@@ -69,11 +69,11 @@ def test_build_settings_summary_text() -> None:
         webp_lossless=False,
         avif_speed="2",
     )
-    assert summary.startswith("現在: Pro / ")
-    assert "Q85" in summary
-    assert "EXIF保持（位置情報除去）" in summary
-    assert "ドライラン:ON" in summary
-    assert "WEBP method 4" in summary
+    assert "[Pro]" in summary
+    assert "[Q85]" in summary
+    assert "[EXIF保持（位置情報除去）]" in summary
+    assert "[ドライラン:ON]" in summary
+    assert "[WEBP method 4]" in summary
 
 
 def test_build_session_status_text() -> None:
