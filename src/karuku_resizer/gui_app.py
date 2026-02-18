@@ -1941,7 +1941,7 @@ class ResizeApp(customtkinter.CTk):
 
     @staticmethod
     def _topbar_density_for_width(window_width: int) -> str:
-        return topbar_density_for_width(window_width, ui_scale_factor=1.0)
+        return topbar_density_for_width(window_width)
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
