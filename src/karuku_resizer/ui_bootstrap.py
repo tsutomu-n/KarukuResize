@@ -79,6 +79,32 @@ from karuku_resizer.ui_metadata_panel import (
 from karuku_resizer.ui_topbar import TopBarController
 
 
+DEFAULT_APP_COLORS: Dict[str, Any] = {
+    "primary": "#2F7FC8",
+    "hover": "#286CB0",
+    "accent_soft": "#E8F3FF",
+    "pressed": "#1F7DCF",
+    "text_primary": "#1F2A37",
+    "text_secondary": "#5B6878",
+    "text_tertiary": "#7A8696",
+    "bg_primary": "#F4F7FB",
+    "bg_secondary": "#FFFFFF",
+    "bg_tertiary": "#EFF4FA",
+    "input_bg": "#FFFFFF",
+    "border_light": "#D9E2EC",
+    "border_medium": "#CBD5E1",
+    "warning": "#C97A00",
+}
+
+
+def bootstrap_resolve_app_colors(app: Any) -> Dict[str, Any]:
+    resolved = dict(DEFAULT_APP_COLORS)
+    colors = getattr(app, "_app_colors", None)
+    if isinstance(colors, Mapping):
+        resolved.update(dict(colors))
+    return resolved
+
+
 def setup_resize_app_layout(
     app: Any,
     *,
@@ -415,7 +441,7 @@ def bootstrap_setup_ui_icons(app: Any, icon_loader: Callable[[str, int], Any]) -
     app._icon_folder_open = icon_loader("folder-open", 16)
     app._icon_refresh = icon_loader("refresh-cw", 16)
     app._icon_save = icon_loader("save", 16)
-    app._icon_trash = icon_loader("trash-2", 16)
+    app._icon_trash = None
 
 
 def bootstrap_apply_window_icon(app: Any, *, load_icon_paths: Callable[[], Tuple[Path | None, Path | None]]) -> None:
@@ -970,8 +996,6 @@ def bootstrap_on_select_change(
     if idx is None:
         if app._visible_job_indices:
             idx = app._visible_job_indices[0]
-    else:
-        idx = 0
     if not isinstance(idx, int):
         return
     if idx >= len(app.jobs):
@@ -988,7 +1012,7 @@ def bootstrap_on_select_change(
             previous_job_index=previous_index,
             current_job_index=idx,
             visible_job_indices=app._visible_job_indices,
-            colors=app._app_colors if hasattr(app, "_app_colors") else {"text_secondary": "#000", "text_tertiary": "#000", "bg_secondary": "#fff"},
+            colors=bootstrap_resolve_app_colors(app),
         )
     app.current_index = idx
 
@@ -1430,7 +1454,7 @@ def bootstrap_batch_save(app: Any) -> None:
             app.status_var.set(retry_msg)
             show_operation_result_dialog(
                 app,
-                colors=app._app_colors if hasattr(app, "_app_colors") else {},
+                colors=bootstrap_resolve_app_colors(app),
                 file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
                 title="失敗再試行結果",
                 summary_text=retry_msg,
@@ -1441,7 +1465,7 @@ def bootstrap_batch_save(app: Any) -> None:
         retry_callback = _retry_failed_batch_only
     show_operation_result_dialog(
         app,
-        colors=app._app_colors if hasattr(app, "_app_colors") else {},
+        colors=bootstrap_resolve_app_colors(app),
         file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
         title="一括処理結果",
         summary_text=msg,

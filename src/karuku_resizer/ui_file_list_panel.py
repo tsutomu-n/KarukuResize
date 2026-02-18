@@ -36,6 +36,11 @@ def _accent_soft_color(colors: Mapping[str, Any]) -> Any:
     return colors.get("accent_soft", colors.get("hover", colors.get("bg_tertiary")))
 
 
+def _color_with_default(colors: Mapping[str, Any], key: str, default: Any) -> Any:
+    value = colors.get(key)
+    return default if value is None else value
+
+
 def build_file_list_panel(
     parent: Any,
     state: FileListState,
@@ -258,15 +263,19 @@ def apply_file_list_selection(
     colors: Mapping[str, Any],
 ) -> None:
     """Update button styles for previous/current selection indices."""
+    bg_tertiary = _color_with_default(colors, "bg_tertiary", "#EFF4FA")
+    border_light = _color_with_default(colors, "border_light", "#D9E2EC")
+    text_primary = _color_with_default(colors, "text_primary", "#1F2A37")
+    primary = _color_with_default(colors, "primary", border_light)
     previous_pos = list_position_for_job(
         visible_job_indices,
         previous_job_index,
     )
     if previous_pos is not None and previous_pos < len(refs.file_buttons):
         refs.file_buttons[previous_pos].configure(
-            fg_color=colors["bg_tertiary"],
-            border_color=colors["border_light"],
-            text_color=colors["text_primary"],
+            fg_color=bg_tertiary,
+            border_color=border_light,
+            text_color=text_primary,
         )
 
     current_pos = list_position_for_job(
@@ -277,6 +286,6 @@ def apply_file_list_selection(
         accent_soft = _accent_soft_color(colors)
         refs.file_buttons[current_pos].configure(
             fg_color=accent_soft,
-            border_color=colors["primary"],
-            text_color=colors["text_primary"],
+            border_color=primary,
+            text_color=text_primary,
         )

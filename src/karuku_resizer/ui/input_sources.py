@@ -25,6 +25,11 @@ def setup_drag_and_drop(
         logging.info("Drag and drop disabled: tkinterdnd2 unavailable")
         return
 
+    if not hasattr(app, "drop_target_register"):
+        logging.info("Drag and drop disabled: root widget does not support drop_target_register")
+        app._drag_drop_enabled = False
+        return
+
     try:
         tkdnd_cls._require(app)
     except Exception as exc:

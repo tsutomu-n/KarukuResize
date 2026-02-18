@@ -560,6 +560,7 @@ class ResizeApp(customtkinter.CTk):
         )
         self._canvas_background_color = bootstrap_canvas_background_color
         self._canvas_label_color = bootstrap_canvas_label_color
+        self._app_colors = METALLIC_COLORS
         self._scale_px = lambda value: bootstrap_scale_px(self, value)
         self._scale_pad = lambda value: bootstrap_scale_pad(self, value)
         self._scale_topbar_widths = lambda density: bootstrap_scale_topbar_widths(
