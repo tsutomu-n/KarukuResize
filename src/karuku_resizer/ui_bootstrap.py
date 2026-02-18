@@ -441,7 +441,7 @@ def bootstrap_setup_ui_icons(app: Any, icon_loader: Callable[[str, int], Any]) -
     app._icon_folder_open = icon_loader("folder-open", 16)
     app._icon_refresh = icon_loader("refresh-cw", 16)
     app._icon_save = icon_loader("save", 16)
-    app._icon_trash = None
+    app._icon_trash = icon_loader("trash-2", 16)
 
 
 def bootstrap_apply_window_icon(app: Any, *, load_icon_paths: Callable[[], Tuple[Path | None, Path | None]]) -> None:
