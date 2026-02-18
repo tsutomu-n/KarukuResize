@@ -1346,7 +1346,7 @@ class ResizeApp(customtkinter.CTk):
         self._apply_ui_mode()
         self._refresh_status_indicators()
         self._update_settings_summary()
-        if self.current_index is not None:
+        if self.current_index is not None and self.current_index < len(self.jobs):
             self._draw_previews(self.jobs[self.current_index])
 
     def _on_setting_var_changed(self, *_args: Any) -> None:
@@ -1433,7 +1433,7 @@ class ResizeApp(customtkinter.CTk):
         normalized = str(normalize_quality(raw))
         if normalized != value:
             self.quality_var.set(normalized)
-        if self.current_index is not None:
+        if self.current_index is not None and self.current_index < len(self.jobs):
             self._draw_previews(self.jobs[self.current_index])
 
     def _on_output_format_changed(self, _value: str):
@@ -1442,7 +1442,7 @@ class ResizeApp(customtkinter.CTk):
             output_format_to_id=FORMAT_LABEL_TO_ID,
             exif_label_to_id=EXIF_LABEL_TO_ID,
         )
-        if self.current_index is not None:
+        if self.current_index is not None and self.current_index < len(self.jobs):
             self._draw_previews(self.jobs[self.current_index])
 
     def _on_exif_mode_changed(self, _value: str):
@@ -1474,7 +1474,7 @@ class ResizeApp(customtkinter.CTk):
         self._on_codec_setting_changed()
 
     def _on_codec_setting_changed(self):
-        if self.current_index is not None:
+        if self.current_index is not None and self.current_index < len(self.jobs):
             self._draw_previews(self.jobs[self.current_index])
 
     def _apply_log_level(self):
@@ -2673,12 +2673,12 @@ class ResizeApp(customtkinter.CTk):
                 return
             self._zoom_org = pct / 100.0
             self._zoom_resz = pct / 100.0
-        if self.current_index is not None:
+        if self.current_index is not None and self.current_index < len(self.jobs):
             self._draw_previews(self.jobs[self.current_index])
 
     def _get_fit_zoom_ratio(self, canvas: customtkinter.CTkCanvas, is_resized: bool) -> float:
         """Calculates the zoom ratio to fit the image to the canvas."""
-        if self.current_index is None:
+        if self.current_index is None or self.current_index >= len(self.jobs):
             return 1.0
         job = self.jobs[self.current_index]
         img = job.resized if is_resized and job.resized else job.image
@@ -2710,7 +2710,8 @@ class ResizeApp(customtkinter.CTk):
 
         setattr(self, zoom_attr, new_zoom)
         self.zoom_var.set(f"{int(new_zoom*100)}%")
-        self._draw_previews(self.jobs[self.current_index])
+        if self.current_index < len(self.jobs):
+            self._draw_previews(self.jobs[self.current_index])
 
     def _on_root_resize(self, _e):
         if self._topbar_controller is not None:
@@ -2719,7 +2720,7 @@ class ResizeApp(customtkinter.CTk):
             )
         # redraw previews if zoom is 'Fit'
         if self._zoom_org is None or self._zoom_resz is None:
-            if self.current_index is not None:
+            if self.current_index is not None and self.current_index < len(self.jobs):
                 self._draw_previews(self.jobs[self.current_index])
 
 # ----------------------------------------------------------------------
