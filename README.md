@@ -26,6 +26,14 @@ KarukuResize は、画像のリサイズ・圧縮・保存を GUI / CLI で扱�
 - 失敗一覧JSON保存（`--failures-file`）
 - コンソール整形ログ（Rich）＋ファイルログ
 
+## GUI表示仕様（現行）
+
+- Pro OFF（簡易モード）では、プリセットメニューと `一括適用保存` を非表示
+- Pro ON（プロモード）では、プリセットメニューと `一括適用保存` を表示
+- 上部ガイド（Top Action Guide）は通常時は非表示、読み込み/処理中のみ表示
+- 画像読み込みや一括保存の進捗はステータスバーに表示し、キャンセル操作を提供
+- D&D時の単体ファイル受理拡張子は `png/jpg/jpeg/webp/avif`、プロモード再帰読込は `jpg/jpeg/png`
+
 ## 動作環境
 
 - Python 3.12 以上
@@ -75,6 +83,7 @@ uv run karukuresize-cli -s input -d output -w 1280 -q 85
 補足:
 - プロモード再帰読込の対象は `jpg/jpeg/png`
 - D&Dの単体ファイルは `png/jpg/jpeg/webp/avif` を受理
+- 一覧の `クリア` で読込済み画像を一括でリセット可能
 
 ## 設定ダイアログ（⚙ボタン）
 
@@ -92,6 +101,23 @@ uv run karukuresize-cli -s input -d output -w 1280 -q 85
 | 既定の保存先フォルダ | 保存ダイアログの初期フォルダ |
 | 使い方を開く | ヘルプダイアログを表示 |
 | プリセット管理 | プリセットの追加・編集・削除 |
+
+## 実装アーキテクチャ（概要）
+
+- GUIエントリポイント: `src/karuku_resizer/gui_app.py`
+- UI組み立て/配線: `src/karuku_resizer/ui_bootstrap.py`
+- UI領域分割:
+  - `src/karuku_resizer/ui_topbar.py`
+  - `src/karuku_resizer/ui_main_panel.py`
+  - `src/karuku_resizer/ui_file_list_panel.py`
+  - `src/karuku_resizer/ui_preview_panel.py`
+  - `src/karuku_resizer/ui_metadata_panel.py`
+  - `src/karuku_resizer/ui_statusbar.py`
+  - `src/karuku_resizer/ui_detail_controls.py`
+- 文言生成: `src/karuku_resizer/ui_text_presenter.py`
+- 表示方針: `src/karuku_resizer/ui_display_policy.py`
+- 非同期読込セッション: `src/karuku_resizer/ui/file_load_session.py`
+- 保存処理パイプライン: `src/karuku_resizer/image_save_pipeline.py`
 
 ## CLI オプション
 
@@ -131,6 +157,15 @@ uv run karukuresize-cli -s input -d output --failures-file failures.json --json
 
 保持ポリシー: 最大 `100` ファイル / `30` 日
 
+## GUI設定ファイル
+
+GUI設定は OS 標準設定ディレクトリに保存:
+
+- Windows: `%APPDATA%\\KarukuResize\\settings.json`
+- Linux/macOS: `~/.config/karukuresize/settings.json`（`XDG_CONFIG_HOME` で上書き可）
+
+旧 `karuku_settings.json`（カレントディレクトリ）は初回起動時に自動移行されます。
+
 ## Windows ビルド
 
 ```powershell
@@ -148,11 +183,13 @@ uv run karukuresize-build-exe
 ```bash
 uv run pytest -q
 uv run ruff check src tests
+uvx basedpyright src
 uv run pre-commit run --all-files
 ```
 
 ## 主要ドキュメント
 
+- `design.md`
 - `CONTRIBUTING.md`
 - `docs/QUICK_START.md`
 - `docs/WINDOWS_GUIDE.md`

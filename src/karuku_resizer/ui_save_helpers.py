@@ -174,6 +174,6 @@ def build_unique_batch_base_path(
     candidate = base
     suffix_index = 1
     while destination_with_extension_func(candidate, output_format).exists():
-        candidate = output_dir / f"{stem}_resized_{suffix_index}"
+        candidate = output_dir / f"{safe_stem}_resized_{suffix_index}"
         suffix_index += 1
     return candidate

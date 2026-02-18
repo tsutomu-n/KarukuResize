@@ -487,7 +487,6 @@ def build_detail_entry_controls(
     mode_segment = customtkinter.CTkSegmentedButton(
         parent,
         values=["比率 %", "幅 px", "高さ px", "幅×高"],
-        variable=customtkinter.StringVar(value="比率 %"),
         command=lambda _: callbacks.on_mode_changed(),
         font=state.font_default,
         selected_color=state.colors["primary"],
