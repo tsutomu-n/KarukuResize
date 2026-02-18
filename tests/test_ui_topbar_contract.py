@@ -136,7 +136,7 @@ def test_apply_density_updates_width_and_label() -> None:
 
     assert density_log == ["compact"]
     assert widgets["select"].width == 100
-    assert widgets["batch"].text == "一括保存"
+    assert widgets["batch"].text == "一括適用保存"
 
 
 def test_apply_ui_mode_hides_and_shows_non_pro_elements() -> None:

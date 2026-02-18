@@ -444,7 +444,7 @@ logger = logging.getLogger(__name__)
 
 class ResizeApp(customtkinter.CTk):
     # Runtime UI refs (bound by setup functions and ui modules)
-    mode_radio_buttons: List[customtkinter.CTkRadioButton]
+    mode_segment: customtkinter.CTkSegmentedButton
     file_filter_segment: customtkinter.CTkSegmentedButton
     preset_menu: customtkinter.CTkOptionMenu
     preset_var: customtkinter.StringVar
@@ -733,8 +733,10 @@ class ResizeApp(customtkinter.CTk):
         for attr_name, text in TOP_AND_PRESET_TOOLTIPS.items():
             self._register_tooltip_by_name(attr_name, text)
 
-        for button, text in zip(self.mode_radio_buttons, SIZE_MODE_TOOLTIPS):
-            self._register_tooltip(button, text)
+        self._register_segmented_value_tooltips(
+            self.mode_segment,
+            dict(zip(["比率 %", "幅 px", "高さ px", "幅×高"], SIZE_MODE_TOOLTIPS)),
+        )
 
         for attr_name, text in ENTRY_AND_ACTION_TOOLTIPS.items():
             self._register_tooltip_by_name(attr_name, text)
@@ -2081,7 +2083,7 @@ class ResizeApp(customtkinter.CTk):
         ui_mode_segment = getattr(self, "ui_mode_segment", None)
         if ui_mode_segment is not None:
             widgets.append(ui_mode_segment)
-        widgets.extend(self.mode_radio_buttons)
+        widgets.append(self.mode_segment)
         widgets.extend(self.file_buttons)
         widgets.extend(self._recent_setting_buttons)
         for widget in widgets:
@@ -2710,7 +2712,7 @@ class ResizeApp(customtkinter.CTk):
 
         setattr(self, zoom_attr, new_zoom)
         self.zoom_var.set(f"{int(new_zoom*100)}%")
-        if self.current_index < len(self.jobs):
+        if self.current_index is not None and self.current_index < len(self.jobs):
             self._draw_previews(self.jobs[self.current_index])
 
     def _on_root_resize(self, _e):

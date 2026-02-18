@@ -23,7 +23,7 @@ def test_density_respects_ui_scale_correction() -> None:
 
 
 def test_batch_label_is_compact_and_normal() -> None:
-    assert topbar_batch_button_text("compact") == "一括保存"
+    assert topbar_batch_button_text("compact") == "一括適用保存"
     assert topbar_batch_button_text("normal") == "一括適用保存"
 
 

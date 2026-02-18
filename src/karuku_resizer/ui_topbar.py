@@ -227,7 +227,7 @@ class TopBarController:
         )
         preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(1))
 
-        # Mode radio buttons are appended to `mode_radio_buttons` inside `setup_entry_widgets`
+        # Mode segmented button is built inside `setup_entry_widgets`
 
         action_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
         action_controls_frame.pack(side="right")

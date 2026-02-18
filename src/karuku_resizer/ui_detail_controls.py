@@ -84,7 +84,7 @@ class DetailHeaderRefs:
 @dataclass
 class DetailEntryRefs:
     mode_var: customtkinter.StringVar
-    mode_radio_buttons: List[customtkinter.CTkRadioButton]
+    mode_segment: customtkinter.CTkSegmentedButton
     entry_frame: customtkinter.CTkFrame
     ratio_entry: customtkinter.CTkEntry
     entry_w_single: customtkinter.CTkEntry
@@ -191,7 +191,7 @@ def build_detail_form(
 def bind_detail_entry_refs(app: Any, refs: DetailEntryRefs) -> None:
     """Bind detail entry refs to a gui app instance."""
     app.mode_var = refs.mode_var
-    app.mode_radio_buttons = refs.mode_radio_buttons
+    app.mode_segment = refs.mode_segment
     app.entry_frame = refs.entry_frame
     app.ratio_entry = refs.ratio_entry
     app.entry_w_single = refs.entry_w_single
@@ -484,29 +484,28 @@ def build_detail_entry_controls(
     callbacks: DetailEntryCallbacks,
 ) -> DetailEntryRefs:
     mode_var = customtkinter.StringVar(value="ratio")
-    mode_radio_buttons: List[customtkinter.CTkRadioButton] = []
-    modes = [
-        ("比率 %", "ratio"),
-        ("幅 px", "width"),
-        ("高さ px", "height"),
-        ("幅×高", "fixed"),
-    ]
-    for text, value in modes:
-        mode_radio = customtkinter.CTkRadioButton(
-            parent,
-            text=text,
-            variable=mode_var,
-            value=value,
-            command=callbacks.on_mode_changed,
-            font=state.font_default,
-            fg_color=state.colors["primary"],
-            hover_color=state.colors["hover"],
-            border_color=state.colors["border_medium"],
-            text_color=state.colors["text_primary"],
-        )
-        mode_radio.pack(side="left", padx=(0, state.scale_px(6)))
-        state.style_secondary_button(mode_radio)
-        mode_radio_buttons.append(mode_radio)
+    mode_segment = customtkinter.CTkSegmentedButton(
+        parent,
+        values=["比率 %", "幅 px", "高さ px", "幅×高"],
+        variable=customtkinter.StringVar(value="比率 %"),
+        command=lambda _: callbacks.on_mode_changed(),
+        font=state.font_default,
+        selected_color=state.colors["primary"],
+        selected_hover_color=state.colors["hover"],
+        unselected_color=state.colors["bg_tertiary"],
+        unselected_hover_color=state.colors.get("accent_soft", state.colors.get("hover", state.colors["bg_tertiary"])),
+        text_color=state.colors["text_primary"],
+    )
+    _MODE_LABEL_TO_VALUE = {"比率 %": "ratio", "幅 px": "width", "高さ px": "height", "幅×高": "fixed"}
+    _MODE_VALUE_TO_LABEL = {v: k for k, v in _MODE_LABEL_TO_VALUE.items()}
+
+    def _on_segment_changed(label: str) -> None:
+        mode_var.set(_MODE_LABEL_TO_VALUE.get(label, "ratio"))
+        callbacks.on_mode_changed()
+
+    mode_segment.configure(command=_on_segment_changed)
+    mode_var.trace_add("write", lambda *_: mode_segment.set(_MODE_VALUE_TO_LABEL.get(mode_var.get(), "比率 %")))
+    mode_segment.pack(side="left", padx=(0, state.scale_px(6)))
 
     entry_frame = customtkinter.CTkFrame(parent, fg_color="transparent")
     entry_frame.pack(side="left", padx=(state.scale_px(8), state.scale_px(10)))
@@ -627,7 +626,7 @@ def build_detail_entry_controls(
 
     return DetailEntryRefs(
         mode_var=mode_var,
-        mode_radio_buttons=mode_radio_buttons,
+        mode_segment=mode_segment,
         entry_frame=entry_frame,
         ratio_entry=ratio_entry,
         entry_w_single=entry_w_single,
