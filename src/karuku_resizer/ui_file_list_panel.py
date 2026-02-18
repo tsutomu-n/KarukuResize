@@ -18,6 +18,8 @@ class FileListState:
 @dataclass(frozen=True)
 class FileListCallbacks:
     on_filter_changed: Callable[[str], None]
+    on_clear_loaded: Callable[[], None]
+    style_secondary_button: Callable[[Any], None]
     register_tooltip: Callable[[Any, str], None]
 
 
@@ -27,6 +29,7 @@ class FileListRefs:
     file_list_frame: customtkinter.CTkScrollableFrame
     file_filter_var: customtkinter.StringVar
     file_filter_segment: customtkinter.CTkSegmentedButton
+    clear_loaded_button: customtkinter.CTkButton
     file_buttons: List[customtkinter.CTkButton]
     empty_state_label: customtkinter.CTkLabel
     font_small: Any
@@ -51,8 +54,11 @@ def build_file_list_panel(
     main_content = customtkinter.CTkFrame(parent, fg_color="transparent")
     main_content.pack(fill="both", expand=True, padx=12, pady=8)
 
+    file_list_column = customtkinter.CTkFrame(main_content, fg_color="transparent")
+    file_list_column.pack(side="left", fill="y", padx=(0, 6))
+
     file_list_frame = customtkinter.CTkScrollableFrame(
-        main_content,
+        file_list_column,
         label_text="ファイルリスト",
         label_font=state.font_small,
         width=250,
@@ -63,7 +69,7 @@ def build_file_list_panel(
         label_text_color=state.colors["text_secondary"],
         corner_radius=12,
     )
-    file_list_frame.pack(side="left", fill="y", padx=(0, 6))
+    file_list_frame.pack(side="top", fill="y", expand=True)
 
     file_filter_var = customtkinter.StringVar(value=filter_values[0] if filter_values else "全件")
     file_filter_segment = customtkinter.CTkSegmentedButton(
@@ -97,11 +103,22 @@ def build_file_list_panel(
     )
     empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
 
+    clear_loaded_button = customtkinter.CTkButton(
+        file_list_column,
+        text="読み込み一覧をクリア",
+        width=220,
+        command=callbacks.on_clear_loaded,
+        font=state.font_small,
+    )
+    callbacks.style_secondary_button(clear_loaded_button)
+    clear_loaded_button.pack(side="top", fill="x", padx=8, pady=(6, 0))
+
     return FileListRefs(
         main_content=main_content,
         file_list_frame=file_list_frame,
         file_filter_var=file_filter_var,
         file_filter_segment=file_filter_segment,
+        clear_loaded_button=clear_loaded_button,
         file_buttons=[],
         empty_state_label=empty_state_label,
         font_small=state.font_small,

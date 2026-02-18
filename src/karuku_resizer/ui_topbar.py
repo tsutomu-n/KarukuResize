@@ -35,7 +35,6 @@ class TopBarWidgets:
     preset_caption_label: customtkinter.CTkLabel
     preview_button: customtkinter.CTkButton
     save_button: customtkinter.CTkButton
-    clear_button: customtkinter.CTkButton
     batch_button: customtkinter.CTkButton
     zoom_cb: customtkinter.CTkComboBox
 
@@ -53,7 +52,6 @@ class TopBarController:
         on_preset_changed: Callable[[str], None],
         on_preview: Callable[[], None],
         on_save: Callable[[], None],
-        on_clear: Callable[[], None],
         on_batch: Callable[[], None],
         on_zoom_changed: Callable[[str], None],
         scale_px: Callable[[int], int],
@@ -72,7 +70,6 @@ class TopBarController:
         icon_settings: Any,
         icon_refresh: Any,
         icon_save: Any,
-        icon_trash: Any,
         icon_folder_open: Any,
         preset_var: customtkinter.StringVar,
         zoom_var: customtkinter.StringVar,
@@ -84,7 +81,6 @@ class TopBarController:
         self._on_preset_changed = on_preset_changed
         self._on_preview = on_preview
         self._on_save = on_save
-        self._on_clear = on_clear
         self._on_batch = on_batch
         self._on_zoom_changed = on_zoom_changed
         self._scale_px = scale_px
@@ -103,7 +99,6 @@ class TopBarController:
         self._icon_settings = icon_settings
         self._icon_refresh = icon_refresh
         self._icon_save = icon_save
-        self._icon_trash = icon_trash
         self._icon_folder_open = icon_folder_open
         self._preset_var = preset_var
         self._zoom_var = zoom_var
@@ -257,21 +252,6 @@ class TopBarController:
         )
         self._style_primary_button(save_button)
         save_button.pack(side="left", pady=self._scale_px(2))
-        clear_button = customtkinter.CTkButton(
-            action_controls_frame,
-            text="クリア",
-            image=self._icon_trash,
-            compound="left",
-            width=topbar_widths["clear"],
-            command=self._on_clear,
-            font=self._font_default,
-        )
-        self._style_secondary_button(clear_button)
-        clear_button.pack(
-            side="left",
-            padx=(self._scale_px(8), 0),
-            pady=self._scale_px(2),
-        )
         batch_button = customtkinter.CTkButton(
             action_controls_frame,
             image=self._icon_folder_open,
@@ -317,7 +297,6 @@ class TopBarController:
             preset_caption_label=preset_caption_label,
             preview_button=preview_button,
             save_button=save_button,
-            clear_button=clear_button,
             batch_button=batch_button,
             zoom_cb=zoom_cb,
         )
@@ -340,7 +319,6 @@ class TopBarController:
         widgets.preset_manage_button.configure(width=widths["preset_action"])
         widgets.preview_button.configure(width=widths["preview"])
         widgets.save_button.configure(width=widths["save"])
-        widgets.clear_button.configure(width=widths["clear"])
         widgets.batch_button.configure(
             width=widths["batch"],
             text=self._batch_button_text_for_density(density),

@@ -55,6 +55,7 @@ class MainPanelCallbacks:
     """Callback wiring used while building the main content area."""
 
     on_filter_changed: Callable[[str], None]
+    on_clear_loaded: Callable[[], None]
     register_tooltip: Callable[[Any, str], None]
     on_zoom_original: Callable[[Any], None]
     on_zoom_resized: Callable[[Any], None]
@@ -117,6 +118,8 @@ def build_main_panel(
         ),
         callbacks=FileListCallbacks(
             on_filter_changed=callbacks.on_filter_changed,
+            on_clear_loaded=callbacks.on_clear_loaded,
+            style_secondary_button=state.style_secondary_button,
             register_tooltip=callbacks.register_tooltip,
         ),
         filter_values=list(filter_values),
@@ -206,6 +209,7 @@ def apply_main_panel_refs(app: Any, refs: MainPanelRefs) -> None:
     app.file_list_frame = refs.file_list.file_list_frame
     app.file_filter_var = refs.file_list.file_filter_var
     app.file_filter_segment = refs.file_list.file_filter_segment
+    app.clear_loaded_button = refs.file_list.clear_loaded_button
     app.file_buttons = refs.file_list.file_buttons
     app.empty_state_label = refs.file_list.empty_state_label
 

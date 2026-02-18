@@ -129,7 +129,6 @@ def setup_resize_app_layout(
         on_preset_changed=app._on_preset_menu_changed,
         on_preview=app._preview_current,
         on_save=app._save_current,
-        on_clear=app._clear_loaded_items,
         on_batch=app._batch_save,
         on_zoom_changed=app._apply_zoom_selection,
         scale_px=app._scale_px,
@@ -148,7 +147,6 @@ def setup_resize_app_layout(
         icon_settings=app._icon_settings,
         icon_refresh=app._icon_refresh,
         icon_save=app._icon_save,
-        icon_trash=app._icon_trash,
         icon_folder_open=app._icon_folder_open,
         preset_var=app.preset_var,
         zoom_var=app.zoom_var,
@@ -181,7 +179,6 @@ def setup_resize_app_layout(
     app.preset_caption_label = topbar_widgets.preset_caption_label
     app.preview_button = topbar_widgets.preview_button
     app.save_button = topbar_widgets.save_button
-    app.clear_button = topbar_widgets.clear_button
     app.batch_button = topbar_widgets.batch_button
     app.zoom_cb = topbar_widgets.zoom_cb
     if app._topbar_controller is not None:
@@ -253,6 +250,7 @@ def setup_resize_app_layout(
         ),
         callbacks=MainPanelCallbacks(
             on_filter_changed=app._on_file_filter_changed,
+            on_clear_loaded=app._clear_loaded_items,
             register_tooltip=app._register_tooltip,
             on_zoom_original=lambda event: app._on_zoom(event, is_resized=False),
             on_zoom_resized=lambda event: app._on_zoom(event, is_resized=True),
@@ -441,7 +439,7 @@ def bootstrap_setup_ui_icons(app: Any, icon_loader: Callable[[str, int], Any]) -
     app._icon_folder_open = icon_loader("folder-open", 16)
     app._icon_refresh = icon_loader("refresh-cw", 16)
     app._icon_save = icon_loader("save", 16)
-    app._icon_trash = icon_loader("trash-2", 16)
+    app._icon_trash = None  # TODO: Add trash-2_16.png to assets/icons/light/ and assets/icons/dark/
 
 
 def bootstrap_apply_window_icon(app: Any, *, load_icon_paths: Callable[[], Tuple[Path | None, Path | None]]) -> None:

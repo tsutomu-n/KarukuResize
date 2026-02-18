@@ -507,7 +507,7 @@ class ResizeApp(customtkinter.CTk):
     preset_manage_button: customtkinter.CTkButton
     preview_button: customtkinter.CTkButton
     save_button: customtkinter.CTkButton
-    clear_button: customtkinter.CTkButton
+    clear_loaded_button: customtkinter.CTkButton
     batch_button: customtkinter.CTkButton
     details_toggle_button: customtkinter.CTkButton
     zoom_cb: customtkinter.CTkComboBox
@@ -2037,7 +2037,7 @@ class ResizeApp(customtkinter.CTk):
             self.preset_manage_button,
             self.preview_button,
             self.save_button,
-            self.clear_button,
+            self.clear_loaded_button,
             self.batch_button,
             self.details_toggle_button,
             self.output_format_menu,

@@ -57,7 +57,6 @@ def _build_controller(
             "preset_action": 60,
             "preview": 90,
             "save": 90,
-            "clear": 88,
             "batch": 100,
             "zoom": 110,
         }
@@ -71,7 +70,6 @@ def _build_controller(
     preset_caption_label = _FakeWidget("プリセット")
     preview_button = _FakeWidget("プレビュー")
     save_button = _FakeWidget("保存")
-    clear_button = _FakeWidget("クリア")
     batch_button = _FakeWidget("一括適用保存")
     zoom_cb = _FakeWidget()
     zoom_cb.visible = True
@@ -94,7 +92,6 @@ def _build_controller(
         preset_caption_label=preset_caption_label,
         preview_button=preview_button,
         save_button=save_button,
-        clear_button=clear_button,
         batch_button=batch_button,
         zoom_cb=zoom_cb,
     )
@@ -107,7 +104,6 @@ def _build_controller(
         on_preset_changed=lambda value: None,
         on_preview=lambda: None,
         on_save=lambda: None,
-        on_clear=lambda: None,
         on_batch=lambda: None,
         on_zoom_changed=lambda value: None,
         scale_px=lambda value: value,
@@ -126,13 +122,12 @@ def _build_controller(
         icon_settings=None,
         icon_refresh=None,
         icon_save=None,
-        icon_trash=None,
         icon_folder_open=None,
         preset_var=None,
         zoom_var=None,
     )
     controller._widgets = widgets
-    return controller, density_log, select_button, {"help": help_button, "settings": settings_button, "preset_manage": preset_manage_button, "preset_menu": preset_menu, "preset_caption": preset_caption_label, "preview": preview_button, "save": save_button, "clear": clear_button, "batch": batch_button, "zoom": zoom_cb, "select": select_button}
+    return controller, density_log, select_button, {"help": help_button, "settings": settings_button, "preset_manage": preset_manage_button, "preset_menu": preset_menu, "preset_caption": preset_caption_label, "preview": preview_button, "save": save_button, "batch": batch_button, "zoom": zoom_cb, "select": select_button}
 
 
 def test_apply_density_updates_width_and_label() -> None:
@@ -141,7 +136,6 @@ def test_apply_density_updates_width_and_label() -> None:
 
     assert density_log == ["compact"]
     assert widgets["select"].width == 100
-    assert widgets["clear"].width == 88
     assert widgets["batch"].text == "一括保存"
 
 
