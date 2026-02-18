@@ -218,8 +218,21 @@ def refresh_recent_settings_buttons(app: Any) -> None:
         )
         app._style_secondary_button(button)
         button.pack(side="left", padx=(0, 6))
-        app._register_tooltip(button, app._recent_setting_tooltip_text(entry))
+        tooltip_builder = getattr(app, "_recent_setting_tooltip_text", None)
+        if callable(tooltip_builder):
+            tooltip_text = tooltip_builder(entry)
+        else:
+            tooltip_text = recent_setting_tooltip_text(entry)
+        app._register_tooltip(button, tooltip_text)
         app._recent_setting_buttons.append(button)
+
+
+def recent_setting_tooltip_text(entry: Mapping[str, Any]) -> str:
+    label = str(entry.get("label", "")).strip() or "最近使った設定"
+    used_at = str(entry.get("used_at", "")).strip()
+    if used_at:
+        return f"{label}\n最終使用: {used_at}"
+    return label
 
 
 def apply_recent_setting(app: Any, fingerprint: str) -> None:
