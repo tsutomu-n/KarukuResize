@@ -1164,7 +1164,7 @@ class ResizeApp(customtkinter.CTk):
             preset_none_label=PRESET_NONE_LABEL,
             initial_canvas_size=(DEFAULT_PREVIEW, DEFAULT_PREVIEW),
         )
-        register_setting_watchers(self)
+        register_setting_watchers(self, self._on_setting_var_changed)
         self._refresh_status_indicators()
         apply_output_controls_state_for_app(
             self,

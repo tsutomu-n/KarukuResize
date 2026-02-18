@@ -83,14 +83,21 @@ def setup_settings_layers(
     app.detail_settings_frame = customtkinter.CTkFrame(app)
     app._style_card_frame(app.detail_settings_frame, corner_radius=12)
     app._setup_output_controls(app.detail_settings_frame)
-    register_setting_watchers(app)
+    register_setting_watchers(app, app._on_setting_var_changed)
     refresh_recent_settings_buttons(app)
     app._apply_ui_mode()
     app._update_settings_summary()
     app._set_details_panel_visibility(False)
 
 
-def register_setting_watchers(app: Any) -> None:
+def register_setting_watchers(app: Any, on_change: Callable[..., None] | None = None) -> None:
+    callback = on_change
+    if callback is None:
+        def _default_on_change(*_args: Any) -> None:
+            on_setting_var_changed(app, *_args)
+
+        callback = _default_on_change
+
     for var in (
         app.output_format_var,
         app.quality_var,
@@ -101,7 +108,7 @@ def register_setting_watchers(app: Any) -> None:
         app.remove_gps_var,
         app.dry_run_var,
     ):
-        var.trace_add("write", app._on_setting_var_changed)
+        var.trace_add("write", callback)
 
 
 def on_setting_var_changed(app: Any, *_args: Any) -> None:
