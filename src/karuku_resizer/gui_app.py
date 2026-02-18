@@ -2412,7 +2412,7 @@ class ResizeApp(customtkinter.CTk):
         reference_output_format: SaveFormat,
         batch_options: SaveOptions,
         target_jobs: Optional[List[ImageJob]] = None,
-    ) -> BatchSaveStats:
+    ) -> tuple[BatchSaveStats, int]:
         return ui_bootstrap.bootstrap_run_batch_save(
             self,
             output_dir=output_dir,
@@ -2427,6 +2427,7 @@ class ResizeApp(customtkinter.CTk):
         *,
         stats: BatchSaveStats,
         output_dir: Path,
+        selected_count: int,
         reference_job: ImageJob,
         reference_target: Tuple[int, int],
         reference_format_label: str,
@@ -2436,6 +2437,7 @@ class ResizeApp(customtkinter.CTk):
             self,
             stats=stats,
             output_dir=output_dir,
+            selected_count=selected_count,
             reference_job=reference_job,
             reference_target=reference_target,
             reference_format_label=reference_format_label,
