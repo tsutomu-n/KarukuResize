@@ -103,6 +103,7 @@ def setup_resize_app_layout(
         on_preset_changed=app._on_preset_menu_changed,
         on_preview=app._preview_current,
         on_save=app._save_current,
+        on_clear=app._clear_loaded_items,
         on_batch=app._batch_save,
         on_zoom_changed=app._apply_zoom_selection,
         scale_px=app._scale_px,
@@ -121,6 +122,7 @@ def setup_resize_app_layout(
         icon_settings=app._icon_settings,
         icon_refresh=app._icon_refresh,
         icon_save=app._icon_save,
+        icon_trash=app._icon_trash,
         icon_folder_open=app._icon_folder_open,
         preset_var=app.preset_var,
         zoom_var=app.zoom_var,
@@ -153,6 +155,7 @@ def setup_resize_app_layout(
     app.preset_caption_label = topbar_widgets.preset_caption_label
     app.preview_button = topbar_widgets.preview_button
     app.save_button = topbar_widgets.save_button
+    app.clear_button = topbar_widgets.clear_button
     app.batch_button = topbar_widgets.batch_button
     app.zoom_cb = topbar_widgets.zoom_cb
     if app._topbar_controller is not None:
@@ -323,9 +326,10 @@ def bootstrap_style_primary_button(button: customtkinter.CTkButton, *, colors: M
 def bootstrap_style_secondary_button(button: Any, *, colors: Mapping[str, Any]) -> None:
     if isinstance(button, customtkinter.CTkRadioButton):
         return
+    hover_color = colors.get("accent_soft", colors.get("hover", colors.get("bg_tertiary")))
     button.configure(
         fg_color=colors["bg_tertiary"],
-        hover_color=colors["accent_soft"],
+        hover_color=hover_color,
         text_color=colors["text_primary"],
         border_width=1,
         border_color=colors["border_light"],
@@ -411,6 +415,7 @@ def bootstrap_setup_ui_icons(app: Any, icon_loader: Callable[[str, int], Any]) -
     app._icon_folder_open = icon_loader("folder-open", 16)
     app._icon_refresh = icon_loader("refresh-cw", 16)
     app._icon_save = icon_loader("save", 16)
+    app._icon_trash = icon_loader("trash-2", 16)
 
 
 def bootstrap_apply_window_icon(app: Any, *, load_icon_paths: Callable[[], Tuple[Path | None, Path | None]]) -> None:

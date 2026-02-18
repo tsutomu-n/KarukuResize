@@ -43,7 +43,7 @@ def setup_settings_layers(
         selected_color=colors["primary"],
         selected_hover_color=colors["hover"],
         unselected_color=colors["bg_tertiary"],
-        unselected_hover_color=colors["accent_soft"],
+        unselected_hover_color=colors.get("accent_soft", colors.get("hover", colors.get("bg_tertiary"))),
         text_color=colors["text_primary"],
     )
     app.ui_mode_segment.pack(side="right", padx=(0, 8), pady=8)

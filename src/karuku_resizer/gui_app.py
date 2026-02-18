@@ -507,6 +507,7 @@ class ResizeApp(customtkinter.CTk):
     preset_manage_button: customtkinter.CTkButton
     preview_button: customtkinter.CTkButton
     save_button: customtkinter.CTkButton
+    clear_button: customtkinter.CTkButton
     batch_button: customtkinter.CTkButton
     details_toggle_button: customtkinter.CTkButton
     zoom_cb: customtkinter.CTkComboBox
@@ -2035,6 +2036,7 @@ class ResizeApp(customtkinter.CTk):
             self.preset_manage_button,
             self.preview_button,
             self.save_button,
+            self.clear_button,
             self.batch_button,
             self.details_toggle_button,
             self.output_format_menu,
@@ -2145,6 +2147,35 @@ class ResizeApp(customtkinter.CTk):
         self._file_load_cancel_event.set()
         self._set_operation_stage("キャンセル中")
         self.status_var.set(f"{self._file_load_mode_label}: キャンセル中...")
+        self._refresh_status_indicators()
+
+    def _clear_loaded_items(self) -> None:
+        if self._is_loading_files:
+            messagebox.showinfo("処理中", "画像読み込み中はクリアできません。完了または中止後に再実行してください。")
+            return
+        if self._operation_scope is not None and self._operation_scope.active:
+            messagebox.showinfo("処理中", "処理中はクリアできません。完了または中止後に再実行してください。")
+            return
+        if not self.jobs:
+            self.status_var.set("クリア対象がありません。")
+            self._refresh_status_indicators()
+            return
+        proceed = messagebox.askyesno(
+            "クリア確認",
+            "読み込み済みのファイル/フォルダをすべてクリアします。よろしいですか？",
+        )
+        if not proceed:
+            return
+
+        self._reset_loaded_jobs()
+        self._file_load_failed_details = []
+        self._file_load_failed_paths = []
+        self._file_load_total_candidates = 0
+        self._file_load_loaded_count = 0
+        self._file_load_limited = False
+        self._file_load_limit = 0
+        self._file_load_root_dir = None
+        self.status_var.set("読み込み済みのファイル/フォルダをクリアしました。")
         self._refresh_status_indicators()
 
     def _reset_loaded_jobs(self) -> None:

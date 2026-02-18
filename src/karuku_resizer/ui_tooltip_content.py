@@ -30,6 +30,7 @@ ENTRY_AND_ACTION_TOOLTIPS = {
     "entry_h_fixed": "固定高(px)を入力します。",
     "preview_button": "現在の設定で変換後プレビューを表示します。",
     "save_button": "選択中の画像1枚だけ保存します。",
+    "clear_button": "読み込み済みのファイル/フォルダ一覧とプレビューを一括でクリアします。",
     "batch_button": "現在設定を読み込み済み画像すべてに適用して保存します。",
     "zoom_cb": "プレビューの表示倍率を変更します。",
 }

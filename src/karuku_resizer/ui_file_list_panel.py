@@ -32,6 +32,10 @@ class FileListRefs:
     font_small: Any
 
 
+def _accent_soft_color(colors: Mapping[str, Any]) -> Any:
+    return colors.get("accent_soft", colors.get("hover", colors.get("bg_tertiary")))
+
+
 def build_file_list_panel(
     parent: Any,
     state: FileListState,
@@ -67,7 +71,7 @@ def build_file_list_panel(
         selected_color=state.colors["primary"],
         selected_hover_color=state.colors["hover"],
         unselected_color=state.colors["bg_tertiary"],
-        unselected_hover_color=state.colors["accent_soft"],
+        unselected_hover_color=_accent_soft_color(state.colors),
         text_color=state.colors["text_primary"],
     )
     file_filter_segment.pack(fill="x", padx=8, pady=(8, 4))
@@ -160,12 +164,13 @@ def sync_file_list_buttons(
             refs.empty_state_label.pack_forget()
 
     for job_index, label in job_entries:
+        accent_soft = _accent_soft_color(colors)
         button = customtkinter.CTkButton(
             refs.file_list_frame,
             text=label,
             command=lambda i=job_index: on_select_job(i),
-            fg_color=colors["accent_soft"] if job_index == selected_job_index else colors["bg_tertiary"],
-            hover_color=colors["accent_soft"],
+            fg_color=accent_soft if job_index == selected_job_index else colors["bg_tertiary"],
+            hover_color=accent_soft,
             text_color=colors["text_primary"],
             border_width=1,
             border_color=colors["primary"] if job_index == selected_job_index else colors["border_light"],
@@ -269,8 +274,9 @@ def apply_file_list_selection(
         current_job_index,
     )
     if current_pos is not None and current_pos < len(refs.file_buttons):
+        accent_soft = _accent_soft_color(colors)
         refs.file_buttons[current_pos].configure(
-            fg_color=colors["accent_soft"],
+            fg_color=accent_soft,
             border_color=colors["primary"],
             text_color=colors["text_primary"],
         )

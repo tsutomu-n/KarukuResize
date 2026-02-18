@@ -12,6 +12,7 @@ TOPBAR_WIDTHS = {
         "preset_action": 72,
         "preview": 118,
         "save": 118,
+        "clear": 104,
         "batch": 118,
         "zoom": 140,
     },
@@ -23,8 +24,8 @@ TOPBAR_WIDTHS = {
         "preset_action": 64,
         "preview": 108,
         "save": 96,
+        "clear": 92,
         "batch": 106,
         "zoom": 126,
     },
 }
-
