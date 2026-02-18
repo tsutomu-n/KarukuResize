@@ -3740,8 +3740,9 @@ class ResizeApp(customtkinter.CTk):
         if self.active_mode_frame is not None:
             self.active_mode_frame.pack_forget()
 
-        self.active_mode_frame = self.mode_frames[mode]
-        self.active_mode_frame.pack(side="left")
+        current_mode_frame = cast(customtkinter.CTkFrame, self.mode_frames[mode])
+        self.active_mode_frame = current_mode_frame
+        current_mode_frame.pack(side="left")
 
         # --- Enable/disable entries based on mode ---
         actives = self._entry_widgets.get(mode, [])
