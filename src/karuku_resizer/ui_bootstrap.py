@@ -320,7 +320,9 @@ def bootstrap_style_primary_button(button: customtkinter.CTkButton, *, colors: M
     )
 
 
-def bootstrap_style_secondary_button(button: customtkinter.CTkButton, *, colors: Mapping[str, Any]) -> None:
+def bootstrap_style_secondary_button(button: Any, *, colors: Mapping[str, Any]) -> None:
+    if isinstance(button, customtkinter.CTkRadioButton):
+        return
     button.configure(
         fg_color=colors["bg_tertiary"],
         hover_color=colors["accent_soft"],
