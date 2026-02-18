@@ -7,32 +7,11 @@ from typing import Any, Callable, Dict
 
 import customtkinter
 
-
-TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1366
-TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
-    "normal": {
-        "select": 128,
-        "help": 108,
-        "settings": 90,
-        "preset_menu": 180,
-        "preset_action": 72,
-        "preview": 118,
-        "save": 118,
-        "batch": 118,
-        "zoom": 140,
-    },
-    "compact": {
-        "select": 118,
-        "help": 94,
-        "settings": 82,
-        "preset_menu": 156,
-        "preset_action": 64,
-        "preview": 108,
-        "save": 96,
-        "batch": 106,
-        "zoom": 126,
-    },
-}
+from karuku_resizer.ui_display_policy import (
+    topbar_batch_button_text,
+    topbar_density_for_width,
+)
+from karuku_resizer.ui_theme_tokens import TOPBAR_WIDTHS
 
 
 @dataclass
@@ -123,11 +102,11 @@ class TopBarController:
 
     @staticmethod
     def _density_for_width(window_width: int) -> str:
-        return "compact" if window_width <= TOPBAR_DENSITY_COMPACT_MAX_WIDTH else "normal"
+        return topbar_density_for_width(window_width)
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
-        return "一括保存" if density == "compact" else "一括適用保存"
+        return topbar_batch_button_text(density)
 
     def build(self, parent: Any, setup_entry_widgets: Callable[[Any], None]) -> TopBarWidgets:
         """Build top bar widgets."""

@@ -86,9 +86,20 @@ from karuku_resizer.ui_tooltip_content import (
 )
 from karuku_resizer.icon_loader import load_icon
 from karuku_resizer.resize_core import analyze_os_error
+from karuku_resizer.ui_display_policy import (
+    effective_topbar_window_width,
+    topbar_batch_button_text,
+    topbar_density_for_width,
+)
 from karuku_resizer.ui_topbar import (
-    TOPBAR_DENSITY_COMPACT_MAX_WIDTH,
     TopBarController,
+)
+from karuku_resizer.ui_text_presenter import (
+    build_action_hint_text,
+    build_empty_state_text,
+    build_settings_summary_text,
+    build_session_status_text,
+    build_top_action_guide_text,
 )
 from karuku_resizer.ui_settings_dialog import (
     SettingsDialogCallbacks,
@@ -97,6 +108,7 @@ from karuku_resizer.ui_settings_dialog import (
     SettingsDialogState,
     open_settings_dialog,
 )
+from karuku_resizer.ui_theme_tokens import TOPBAR_WIDTHS
 
 # Pillow ≥10 moves resampling constants to Image.Resampling
 try:
@@ -113,30 +125,6 @@ MIN_WINDOW_WIDTH = 1200
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
-TOPBAR_WIDTHS: Dict[str, Dict[str, int]] = {
-    "normal": {
-        "select": 128,
-        "help": 108,
-        "settings": 90,
-        "preset_menu": 180,
-        "preset_action": 72,
-        "preview": 118,
-        "save": 118,
-        "batch": 118,
-        "zoom": 140,
-    },
-    "compact": {
-        "select": 118,
-        "help": 94,
-        "settings": 82,
-        "preset_menu": 156,
-        "preset_action": 64,
-        "preview": 108,
-        "save": 96,
-        "batch": 106,
-        "zoom": 126,
-    },
-}
 
 # -------------------- UI color constants --------------------
 METALLIC_COLORS = {
@@ -783,8 +771,7 @@ class ResizeApp(customtkinter.CTk):
         return {name: self._scale_px(width) for name, width in base.items()}
 
     def _topbar_density_window_width(self, window_width: int) -> int:
-        scale = self._ui_scale_factor if self._ui_scale_factor > 1.0 else 1.0
-        return max(1, round(window_width / scale))
+        return effective_topbar_window_width(window_width, self._ui_scale_factor)
 
     @staticmethod
     def _to_bool(value: Any) -> bool:
@@ -1954,11 +1941,11 @@ class ResizeApp(customtkinter.CTk):
 
     @staticmethod
     def _topbar_density_for_width(window_width: int) -> str:
-        return TopBarController._density_for_width(window_width)
+        return topbar_density_for_width(window_width, ui_scale_factor=1.0)
 
     @staticmethod
     def _batch_button_text_for_density(density: str) -> str:
-        return TopBarController._batch_button_text_for_density(density)
+        return topbar_batch_button_text(density)
 
     def _select_button_text_for_state(self) -> str:
         if self._is_pro_mode():
@@ -2113,37 +2100,26 @@ class ResizeApp(customtkinter.CTk):
         format_id = FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
 
         exif_label = self.exif_mode_var.get()
-        if self.remove_gps_var.get() and exif_label == "保持":
-            exif_label = "保持（位置情報除去）"
-
-        parts = [self.output_format_var.get(), f"Q{self.quality_var.get()}", f"EXIF{exif_label}"]
-
-        if self._is_pro_mode():
-            parts.insert(0, "Pro")
-
-        if self.dry_run_var.get():
-            parts.append("ドライラン:ON")
-
-        if self._is_pro_mode() and format_id == "webp":
-            parts.append(f"WEBP method {self.webp_method_var.get()}")
-            if self.webp_lossless_var.get():
-                parts.append("lossless")
-        elif self._is_pro_mode() and format_id == "avif":
-            parts.append(f"AVIF speed {self.avif_speed_var.get()}")
-
-        self.settings_summary_var.set("現在: " + " / ".join(parts))
+        summary_text = build_settings_summary_text(
+            output_format=self.output_format_var.get(),
+            quality=self.quality_var.get(),
+            exif_mode_label=exif_label,
+            remove_gps=self.remove_gps_var.get(),
+            dry_run=self.dry_run_var.get(),
+            is_pro_mode=self._is_pro_mode(),
+            format_id=format_id,
+            webp_method=self.webp_method_var.get(),
+            webp_lossless=self.webp_lossless_var.get(),
+            avif_speed=self.avif_speed_var.get(),
+        )
+        self.settings_summary_var.set(summary_text)
         self._update_session_summary()
 
     def _empty_state_text(self) -> str:
-        lines = [
-            "1. 画像を選択",
-            "2. サイズを指定",
-            "3. プレビュー後に保存",
-        ]
-        if self._is_pro_mode():
-            lines.append("Pro: フォルダー再帰読込")
-        lines.append(f"処理中: {OPERATION_ONLY_CANCEL_HINT}")
-        return "\n".join(lines)
+        return build_empty_state_text(
+            is_pro_mode=self._is_pro_mode(),
+            processing_hint=OPERATION_ONLY_CANCEL_HINT,
+        )
 
     def _refresh_top_action_guide(self) -> None:
         if not hasattr(self, "top_action_guide_var"):
@@ -2174,11 +2150,10 @@ class ResizeApp(customtkinter.CTk):
         self._topbar_controller.refresh_top_action_guide(self._top_action_guide_text())
 
     def _top_action_guide_text(self) -> str:
-        if self._is_loading_files:
-            return "画像読み込み中…"
-        if self._operation_scope is not None and self._operation_scope.active:
-            return "処理中 — キャンセル以外の操作はできません"
-        return ""
+        return build_top_action_guide_text(
+            is_loading_files=self._is_loading_files,
+            is_processing=self._operation_scope is not None and self._operation_scope.active,
+        )
 
     def _update_empty_state_hint(self) -> None:
         if not hasattr(self, "empty_state_label"):
@@ -2881,8 +2856,6 @@ class ResizeApp(customtkinter.CTk):
         return f"{value[:head]}…{value[-tail:]}"
 
     def _session_status_text(self) -> str:
-        mode = "Pro ON" if self._is_pro_mode() else "Pro OFF"
-        dry_run = "ON" if (hasattr(self, "dry_run_var") and self.dry_run_var.get()) else "OFF"
         total = len(self.jobs)
         failed = sum(1 for job in self.jobs if job.last_process_state == "failed")
         unprocessed = sum(1 for job in self.jobs if job.last_process_state == "unprocessed")
@@ -2895,9 +2868,15 @@ class ResizeApp(customtkinter.CTk):
         filter_label = FILE_FILTER_ID_TO_LABEL.get(filter_id, filter_label_value)
         output_dir = str(self.settings.get("last_output_dir") or self.settings.get("default_output_dir") or "-")
         output_dir = self._shorten_path_for_summary(output_dir)
-        return (
-            f"セッション: モード {mode} / 表示 {visible}/{total} ({filter_label}) / "
-            f"未処理 {unprocessed} / 失敗 {failed} / ドライラン {dry_run} / 保存先 {output_dir}"
+        return build_session_status_text(
+            is_pro_mode=self._is_pro_mode(),
+            dry_run=hasattr(self, "dry_run_var") and self.dry_run_var.get(),
+            total_jobs=total,
+            failed_jobs=failed,
+            unprocessed_jobs=unprocessed,
+            visible_jobs=visible,
+            file_filter_label=filter_label,
+            output_dir=output_dir,
         )
 
     def _update_session_summary(self) -> None:
@@ -2913,16 +2892,12 @@ class ResizeApp(customtkinter.CTk):
     def _update_action_hint(self) -> None:
         if not hasattr(self, "action_hint_var"):
             return
-        if self._is_loading_files:
-            reason = "読み込み中です。完了または中止後に操作できます。"
-        elif self._operation_scope is not None and self._operation_scope.active:
-            reason = "処理中です。キャンセル以外の操作はできません。"
-        elif not self.jobs:
-            reason = "画像が未選択です。まず画像を読み込んでください。"
-        elif self.current_index is None:
-            reason = "左の一覧から対象画像を選択してください。"
-        else:
-            reason = "準備完了です。プレビュー・保存を実行できます。"
+        reason = build_action_hint_text(
+            is_loading_files=self._is_loading_files,
+            is_processing=self._operation_scope is not None and self._operation_scope.active,
+            has_jobs=bool(self.jobs),
+            has_current_selection=self.current_index is not None,
+        )
         self._action_hint_reason = reason
         self.action_hint_var.set(f"操作ガイド: {reason}")
 

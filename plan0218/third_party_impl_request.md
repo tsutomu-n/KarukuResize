@@ -1,73 +1,63 @@
-# KarukuResize 第三者実装依頼テンプレート
+# KarukuResize 第三者実装依頼テンプレート（DRY最終版）
 
 最終更新: 2026-02-18  
 ステータス: 実装着手可（追加調査不要）
 
 ## 1. 依頼目的
 
-`src/karuku_resizer/gui_app.py` に集中している UI 構築責務を分離し、上部UIの余白過多を解消する。  
-対象は `topbar` と `settings dialog` の先行分割。
+GUI全体をDRY原則準拠へ仕上げる。  
+`gui_app.py` 依存を段階的に解消し、責務分離・再利用性・変更容易性を完成させる。
 
-## 2. 固定要件（変更不可）
+## 2. 必読ドキュメント（順序厳守）
 
-1. 主基準は `1366x768` で評価する。  
-2. 補助確認は固定 `1920x1080` ではなく「可変拡大」で行う。  
-3. Pro OFF では `プリセット` と `一括保存` を非表示にする。  
-4. 通常時はガイド非表示。`loading/processing/error` 等の状態時のみ表示。  
-5. 低頻度操作（使い方/プリセット管理/拡大率）は設定ダイアログ側導線で維持する。  
+1. `plan0218/01_gui_app責務縮小計画.md`  
+2. `plan0218/02_UI領域モジュール分割計画.md`  
+3. `plan0218/03_デザイントークン一元化計画.md`  
+4. `plan0218/04_文言生成集約計画.md`  
+5. `plan0218/05_表示モード切替統一計画.md`  
+6. `plan0218/06_変更影響面最小化計画.md`  
+7. `plan0218/07_モジュール契約定義.md`  
+8. `plan0218/08_Tkinter実装規約.md`  
+9. `plan0218/09_受け入れ試験マトリクス.md`  
+10. `.memo/current_ui_mock_rulecheck.html`（見た目の参照基準）
 
-## 3. 参照資料（必読）
+## 3. 固定要件（変更不可）
 
-1. 計画書  
-`/home/tn/projects/KarukuResize/.memo/ui-ux-improvement-plan.md`
-2. 基準モック（サイズ確認用）  
-`/home/tn/projects/KarukuResize/.memo/current_ui_mock_rulecheck_baseline_sizes.html`
-3. 基準モック（コンパクト上部）  
-`/home/tn/projects/KarukuResize/.memo/current_ui_mock_rulecheck_compact_topbar.html`
+1. 主基準は `1366x768`。  
+2. 補助確認は固定解像度追加ではなく「可変拡大ウィンドウ」。  
+3. Pro OFFでは `プリセット` と `一括保存` を非表示。  
+4. 通常時ガイドは非表示、状態時のみ表示。  
+5. 既存設定キー互換を維持（例: `ui_mode`, `zoom_preference`）。  
+6. 同一親コンテナで `pack` と `grid` を混在させない。
+7. UI更新はメインスレッドのみ。バックグラウンド反映は `after()` 経由。
+8. スクショ命名は `plan0218/09_受け入れ試験マトリクス.md` に準拠。
 
-## 4. 実装スコープ
+## 4. 実装フェーズ（A〜I）
 
-1. 新規作成  
-`src/karuku_resizer/ui_topbar.py`
-2. 新規作成  
-`src/karuku_resizer/ui_settings_dialog.py`
-3. 既存改修  
-`src/karuku_resizer/gui_app.py`
+1. フェーズA（計画01）: `gui_app.py` 責務縮小  
+2. フェーズB（計画02）: UI領域モジュール分割  
+3. フェーズC（計画03）: デザイントークン一元化  
+4. フェーズD（計画04）: 文言生成集約  
+5. フェーズE（計画05）: 表示モード切替統一  
+6. フェーズF（計画06）: 変更影響面最小化（API境界確定）
+7. フェーズG（計画07）: モジュール契約固定（依存方向を固定）
+8. フェーズH（計画08）: Tkinter規約適用（geometry/style/threading）
+9. フェーズI（計画09）: 受け入れ試験マトリクス実施
 
-## 5. 実装方針
+## 5. 完了条件（Definition of Done）
 
-1. `gui_app.py` は状態保持とイベント配線中心にする。  
-2. Topbar 構築と更新ロジックは `ui_topbar.py` に移譲する。  
-3. Settings Dialog 構築は `ui_settings_dialog.py` に移譲する。  
-4. 既存設定キー互換（例: `ui_mode`, `zoom_preference`）を維持する。  
-5. Topbar は余白制御がしやすい構造にし、通常時は主操作1段 + サマリー1段を目標にする。  
+1. `gui_app.py` が起動・状態管理・イベント配線中心になっている。  
+2. 主要UI領域が専用モジュールへ分割されている。  
+3. 色・余白・フォント・密度閾値が単一定義。  
+4. 設定サマリー・ガイド・状態文言の生成が集約済み。  
+5. Pro/テーマ/文字サイズ切替の分岐が共通ポリシー化されている。  
+6. 同一仕様変更で多点編集が必要ない構造になっている。  
+7. `gui_app.py` の目安行数が最終的に `1800〜2500`（目標: 約2000）。  
+8. `ruff` / `pytest` / `basedpyright` 全通。  
+9. 実機スクショで基準モックとの差分が許容範囲。
+10. 必須8条件 + 補助2条件のスクショが命名規約どおり提出される。
 
-## 6. 実装手順（順序厳守）
-
-1. フェーズA: Topbar分割  
-`_setup_ui` の topbar 構築ロジックを `ui_topbar.py` へ抽出。  
-既存ハンドラ参照は `gui_app.py` 側が注入する方式にする。
-
-2. フェーズB: Settings Dialog分割  
-`_open_settings_dialog` 周辺を `ui_settings_dialog.py` に移す。  
-設定保存・即時反映の動作を維持する。
-
-3. フェーズC: 表示密度調整  
-上部余白とパディングを基準モックに寄せる。  
-Pro OFF/ON の表示差分を固定する。
-
-4. フェーズD: 回帰検証  
-静的検証 + テスト + 実機スクショ比較を実施する。
-
-## 7. 完了条件（Definition of Done）
-
-1. `ruff` / `pytest` / `basedpyright` が全通。  
-2. `1366x768` で上部余白が過大でない。  
-3. 可変拡大で見切れや破綻がない。  
-4. Pro OFF/ON 切替時の表示ルールが要件どおり。  
-5. 設定保存・復元が既存互換を維持。  
-
-## 8. 実行コマンド（Windows PowerShell）
+## 6. 実行コマンド（Windows PowerShell）
 
 ```powershell
 cd C:\Users\tn\d-projects\KarukuResize
@@ -78,46 +68,40 @@ uvx basedpyright src
 uv run python -m karuku_resizer.gui_app
 ```
 
-## 9. 提出物
+## 7. 提出物
 
-1. 変更ファイル一覧。  
-2. 変更要約（各ファイル1〜3行）。  
-3. 検証結果ログ要約（ruff/pytest/basedpyright）。  
-4. スクショ2枚以上。  
-`1366x768` 主基準。  
-可変拡大補助確認。  
-5. 残課題があれば箇条書きで明示。  
+1. フェーズA〜Iごとの変更ファイル一覧。  
+2. フェーズごとの要約（1〜3行）。  
+3. `gui_app.py` 行数のBefore/After。  
+4. 検証結果要約（ruff/pytest/basedpyright）。  
+5. `plan0218/09_受け入れ試験マトリクス.md` の命名規約どおりのスクショ10枚。  
+6. 残課題（あれば）。
 
-## 10. 注意点（実装時）
-
-1. 既存未関連の挙動は変更しない。  
-2. 文字列ラベルを変更する場合は、設定保存との整合を確認する。  
-3. 同一親で `pack` と `grid` を混在させない。  
-4. 段階ごとに小さくコミット可能な差分で進める。  
-
-## 11. 実装依頼メッセージ（そのまま利用可）
+## 8. 実装依頼メッセージ（そのまま利用可）
 
 ```text
-KarukuResize の UI/UX 改修をお願いします。
+KarukuResize の GUI DRY最終リファクタをお願いします。
 
-参照:
-- .memo/ui-ux-improvement-plan.md
-- .memo/current_ui_mock_rulecheck_baseline_sizes.html
-- .memo/current_ui_mock_rulecheck_compact_topbar.html
+必読:
+- plan0218/01_gui_app責務縮小計画.md
+- plan0218/02_UI領域モジュール分割計画.md
+- plan0218/03_デザイントークン一元化計画.md
+- plan0218/04_文言生成集約計画.md
+- plan0218/05_表示モード切替統一計画.md
+- plan0218/06_変更影響面最小化計画.md
+- .memo/current_ui_mock_rulecheck.html
 
-要件:
-1) topbar と settings dialog を先に分割
-2) Pro OFF でプリセット/一括保存を非表示
-3) 通常時ガイド非表示、状態時のみ表示
-4) 主基準 1366x768、補助は可変拡大
-5) 既存設定キー互換を維持
-
-対象:
-- src/karuku_resizer/gui_app.py
-- src/karuku_resizer/ui_topbar.py (new)
-- src/karuku_resizer/ui_settings_dialog.py (new)
+固定要件:
+1) 1366x768 主基準
+2) 可変拡大で補助確認
+3) Pro OFFでプリセット/一括保存を非表示
+4) 通常時ガイド非表示
+5) 既存設定キー互換維持
 
 完了条件:
+- A〜Iフェーズ完遂
 - ruff/pytest/basedpyright 全通
-- スクショ比較で上部余白が改善
+- gui_app.py 1800〜2500行を目標
+- 実機スクショ10枚（8条件+補助2）提出
+- 命名規約準拠
 ```

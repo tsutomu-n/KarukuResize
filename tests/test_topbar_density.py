@@ -1,4 +1,5 @@
-from karuku_resizer.gui_app import TOPBAR_DENSITY_COMPACT_MAX_WIDTH, ResizeApp
+from karuku_resizer.gui_app import ResizeApp
+from karuku_resizer.ui_display_policy import TOPBAR_DENSITY_COMPACT_MAX_WIDTH
 
 
 def test_topbar_density_is_compact_at_threshold() -> None:
