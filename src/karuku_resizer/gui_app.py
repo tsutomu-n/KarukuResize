@@ -1346,6 +1346,9 @@ class ResizeApp(customtkinter.CTk):
         if self.current_index is not None:
             self._draw_previews(self.jobs[self.current_index])
 
+    def _on_setting_var_changed(self, *_args: Any) -> None:
+        self._update_settings_summary()
+
     def _update_exif_mode_options_for_ui_mode(self):
         if self._is_pro_mode():
             values = list(EXIF_LABEL_TO_ID.keys())
