@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Protocol
 
 import customtkinter
 
@@ -12,6 +12,10 @@ from karuku_resizer.ui_display_policy import (
     topbar_density_for_width,
 )
 from karuku_resizer.ui_theme_tokens import TOPBAR_WIDTHS
+
+
+class StyleCardFrame(Protocol):
+    def __call__(self, frame: Any, *, corner_radius: int = ...) -> None: ...
 
 
 @dataclass
@@ -54,7 +58,7 @@ class TopBarController:
         scale_topbar_widths: Callable[[str], Dict[str, int]],
         style_primary_button: Callable[[Any], None],
         style_secondary_button: Callable[[Any], None],
-        style_card_frame: Callable[[Any], None],
+        style_card_frame: StyleCardFrame,
         font_default: Any,
         font_small: Any,
         colors: Dict[str, Any],

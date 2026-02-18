@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 import customtkinter
 from PIL import Image
 from PIL.ExifTags import GPSTAGS
+from karuku_resizer.ui_text_presenter import build_action_hint_text, build_session_status_text
 
 ColorMap = Dict[str, Tuple[str, str]]
 
@@ -144,6 +145,7 @@ def session_status_text(
     file_filter_id_to_label: Mapping[str, str],
 ) -> str:
     mode = app.ui_mode_var.get() if hasattr(app, "ui_mode_var") else "簡易"
+    is_pro_mode = mode in {"pro", "Pro", "オン", "オン（Pro）", "on", "on(pro)", "on（pro）"}
     dry_run = "ON" if (hasattr(app, "dry_run_var") and app.dry_run_var.get()) else "OFF"
     total = len(app.jobs)
     failed = sum(1 for job in app.jobs if job.last_process_state == "failed")
@@ -157,9 +159,15 @@ def session_status_text(
     filter_label = file_filter_id_to_label.get(filter_id, filter_label_value)
     output_dir = str(app.settings.get("last_output_dir") or app.settings.get("default_output_dir") or "-")
     output_dir = shorten_path_for_summary(output_dir)
-    return (
-        f"セッション: モード {mode} / 表示 {visible}/{total} ({filter_label}) / "
-        f"未処理 {unprocessed} / 失敗 {failed} / ドライラン {dry_run} / 保存先 {output_dir}"
+    return build_session_status_text(
+        is_pro_mode=is_pro_mode,
+        dry_run=(dry_run == "ON"),
+        total_jobs=total,
+        failed_jobs=failed,
+        unprocessed_jobs=unprocessed,
+        visible_jobs=visible,
+        file_filter_label=filter_label,
+        output_dir=output_dir,
     )
 
 
@@ -197,16 +205,12 @@ def refresh_status_indicators(
 def update_action_hint(app: Any) -> None:
     if not hasattr(app, "action_hint_var"):
         return
-    if app._is_loading_files:
-        reason = "読み込み中です。完了または中止後に操作できます。"
-    elif app._operation_scope is not None and app._operation_scope.active:
-        reason = "処理中です。キャンセル以外の操作はできません。"
-    elif not app.jobs:
-        reason = "画像が未選択です。まず画像を読み込んでください。"
-    elif app.current_index is None:
-        reason = "左の一覧から対象画像を選択してください。"
-    else:
-        reason = "準備完了です。プレビュー・保存を実行できます。"
+    reason = build_action_hint_text(
+        is_loading_files=app._is_loading_files,
+        is_processing=app._operation_scope is not None and app._operation_scope.active,
+        has_jobs=bool(app.jobs),
+        has_current_selection=app.current_index is not None,
+    )
     app._action_hint_reason = reason
     app.action_hint_var.set(f"操作ガイド: {reason}")
 
