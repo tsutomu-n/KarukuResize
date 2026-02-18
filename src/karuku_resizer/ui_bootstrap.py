@@ -602,7 +602,12 @@ def bootstrap_handle_shortcut_action(_event: Any, action: Callable[[], None], is
     return "break"
 
 
-def bootstrap_is_modal_dialog_open(dialogs: Sequence[Any]) -> bool:
+def bootstrap_is_modal_dialog_open(app: Any) -> bool:
+    dialogs = [
+        getattr(app, "_settings_dialog", None),
+        getattr(app, "_preset_dialog", None),
+        getattr(app, "_result_dialog", None),
+    ]
     return any(dialog is not None and dialog.winfo_exists() for dialog in dialogs)
 
 
