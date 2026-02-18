@@ -1247,7 +1247,7 @@ def bootstrap_run_batch_save(
     reference_output_format: SaveFormat,
     batch_options: Any,
     target_jobs: Optional[List[Any]] = None,
-) -> Any:
+) -> tuple[Any, int]:
     stats = app._create_batch_stats()
     jobs_to_process = list(target_jobs) if target_jobs is not None else list(app.jobs)
     total_files = len(jobs_to_process)
@@ -1294,7 +1294,7 @@ def bootstrap_run_batch_save(
         app._end_operation_scope()
         app._populate_listbox()
         app._refresh_status_indicators()
-    return stats
+    return stats, total_files
 
 
 def bootstrap_record_batch_run_summary(
@@ -1302,6 +1302,7 @@ def bootstrap_record_batch_run_summary(
     *,
     stats: Any,
     output_dir: Path,
+    selected_count: int,
     reference_job: Any,
     reference_target: Tuple[int, int],
     reference_format_label: str,
@@ -1319,7 +1320,7 @@ def bootstrap_record_batch_run_summary(
         },
         "reference_format": reference_format_label,
         "totals": {
-            "selected_count": len(app.jobs),
+            "selected_count": selected_count,
             "processed_count": stats.processed_count,
             "failed_count": stats.failed_count,
             "dry_run_count": stats.dry_run_count,
@@ -1395,7 +1396,7 @@ def bootstrap_batch_save(app: Any) -> None:
     ):
         return
 
-    stats = bootstrap_run_batch_save(
+    stats, total_files = bootstrap_run_batch_save(
         app,
         output_dir=output_dir,
         reference_target=reference_target,
@@ -1406,13 +1407,14 @@ def bootstrap_batch_save(app: Any) -> None:
         app,
         stats=stats,
         output_dir=output_dir,
+        selected_count=total_files,
         reference_job=reference_job,
         reference_target=reference_target,
         reference_format_label=reference_format_label,
         batch_options=batch_options,
     )
     msg = build_batch_completion_message(
-        total_files=len(app.jobs),
+        total_files=total_files,
         processed_count=stats.processed_count,
         failed_count=stats.failed_count,
         exif_applied_count=stats.exif_applied_count,
@@ -1437,7 +1439,7 @@ def bootstrap_batch_save(app: Any) -> None:
             if not retry_jobs:
                 messagebox.showinfo("再試行", "再試行対象の失敗ファイルが見つかりません。")
                 return
-            retry_stats = bootstrap_run_batch_save(
+            retry_stats, retry_total_files = bootstrap_run_batch_save(
                 app,
                 output_dir=output_dir,
                 reference_target=reference_target,
@@ -1447,7 +1449,7 @@ def bootstrap_batch_save(app: Any) -> None:
             )
             retry_msg = (
                 f"失敗再試行完了。成功: {retry_stats.processed_count}件 / "
-                f"失敗: {retry_stats.failed_count}件 / 対象: {len(retry_jobs)}件"
+                f"失敗: {retry_stats.failed_count}件 / 対象: {retry_total_files}件"
             )
             app.status_var.set(retry_msg)
             show_operation_result_dialog(
