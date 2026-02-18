@@ -1937,14 +1937,14 @@ class ResizeApp(customtkinter.CTk):
             except Exception:
                 pass
             self._auto_preview_after_id = None
-        if self.current_index is None or self._is_loading_files:
+        if self.current_index is None or self._is_loading_files or self.current_index >= len(self.jobs):
             return
         self._auto_preview_after_id = self.after(500, self._auto_preview)
 
     def _auto_preview(self) -> None:
         """Execute automatic preview after debounce delay."""
         self._auto_preview_after_id = None
-        if self.current_index is None or self._is_loading_files:
+        if self.current_index is None or self._is_loading_files or self.current_index >= len(self.jobs):
             return
         job = self.jobs[self.current_index]
         job.resized = self._process_image(job.image)
