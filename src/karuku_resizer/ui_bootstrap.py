@@ -1023,7 +1023,7 @@ def bootstrap_on_select_change(
     logging.getLogger(__name__).info("Selected: %s", previous_job.path.name)
 
     app._reset_zoom()
-    app._draw_previews(previous_job)
+    app._start_async_preview(idx)
     app._update_metadata_preview(previous_job)
     app._refresh_status_indicators()
 
@@ -1111,6 +1111,12 @@ def bootstrap_save_current(app: Any) -> None:
     if options is None:
         return
 
+    source_image = job.image
+    target_size = app._snapshot_resize_target(source_image.size)
+    if not target_size:
+        messagebox.showwarning("保存エラー", "リサイズ設定が無効です")
+        return
+
     app._single_save_version += 1
     version = app._single_save_version
     app._single_save_cancel_event.clear()
@@ -1120,12 +1126,12 @@ def bootstrap_save_current(app: Any) -> None:
         cancel_command=app._cancel_active_operation,
         initial_progress=0.0,
     )
-
-    source_image = job.image
-    target_size = app._snapshot_resize_target(source_image.size)
-    if not target_size:
-        messagebox.showwarning("保存エラー", "リサイズ設定が無効です")
-        return
+    app._show_single_processing_placeholders(
+        version=version,
+        title_text="保存中",
+        status_text="保存処理中...",
+        file_name=job.path.name,
+    )
 
     def worker() -> None:
         resized_for_save: Optional[Image.Image] = None
@@ -1162,6 +1168,7 @@ def bootstrap_save_current(app: Any) -> None:
             if version != app._single_save_version:
                 return
             app._single_save_thread = None
+            app._hide_single_processing_placeholders(version=version)
             app._end_operation_scope()
 
             if not result.success:
@@ -1194,6 +1201,11 @@ def bootstrap_save_current(app: Any) -> None:
             if attempts > 1:
                 msg = f"{msg}（再試行後に成功）"
             msg = f"{msg}\n{build_exif_status_text(result)}"
+            if (
+                app.current_index is not None
+                and app.current_index < len(app.jobs)
+            ):
+                app._draw_previews(app.jobs[app.current_index])
             app._register_recent_setting_from_current()
             app._populate_listbox()
             app.status_var.set(msg)

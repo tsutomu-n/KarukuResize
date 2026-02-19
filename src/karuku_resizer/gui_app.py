@@ -700,6 +700,9 @@ class ResizeApp(customtkinter.CTk):
         self._ui_scale_factor = UI_SCALE_FACTORS.get(self._ui_scale_mode, 1.0)
         self._batch_preview_placeholder_active = False
         self._batch_placeholder_items: Dict[customtkinter.CTkCanvas, Tuple[Optional[int], Optional[int]]] = {}
+        self._single_preview_placeholder_active = False
+        self._single_preview_placeholder_items: Dict[customtkinter.CTkCanvas, Tuple[Optional[int], Optional[int]]] = {}
+        self._single_preview_placeholder_version = 0
         self._single_save_thread: Optional[threading.Thread] = None
         self._single_save_cancel_event = threading.Event()
         self._single_save_version = 0
@@ -2097,8 +2100,7 @@ class ResizeApp(customtkinter.CTk):
         if remembered_dir is not None:
             self.settings["last_input_dir"] = str(remembered_dir)
 
-        self._load_selected_paths(paths)
-        self._populate_listbox()
+        self._start_drop_load_async(paths, [])
 
     def _select_files_in_simple_mode(
         self,
@@ -2463,6 +2465,115 @@ class ResizeApp(customtkinter.CTk):
         tail_chars = max_chars - 3 - head_chars
         return f"{file_name[:head_chars]}...{file_name[-tail_chars:]}"
 
+    def _show_single_processing_placeholders(
+        self,
+        *,
+        version: int,
+        title_text: str,
+        status_text: str,
+        file_name: Optional[str] = None,
+    ) -> None:
+        if self._single_preview_placeholder_active and self._single_preview_placeholder_version != version:
+            return
+
+        self._single_preview_placeholder_version = version
+        self._single_preview_placeholder_active = True
+
+        placeholder_lines = [status_text]
+        if file_name:
+            max_chars = 36
+            if self.canvas_org.winfo_exists():
+                width = self.canvas_org.winfo_width()
+                if width > 1:
+                    max_chars = max(16, int((width - 40) / 8))
+            placeholder_lines.append(f"対象: {self._shorten_file_name_for_placeholder(file_name, max_chars=max_chars)}")
+
+        placeholder_text = "\n".join(placeholder_lines)
+        self.info_orig_var.set("処理中...")
+        self.info_resized_var.set("処理中...")
+        self.resized_title_label.configure(text=title_text)
+
+        for canvas in (self.canvas_org, self.canvas_resz):
+            if not hasattr(canvas, "winfo_width"):
+                continue
+            width = canvas.winfo_width()
+            height = canvas.winfo_height()
+            if width <= 1 or height <= 1:
+                width = 260
+                height = 180
+
+            existing = self._single_preview_placeholder_items.get(canvas)
+            rect_id: Optional[int] = None
+            text_id: Optional[int] = None
+            if existing is not None:
+                rect_id, text_id = existing
+
+            if (
+                rect_id is not None
+                and text_id is not None
+                and rect_id in canvas.find_all()
+                and text_id in canvas.find_all()
+            ):
+                canvas.coords(rect_id, 4, 4, width - 4, height - 4)
+                canvas.itemconfigure(
+                    rect_id,
+                    outline=self._canvas_label_color(),
+                )
+                canvas.coords(text_id, width / 2, height / 2)
+                canvas.itemconfigure(
+                    text_id,
+                    text=placeholder_text,
+                    fill=self._canvas_label_color(),
+                    width=width - 20,
+                )
+            else:
+                canvas.delete("all")
+                rect_id = canvas.create_rectangle(
+                    4,
+                    4,
+                    width - 4,
+                    height - 4,
+                    outline=self._canvas_label_color(),
+                    width=2,
+                    tags="single-processing-placeholder",
+                )
+                text_id = canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text=placeholder_text,
+                    justify="center",
+                    anchor="center",
+                    fill=self._canvas_label_color(),
+                    font=self.font_small,
+                    width=width - 20,
+                    tags="single-processing-placeholder",
+                )
+                self._single_preview_placeholder_items[canvas] = (rect_id, text_id)
+
+    def _hide_single_processing_placeholders(self, *, version: Optional[int] = None) -> None:
+        if not self._single_preview_placeholder_active:
+            return
+        if version is not None and version != self._single_preview_placeholder_version:
+            return
+
+        self._single_preview_placeholder_active = False
+        for canvas in (self.canvas_org, self.canvas_resz):
+            existing = self._single_preview_placeholder_items.get(canvas)
+            if existing is not None:
+                rect_id, text_id = existing
+                if rect_id is not None:
+                    try:
+                        canvas.delete(rect_id)
+                    except Exception:
+                        pass
+                if text_id is not None:
+                    try:
+                        canvas.delete(text_id)
+                    except Exception:
+                        pass
+            canvas.delete("single-processing-placeholder")
+        self._single_preview_placeholder_items = {}
+
     def _hide_batch_processing_placeholders(self) -> None:
         if not self._batch_preview_placeholder_active:
             return
@@ -2583,15 +2694,21 @@ class ResizeApp(customtkinter.CTk):
             )
             return
 
+        self._show_single_processing_placeholders(
+            version=version,
+            title_text="リサイズ後 (処理中)",
+            status_text="処理中...",
+            file_name=job.path.name,
+        )
         self.info_resized_var.set("計算中...")
         self.resized_title_label.configure(text="リサイズ後 (処理中)")
 
         def worker() -> None:
+            resized: Optional[Image.Image] = None
             try:
                 resized = self._resize_image_to_target(source, target_size)
             except Exception:
                 logging.exception("プレビュー生成に失敗")
-                return
             if version != self._preview_version:
                 return
             if self.current_index is None:
@@ -2616,12 +2733,14 @@ class ResizeApp(customtkinter.CTk):
     ) -> None:
         if version != self._preview_version:
             return
+        self._hide_single_processing_placeholders(version=version)
         if self.current_index != job_index:
             return
         if job_index < 0 or job_index >= len(self.jobs):
             return
         if resized is None:
             self.status_var.set("リサイズ設定が無効です")
+            self._draw_previews(self.jobs[job_index])
             return
         self.jobs[job_index].resized = resized
         self._draw_previews(self.jobs[job_index])
