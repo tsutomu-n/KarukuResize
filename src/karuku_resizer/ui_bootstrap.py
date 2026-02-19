@@ -9,7 +9,7 @@ import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import customtkinter
-from PIL import ImageTk
+from PIL import Image, ImageTk
 import logging
 import platform
 import sys
@@ -20,6 +20,7 @@ from tkinter import filedialog, messagebox
 from karuku_resizer.runtime_logging import write_run_summary
 from karuku_resizer.image_save_pipeline import (
     SaveFormat,
+    SaveResult,
     destination_with_extension,
 )
 from karuku_resizer.ui_text_presenter import (
@@ -1034,12 +1035,13 @@ def bootstrap_preview_current(app: Any) -> None:
     if app.current_index is None:
         messagebox.showwarning("ファイル未選択", "ファイルを選択してください")
         return
-    job = app.jobs[app.current_index]
-    job.resized = app._process_image(job.image)
-    app._draw_previews(job)
+    app._start_async_preview(app.current_index)
 
 
 def bootstrap_save_current(app: Any) -> None:
+    if app._single_save_thread is not None and app._single_save_thread.is_alive():
+        messagebox.showinfo("保存中", "既に保存処理中です。完了後に再実行してください。")
+        return
     if app._is_loading_files:
         messagebox.showinfo("処理中", "画像の読み込み中です。完了またはキャンセル後に実行してください。")
         return
@@ -1048,9 +1050,6 @@ def bootstrap_save_current(app: Any) -> None:
         return
 
     job = app.jobs[app.current_index]
-    job.resized = app._process_image(job.image)
-    if not job.resized:
-        return
 
     output_format = app._resolve_output_format_for_image(job.image)
     ext_default = destination_with_extension(Path(f"{job.path.stem}_resized"), output_format).suffix
@@ -1111,41 +1110,103 @@ def bootstrap_save_current(app: Any) -> None:
     )
     if options is None:
         return
-    result, attempts = app._save_with_retry(
-        source_image=job.image,
-        resized_image=job.resized,
-        output_path=save_path,
-        options=options,
-        allow_retry=app._is_pro_mode(),
+
+    app._single_save_version += 1
+    version = app._single_save_version
+    app._single_save_cancel_event.clear()
+    app._begin_operation_scope(
+        stage_text="保存中",
+        cancel_text="停止中",
+        cancel_command=app._cancel_active_operation,
+        initial_progress=0.0,
     )
 
-    if not result.success:
-        job.last_process_state = "failed"
-        retry_note = "（再試行あり）" if attempts > 1 else ""
-        error_detail = result.error or "保存失敗"
-        if result.error_guidance:
-            error_detail = f"{error_detail}\n{result.error_guidance}"
-        job.last_error_detail = f"{error_detail}{retry_note}"
-        app._populate_listbox()
-        messagebox.showerror(
-            "保存エラー",
-            f"ファイルの保存に失敗しました:{' 再試行後' if attempts > 1 else ''}\n{error_detail}\n{build_exif_status_text(result)}",
-        )
+    source_image = job.image
+    target_size = app._snapshot_resize_target(source_image.size)
+    if not target_size:
+        messagebox.showwarning("保存エラー", "リサイズ設定が無効です")
         return
 
-    job.last_process_state = "success"
-    job.last_error_detail = None
-    if result.dry_run:
-        msg = f"ドライラン完了: {result.output_path.name} を生成予定です"
-    else:
-        msg = f"{result.output_path.name} を保存しました"
-    if attempts > 1:
-        msg = f"{msg}（再試行後に成功）"
-    msg = f"{msg}\n{build_exif_status_text(result)}"
-    app._register_recent_setting_from_current()
-    app._populate_listbox()
-    app.status_var.set(msg)
-    messagebox.showinfo("保存結果", msg)
+    def worker() -> None:
+        resized_for_save: Optional[Image.Image] = None
+        try:
+            resized_for_save = app._resize_image_to_target(source_image, target_size)
+            if resized_for_save is None:
+                raise RuntimeError("リサイズ設定が無効です")
+
+            result, attempts = app._save_with_retry(
+                source_image=source_image,
+                resized_image=resized_for_save,
+                output_path=save_path,
+                options=options,
+                allow_retry=app._is_pro_mode(),
+                cancel_event=app._single_save_cancel_event,
+            )
+        except Exception as exc:  # pragma: no cover
+            logging.exception("Unexpected error during single save")
+            error = SaveResult(
+                success=False,
+                output_path=save_path,
+                exif_mode=options.exif_mode,
+                error=str(exc),
+            )
+            result = error
+            attempts = 1
+
+        def complete() -> None:
+            try:
+                if not app.winfo_exists():
+                    return
+            except Exception:
+                return
+            if version != app._single_save_version:
+                return
+            app._single_save_thread = None
+            app._end_operation_scope()
+
+            if not result.success:
+                if result.error == "保存をキャンセルしました":
+                    app.status_var.set("保存をキャンセルしました")
+                    app._single_save_cancel_event.clear()
+                    return
+
+                job.last_process_state = "failed"
+                retry_note = "（再試行あり）" if attempts > 1 else ""
+                error_detail = result.error or "保存失敗"
+                if result.error_guidance:
+                    error_detail = f"{error_detail}\n{result.error_guidance}"
+                job.last_error_detail = f"{error_detail}{retry_note}"
+                app._populate_listbox()
+                messagebox.showerror(
+                    "保存エラー",
+                    f"ファイルの保存に失敗しました:{' 再試行後' if attempts > 1 else ''}\n{error_detail}\n{build_exif_status_text(result)}",
+                )
+                return
+
+            job.last_process_state = "success"
+            job.last_error_detail = None
+            if resized_for_save is not None:
+                job.resized = resized_for_save
+            if result.dry_run:
+                msg = f"ドライラン完了: {result.output_path.name} を生成予定です"
+            else:
+                msg = f"{result.output_path.name} を保存しました"
+            if attempts > 1:
+                msg = f"{msg}（再試行後に成功）"
+            msg = f"{msg}\n{build_exif_status_text(result)}"
+            app._register_recent_setting_from_current()
+            app._populate_listbox()
+            app.status_var.set(msg)
+            messagebox.showinfo("保存結果", msg)
+
+        app.after(0, complete)
+
+    app._single_save_thread = threading.Thread(
+        target=worker,
+        daemon=True,
+        name="karuku-single-save",
+    )
+    app._single_save_thread.start()
 
 
 def bootstrap_confirm_batch_save(

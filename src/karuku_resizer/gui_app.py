@@ -700,6 +700,12 @@ class ResizeApp(customtkinter.CTk):
         self._ui_scale_factor = UI_SCALE_FACTORS.get(self._ui_scale_mode, 1.0)
         self._batch_preview_placeholder_active = False
         self._batch_placeholder_items: Dict[customtkinter.CTkCanvas, Tuple[Optional[int], Optional[int]]] = {}
+        self._single_save_thread: Optional[threading.Thread] = None
+        self._single_save_cancel_event = threading.Event()
+        self._single_save_version = 0
+        self._preview_thread: Optional[threading.Thread] = None
+        self._preview_version = 0
+        self._size_estimation_version = 0
         self.appearance_mode_var = customtkinter.StringVar(
             value=APPEARANCE_ID_TO_LABEL.get(
                 self._normalize_appearance_mode(self.settings.get("appearance_mode", "system")),
@@ -1230,6 +1236,7 @@ class ResizeApp(customtkinter.CTk):
         output_path: Path,
         options: SaveOptions,
         allow_retry: bool,
+        cancel_event: Optional[threading.Event] = None,
     ) -> Tuple[SaveResult, int]:
         max_attempts = 2 if allow_retry else 1
         result: SaveResult = SaveResult(
@@ -1240,6 +1247,13 @@ class ResizeApp(customtkinter.CTk):
         )
 
         for attempt in range(1, max_attempts + 1):
+            if cancel_event is not None and cancel_event.is_set():
+                return SaveResult(
+                    success=False,
+                    output_path=output_path,
+                    exif_mode=options.exif_mode,
+                    error="保存をキャンセルしました",
+                ), attempt
             result = save_image(
                 source_image=source_image,
                 resized_image=resized_image,
@@ -1252,12 +1266,26 @@ class ResizeApp(customtkinter.CTk):
                 return result, attempt
             if not self._is_retryable_save_error(result):
                 return result, attempt
+            if cancel_event is not None and cancel_event.is_set():
+                return SaveResult(
+                    success=False,
+                    output_path=output_path,
+                    exif_mode=options.exif_mode,
+                    error="保存をキャンセルしました",
+                ), attempt
             retry_delay = 0.35 * attempt
             logging.info(
                 "保存再試行: %s (%s)",
                 output_path,
                 result.error,
             )
+            if cancel_event is not None and cancel_event.is_set():
+                return SaveResult(
+                    success=False,
+                    output_path=output_path,
+                    exif_mode=options.exif_mode,
+                    error="保存をキャンセルしました",
+                ), attempt
             time.sleep(min(1.5, retry_delay))
 
         return result, max_attempts
@@ -1728,6 +1756,8 @@ class ResizeApp(customtkinter.CTk):
         """アプリ終了時の処理"""
         if self._is_loading_files:
             self._file_load_cancel_event.set()
+        if self._single_save_thread is not None and self._single_save_thread.is_alive():
+            self._single_save_cancel_event.set()
         self._save_current_settings()
         self._finalize_run_summary()
         self.destroy()
@@ -1751,6 +1781,64 @@ class ResizeApp(customtkinter.CTk):
             widget.focus_set()
             return None
         return num
+
+    @staticmethod
+    def _parse_positive_text(value: str, min_val: int = 1) -> Optional[int]:
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            num = int(s)
+        except ValueError:
+            return None
+        if not (min_val <= num):
+            return None
+        return num
+
+    def _snapshot_resize_target(self, source_size: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        mode = self.mode_var.get()
+        ow, oh = source_size
+        if ow <= 0 or oh <= 0:
+            return None
+
+        if mode == "ratio":
+            pct = self._parse_positive_text(self.pct_var.get())
+            if pct is None:
+                return None
+            return int(ow * pct / 100), int(oh * pct / 100)
+
+        if mode == "width":
+            w = self._parse_positive_text(self.entry_w_single.get())
+            if w is None:
+                return None
+            return w, int(oh * w / ow)
+
+        if mode == "height":
+            h = self._parse_positive_text(self.entry_h_single.get())
+            if h is None:
+                return None
+            return int(ow * h / oh), h
+
+        w = self._parse_positive_text(self.entry_w_fixed.get())
+        if w is None:
+            return None
+        h = self._parse_positive_text(self.entry_h_fixed.get())
+        if h is None:
+            return None
+        return w, h
+
+    @staticmethod
+    def _parse_int_or_default(value: str, default: int) -> int:
+        try:
+            return int(value.strip())
+        except ValueError:
+            return default
+
+    def _snapshot_encoder_settings(self) -> Tuple[int, int, int, bool]:
+        quality = normalize_quality(self._parse_int_or_default(self.quality_var.get(), 85))
+        webp_method = normalize_webp_method(self._parse_int_or_default(self.webp_method_var.get(), 6))
+        avif_speed = normalize_avif_speed(self._parse_int_or_default(self.avif_speed_var.get(), 6))
+        return quality, webp_method, avif_speed, bool(self.webp_lossless_var.get())
 
     # ------------------------------------------------------------------
     # Helper: summarize current resize settings for confirmation dialogs
@@ -1950,9 +2038,7 @@ class ResizeApp(customtkinter.CTk):
         self._auto_preview_after_id = None
         if self.current_index is None or self._is_loading_files or self.current_index >= len(self.jobs):
             return
-        job = self.jobs[self.current_index]
-        job.resized = self._process_image(job.image)
-        self._draw_previews(job)
+        self._start_async_preview(self.current_index)
 
     def _setup_drag_and_drop(self) -> None:
         ui_bootstrap.bootstrap_setup_drag_and_drop(
@@ -2472,7 +2558,73 @@ class ResizeApp(customtkinter.CTk):
         return reference_job, target_size, output_format
 
     def _preview_current(self):
-        ui_bootstrap.bootstrap_preview_current(self)
+        if self.current_index is None:
+            return
+        self._start_async_preview(self.current_index)
+
+    def _start_async_preview(self, job_index: Optional[int] = None) -> None:
+        if self.current_index is None:
+            return
+        if job_index is None:
+            job_index = self.current_index
+        if job_index < 0 or job_index >= len(self.jobs):
+            return
+
+        job = self.jobs[job_index]
+        source = job.image
+        target_size = self._snapshot_resize_target(source.size)
+        self._preview_version += 1
+        version = self._preview_version
+
+        if not target_size:
+            self.after(
+                0,
+                lambda: self._apply_async_preview_result(job_index, None, version),
+            )
+            return
+
+        self.info_resized_var.set("計算中...")
+        self.resized_title_label.configure(text="リサイズ後 (処理中)")
+
+        def worker() -> None:
+            try:
+                resized = self._resize_image_to_target(source, target_size)
+            except Exception:
+                logging.exception("プレビュー生成に失敗")
+                return
+            if version != self._preview_version:
+                return
+            if self.current_index is None:
+                return
+            self.after(
+                0,
+                lambda: self._apply_async_preview_result(job_index, resized, version),
+            )
+
+        self._preview_thread = threading.Thread(
+            target=worker,
+            daemon=True,
+            name=f"karuku-preview-{job_index}",
+        )
+        self._preview_thread.start()
+
+    def _apply_async_preview_result(
+        self,
+        job_index: int,
+        resized: Optional[Image.Image],
+        version: int,
+    ) -> None:
+        if version != self._preview_version:
+            return
+        if self.current_index != job_index:
+            return
+        if job_index < 0 or job_index >= len(self.jobs):
+            return
+        if resized is None:
+            self.status_var.set("リサイズ設定が無効です")
+            return
+        self.jobs[job_index].resized = resized
+        self._draw_previews(self.jobs[job_index])
 
     def _save_current(self):
         ui_bootstrap.bootstrap_save_current(self)
@@ -2568,6 +2720,11 @@ class ResizeApp(customtkinter.CTk):
         ui_bootstrap.bootstrap_cancel_batch_save(self)
 
     def _cancel_active_operation(self):
+        if self._single_save_thread is not None and self._single_save_thread.is_alive():
+            self._single_save_cancel_event.set()
+            self._set_operation_stage("停止中")
+            self.status_var.set("保存処理を停止しています")
+            return
         if self._is_loading_files:
             self._cancel_file_loading()
             return
@@ -2584,35 +2741,76 @@ class ResizeApp(customtkinter.CTk):
         if job.resized:
             self._imgtk_resz = self._draw_image_on_canvas(self.canvas_resz, job.resized, is_resized=True)
             size = job.resized.size
-            
-            # 出力設定に基づいたサイズ見積もり
             output_format = self._resolve_output_format_for_image(job.image)
-            with io.BytesIO() as bio:
-                save_img = job.resized
-                if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
-                    save_img = save_img.convert("RGB")
-                preview_kwargs = build_encoder_save_kwargs(
-                    output_format=output_format,
-                    quality=self._current_quality(),
-                    webp_method=self._current_webp_method(),
-                    webp_lossless=self.webp_lossless_var.get(),
-                    avif_speed=self._current_avif_speed(),
-                )
-                try:
-                    save_img.save(bio, **cast(Dict[str, Any], preview_kwargs))
-                    kb = len(bio.getvalue()) / 1024
-                except Exception:
-                    kb = 0.0
-            
+
             orig_w, orig_h = job.image.size
             pct = (size[0] * size[1]) / (orig_w * orig_h) * 100
             fmt_label = FORMAT_ID_TO_LABEL.get(output_format, "JPEG")
-            self.info_resized_var.set(f"{size[0]} x {size[1]}  {kb:.1f}KB ({pct:.1f}%) [{fmt_label}]")
+            self.info_resized_var.set(f"{size[0]} x {size[1]}  計算中... ({pct:.1f}%) [{fmt_label}]")
             self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
+            self._start_preview_size_estimation(
+                source=job.resized,
+                output_format=output_format,
+                pct=pct,
+                fmt_label=fmt_label,
+            )
         else:
             self.canvas_resz.delete("all")
             self.info_resized_var.set("--- x ---  ---  (---)")
             self.resized_title_label.configure(text="リサイズ後")
+
+    def _start_preview_size_estimation(
+        self,
+        *,
+        source: Image.Image,
+        output_format: SaveFormat,
+        pct: float,
+        fmt_label: str,
+    ) -> None:
+        quality, webp_method, avif_speed, webp_lossless = self._snapshot_encoder_settings()
+
+        self._size_estimation_version += 1
+        version = self._size_estimation_version
+        self.info_resized_var.set(f"{source.width} x {source.height}  計算中... ({pct:.1f}%) [{fmt_label}]")
+
+        def worker() -> None:
+            save_img = source
+            if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
+                save_img = save_img.convert("RGB")
+            preview_kwargs = build_encoder_save_kwargs(
+                output_format=output_format,
+                quality=quality,
+                webp_method=webp_method,
+                webp_lossless=webp_lossless,
+                avif_speed=avif_speed,
+            )
+            try:
+                with io.BytesIO() as bio:
+                    save_img.save(bio, **cast(Dict[str, Any], preview_kwargs))
+                    kb = len(bio.getvalue()) / 1024
+            except Exception:
+                kb = 0.0
+
+            if version != self._size_estimation_version:
+                return
+
+            def apply() -> None:
+                if version != self._size_estimation_version:
+                    return
+                if self.current_index is None or self.current_index >= len(self.jobs):
+                    return
+                self.info_resized_var.set(
+                    f"{source.width} x {source.height}  {kb:.1f}KB ({pct:.1f}%) [{fmt_label}]"
+                )
+
+            self.after(0, apply)
+
+        thread = threading.Thread(
+            target=worker,
+            daemon=True,
+            name="karuku-preview-size-estimation",
+        )
+        thread.start()
 
     def _draw_image_on_canvas(self, canvas: customtkinter.CTkCanvas, img: Image.Image, is_resized: bool) -> Optional[ImageTk.PhotoImage]:
         canvas.delete("all")
