@@ -388,7 +388,7 @@ def setup_right_panel(app: Any, *, colors: ColorMap) -> None:
         app.lf_resized,
         textvariable=app.info_resized_var,
         justify="left",
-        font=app.font_small,
+        font=app.font_resized_info,
         text_color=colors["text_tertiary"],
     ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
 

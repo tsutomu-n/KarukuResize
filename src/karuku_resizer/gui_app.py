@@ -535,6 +535,7 @@ class ResizeApp(customtkinter.CTk):
     font_default: customtkinter.CTkFont
     font_small: customtkinter.CTkFont
     font_bold: customtkinter.CTkFont
+    font_resized_info: customtkinter.CTkFont
 
     def __init__(self) -> None:
         super().__init__()
@@ -550,12 +551,7 @@ class ResizeApp(customtkinter.CTk):
             UI_SCALE_ID_TO_LABEL,
             UI_SCALE_LABEL_TO_ID,
         )
-        self._apply_ui_scale_mode = lambda mode_id: bootstrap_apply_ui_scale_mode(
-            self,
-            mode_id,
-            UI_SCALE_FACTORS,
-            UI_FONT_SIZE_PAIRS,
-        )
+        self._apply_ui_scale_mode = self._apply_scaled_fonts
         self._style_primary_button = lambda button: bootstrap_style_primary_button(
             button,
             colors=METALLIC_COLORS,
@@ -737,7 +733,6 @@ class ResizeApp(customtkinter.CTk):
             )
         )
         self._suppress_preset_menu_callback = True
-
         self._setup_ui()
         self._setup_tooltips()
         self._setup_keyboard_shortcuts()
@@ -754,6 +749,21 @@ class ResizeApp(customtkinter.CTk):
         logging.info("ResizeApp initialized")
         logging.info("Run log: %s", self._run_log_artifacts.run_log_path)
         logging.info("Run summary: %s", self._run_log_artifacts.summary_path)
+
+    def _apply_scaled_fonts(self, mode_id: str) -> None:
+        normalized = self._normalize_ui_scale_mode(mode_id)
+        bootstrap_apply_ui_scale_mode(
+            self,
+            normalized,
+            UI_SCALE_FACTORS,
+            UI_FONT_SIZE_PAIRS,
+        )
+        _default_size, small_size = UI_FONT_SIZE_PAIRS.get(normalized, (16, 14))
+        self.font_resized_info = customtkinter.CTkFont(
+            family=self._system_font,
+            size=max(1, small_size - 1),
+            weight="normal",
+        )
 
     def _setup_tooltips(self) -> None:
         for attr_name, text in TOP_AND_PRESET_TOOLTIPS.items():
@@ -2936,7 +2946,7 @@ class ResizeApp(customtkinter.CTk):
             orig_w, orig_h = job.image.size
             pct = (size[0] * size[1]) / (orig_w * orig_h) * 100
             fmt_label = FORMAT_ID_TO_LABEL.get(output_format, "JPEG")
-            self.info_resized_var.set(f"{size[0]} x {size[1]}  計算中... ({pct:.1f}%) [{fmt_label}]")
+            self.info_resized_var.set(f"{size[0]}px x {size[1]}px. 計算中... ({pct:.1f}%) [{fmt_label}]")
             self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
             self._start_preview_size_estimation(
                 job=job,
@@ -2950,15 +2960,15 @@ class ResizeApp(customtkinter.CTk):
             self.info_resized_var.set("--- x ---  ---  (---)")
             self.resized_title_label.configure(text="リサイズ後")
 
-    def _format_preview_size_with_reduction(self, source_bytes: int, estimated_kb: float, *, approximate: bool) -> str:
+    def _format_preview_size_with_reduction(self, source_bytes: int, estimated_kb: float) -> str:
         if source_bytes <= 0 or estimated_kb <= 0:
             return ""
         source_kb = source_bytes / 1024
         if source_kb <= 0:
             return ""
         ratio = (estimated_kb / source_kb) * 100
-        suffix = "※" if approximate else ""
-        return f" /R{ratio:.1f}%{suffix}"
+        ratio_int = int(round(ratio))
+        return f" /オリジナルの約{ratio_int}%"
 
     def _start_preview_size_estimation(
         self,
@@ -2983,16 +2993,14 @@ class ResizeApp(customtkinter.CTk):
         )
         cached_entry = job.preview_size_cache.get(cache_key)
         if cached_entry is not None:
-            cached_kb, cached_is_approximate = cached_entry
+            cached_kb, _ = cached_entry
             if cached_kb > 0:
-                approx_mark = " [概算]" if cached_is_approximate else ""
                 reduction_text = self._format_preview_size_with_reduction(
                     job.source_size_bytes,
                     cached_kb,
-                    approximate=cached_is_approximate,
                 )
                 self.info_resized_var.set(
-                    f"{source.width}x{source.height} {cached_kb:.1f}KB{approx_mark} "
+                    f"{source.width}px x {source.height}px. {cached_kb:.1f}KB "
                     f"({pct:.1f}%) [{fmt_label}]{reduction_text}"
                 )
                 return
@@ -3009,7 +3017,7 @@ class ResizeApp(customtkinter.CTk):
             except Exception:
                 pass
             self._size_estimation_timeout_id = None
-        self.info_resized_var.set(f"{source.width} x {source.height}  計算中... ({pct:.1f}%) [{fmt_label}]")
+        self.info_resized_var.set(f"{source.width}px x {source.height}px. 計算中... ({pct:.1f}%) [{fmt_label}]")
 
         def mark_timeout() -> None:
             if self._size_estimation_version != version:
@@ -3019,7 +3027,7 @@ class ResizeApp(customtkinter.CTk):
             if self.current_index is None or self.current_index >= len(self.jobs):
                 return
             self.info_resized_var.set(
-                f"{source.width} x {source.height}  計算時間が長いため省略表示 ({pct:.1f}%) [{fmt_label}]"
+                f"{source.width}px x {source.height}px. 計算時間が長いため省略表示 ({pct:.1f}%) [{fmt_label}]"
             )
             self._size_estimation_inflight_key = None
             self._size_estimation_timeout_id = None
@@ -3089,16 +3097,15 @@ class ResizeApp(customtkinter.CTk):
                     except Exception:
                         pass
                     self._size_estimation_timeout_id = None
-                approx_mark = " [概算]" if estimated else ""
-                reduction_text = self._format_preview_size_with_reduction(job.source_size_bytes, kb, approximate=estimated)
+                reduction_text = self._format_preview_size_with_reduction(job.source_size_bytes, kb)
                 if kb > 0:
                     self.info_resized_var.set(
-                        f"{source.width}x{source.height} {kb:.1f}KB{approx_mark} "
+                        f"{source.width}px x {source.height}px. {kb:.1f}KB "
                         f"({pct:.1f}%) [{fmt_label}]{reduction_text}"
                     )
                 else:
                     self.info_resized_var.set(
-                        f"{source.width} x {source.height}  変換情報を取得できませんでした ({pct:.1f}%) [{fmt_label}]"
+                        f"{source.width}px x {source.height}px. 変換情報を取得できませんでした ({pct:.1f}%) [{fmt_label}]"
                     )
 
             self.after(0, apply)
