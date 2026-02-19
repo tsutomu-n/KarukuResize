@@ -1263,6 +1263,11 @@ def bootstrap_run_batch_save(
     stats = app._create_batch_stats()
     jobs_to_process = list(target_jobs) if target_jobs is not None else list(app.jobs)
     total_files = len(jobs_to_process)
+    if hasattr(app, "_show_batch_processing_placeholders"):
+        try:
+            app._show_batch_processing_placeholders(total_files)
+        except Exception:
+            logging.exception("Failed to show batch processing placeholders")
     for job in jobs_to_process:
         job.last_process_state = "unprocessed"
         job.last_error_detail = None
@@ -1301,8 +1306,12 @@ def bootstrap_run_batch_save(
                         mode_text=build_batch_run_mode_text(dry_run=batch_options.dry_run),
                     )
                 )
-                app.update_idletasks()
     finally:
+        if hasattr(app, "_hide_batch_processing_placeholders"):
+            try:
+                app._hide_batch_processing_placeholders()
+            except Exception:
+                logging.exception("Failed to hide batch processing placeholders")
         app._end_operation_scope()
         app._populate_listbox()
         app._refresh_status_indicators()
@@ -1391,9 +1400,13 @@ def bootstrap_run_batch_save_async(
                             mode_text=build_batch_run_mode_text(dry_run=batch_options.dry_run),
                         )
                     )
-                    app.update_idletasks()
                 elif event_kind == "done":
                     app._batch_save_thread = None
+                    if hasattr(app, "_hide_batch_processing_placeholders"):
+                        try:
+                            app._hide_batch_processing_placeholders()
+                        except Exception:
+                            logging.exception("Failed to hide batch processing placeholders")
                     app._end_operation_scope()
                     app._populate_listbox()
                     app._refresh_status_indicators()
@@ -1419,6 +1432,11 @@ def bootstrap_run_batch_save_async(
         "bootstrap_run_batch_save_async: UI prepared. cancel=%s",
         app._cancel_batch,
     )
+    if hasattr(app, "_show_batch_processing_placeholders"):
+        try:
+            app._show_batch_processing_placeholders(total_files)
+        except Exception:
+            logging.exception("Failed to show batch processing placeholders")
     app.after(0, poll_queue)
 
     return app._batch_save_thread

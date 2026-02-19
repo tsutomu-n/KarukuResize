@@ -698,6 +698,7 @@ class ResizeApp(customtkinter.CTk):
         self._topbar_density = "normal"
         self._topbar_controller: Any = None
         self._ui_scale_factor = UI_SCALE_FACTORS.get(self._ui_scale_mode, 1.0)
+        self._batch_preview_placeholder_active = False
         self.appearance_mode_var = customtkinter.StringVar(
             value=APPEARANCE_ID_TO_LABEL.get(
                 self._normalize_appearance_mode(self.settings.get("appearance_mode", "system")),
@@ -2283,6 +2284,66 @@ class ResizeApp(customtkinter.CTk):
         self.resized_title_label.configure(text="リサイズ後")
         self._update_metadata_preview(None)
         self._refresh_status_indicators()
+
+    def _show_batch_processing_placeholders(self, total_files: int, current_file_name: Optional[str] = None) -> None:
+        self._batch_preview_placeholder_active = True
+        placeholder_lines = ["一括保存中"]
+        if total_files > 0:
+            placeholder_lines.append(f"対象: {total_files}枚")
+        if current_file_name:
+            placeholder_lines.append(f"処理中: {current_file_name}")
+        placeholder_text = "\n".join(placeholder_lines)
+
+        self.info_orig_var.set("処理中...")
+        self.info_resized_var.set("処理中...")
+        self.resized_title_label.configure(text="一括処理中")
+
+        for canvas in (self.canvas_org, self.canvas_resz):
+            if not hasattr(canvas, "winfo_width"):
+                continue
+            canvas.delete("all")
+            width = canvas.winfo_width()
+            height = canvas.winfo_height()
+            if width <= 1 or height <= 1:
+                width = 260
+                height = 180
+            canvas.create_rectangle(
+                4,
+                4,
+                width - 4,
+                height - 4,
+                outline=self._canvas_label_color(),
+                width=2,
+            )
+            canvas.create_text(
+                width / 2,
+                height / 2,
+                text=placeholder_text,
+                justify="center",
+                anchor="center",
+                fill=self._canvas_label_color(),
+                font=self.font_small,
+            )
+
+    def _hide_batch_processing_placeholders(self) -> None:
+        if not self._batch_preview_placeholder_active:
+            return
+        self._batch_preview_placeholder_active = False
+
+        next_index = self.current_index
+        if next_index is None or next_index >= len(self.jobs):
+            if self._visible_job_indices:
+                next_index = self._visible_job_indices[0]
+            elif self.jobs:
+                next_index = 0
+            else:
+                self._clear_preview_panels()
+                return
+        self.current_index = next_index
+        if self.current_index is None or self.current_index >= len(self.jobs):
+            self._clear_preview_panels()
+            return
+        self._draw_previews(self.jobs[self.current_index])
 
     def _on_select_change(self, idx: Optional[int] = None, force: bool = False) -> None:
         ui_bootstrap.bootstrap_on_select_change(self, idx=idx, force=force)
