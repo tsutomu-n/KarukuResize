@@ -1400,52 +1400,64 @@ def bootstrap_run_batch_save_async(
     logging.info("bootstrap_run_batch_save_async: thread started: %s", app._batch_save_thread.name)
 
     def poll_queue() -> None:
+        latest_progress = None
+        latest_processing = None
+        done_received = False
         try:
             while True:
                 event = progress_queue.get_nowait()
                 event_kind = event[0]
                 if event_kind == "progress":
-                    _, done_count, current_file_name, processed_count, failed_count, elapsed_sec = event
-                    app.progress_bar.set(done_count / total_files if total_files > 0 else 1.0)
-                    app.status_var.set(
-                        build_batch_progress_status_text(
-                            done_count=done_count,
-                            total_count=total_files,
-                            processed_count=processed_count,
-                            failed_count=failed_count,
-                            elapsed_sec=elapsed_sec,
-                            current_file_name=current_file_name,
-                            mode_text=build_batch_run_mode_text(dry_run=batch_options.dry_run),
-                        )
-                    )
+                    latest_progress = event
                 elif event_kind == "processing":
-                    if hasattr(app, "_show_batch_processing_placeholders"):
-                        try:
-                            _, current_file_name, current_index = event
-                            app._show_batch_processing_placeholders(total_files, current_file_name, current_index)
-                        except Exception:
-                            logging.exception("Failed to update batch processing placeholders")
+                    latest_processing = event
                 elif event_kind == "done":
-                    app._batch_save_thread = None
-                    if hasattr(app, "_hide_batch_processing_placeholders"):
-                        try:
-                            app._hide_batch_processing_placeholders()
-                        except Exception:
-                            logging.exception("Failed to hide batch processing placeholders")
-                    app._end_operation_scope()
-                    app._populate_listbox()
-                    app._refresh_status_indicators()
-                    logging.info(
-                        "bootstrap_run_batch_save_async: done total=%d processed=%d failed=%d",
-                        total_files,
-                        stats.processed_count,
-                        stats.failed_count,
-                    )
-                    if on_complete is not None:
-                        on_complete(stats, total_files)
-                    return
+                    done_received = True
         except queue.Empty:
             pass
+
+        if done_received:
+            app._batch_save_thread = None
+            if hasattr(app, "_hide_batch_processing_placeholders"):
+                try:
+                    app._hide_batch_processing_placeholders()
+                except Exception:
+                    logging.exception("Failed to hide batch processing placeholders")
+            app._end_operation_scope()
+            app._populate_listbox()
+            app._refresh_status_indicators()
+            logging.info(
+                "bootstrap_run_batch_save_async: done total=%d processed=%d failed=%d",
+                total_files,
+                stats.processed_count,
+                stats.failed_count,
+            )
+            if on_complete is not None:
+                on_complete(stats, total_files)
+            return
+
+        if latest_progress is not None:
+            _, done_count, current_file_name, processed_count, failed_count, elapsed_sec = latest_progress
+            app.progress_bar.set(done_count / total_files if total_files > 0 else 1.0)
+            app.status_var.set(
+                build_batch_progress_status_text(
+                    done_count=done_count,
+                    total_count=total_files,
+                    processed_count=processed_count,
+                    failed_count=failed_count,
+                    elapsed_sec=elapsed_sec,
+                    current_file_name=current_file_name,
+                    mode_text=build_batch_run_mode_text(dry_run=batch_options.dry_run),
+                )
+            )
+
+        if latest_processing is not None and hasattr(app, "_show_batch_processing_placeholders"):
+            try:
+                _, current_file_name, current_index = latest_processing
+                app._show_batch_processing_placeholders(total_files, current_file_name, current_index)
+            except Exception:
+                logging.exception("Failed to update batch processing placeholders")
+
         if app._batch_save_thread is not None and app._batch_save_thread.is_alive():
             app.after(50, poll_queue)
         else:

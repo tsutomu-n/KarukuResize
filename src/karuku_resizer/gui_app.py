@@ -699,6 +699,7 @@ class ResizeApp(customtkinter.CTk):
         self._topbar_controller: Any = None
         self._ui_scale_factor = UI_SCALE_FACTORS.get(self._ui_scale_mode, 1.0)
         self._batch_preview_placeholder_active = False
+        self._batch_placeholder_items: Dict[customtkinter.CTkCanvas, Tuple[Optional[int], Optional[int]]] = {}
         self.appearance_mode_var = customtkinter.StringVar(
             value=APPEARANCE_ID_TO_LABEL.get(
                 self._normalize_appearance_mode(self.settings.get("appearance_mode", "system")),
@@ -2313,30 +2314,58 @@ class ResizeApp(customtkinter.CTk):
         for canvas in (self.canvas_org, self.canvas_resz):
             if not hasattr(canvas, "winfo_width"):
                 continue
-            canvas.delete("all")
             width = canvas.winfo_width()
             height = canvas.winfo_height()
             if width <= 1 or height <= 1:
                 width = 260
                 height = 180
-            canvas.create_rectangle(
-                4,
-                4,
-                width - 4,
-                height - 4,
-                outline=self._canvas_label_color(),
-                width=2,
-            )
-            canvas.create_text(
-                width / 2,
-                height / 2,
-                text=placeholder_text,
-                justify="center",
-                anchor="center",
-                fill=self._canvas_label_color(),
-                font=self.font_small,
-                width=width - 20,
-            )
+            existing = self._batch_placeholder_items.get(canvas)
+            rect_id: Optional[int] = None
+            text_id: Optional[int] = None
+            if existing is not None:
+                rect_id, text_id = existing
+
+            if (
+                rect_id is not None
+                and text_id is not None
+                and rect_id in canvas.find_all()
+                and text_id in canvas.find_all()
+            ):
+                canvas.coords(rect_id, 4, 4, width - 4, height - 4)
+                canvas.itemconfigure(
+                    rect_id,
+                    outline=self._canvas_label_color(),
+                )
+                canvas.coords(text_id, width / 2, height / 2)
+                canvas.itemconfigure(
+                    text_id,
+                    text=placeholder_text,
+                    fill=self._canvas_label_color(),
+                    width=width - 20,
+                )
+            else:
+                canvas.delete("all")
+                rect_id = canvas.create_rectangle(
+                    4,
+                    4,
+                    width - 4,
+                    height - 4,
+                    outline=self._canvas_label_color(),
+                    width=2,
+                    tags="batch-processing-placeholder",
+                )
+                text_id = canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text=placeholder_text,
+                    justify="center",
+                    anchor="center",
+                    fill=self._canvas_label_color(),
+                    font=self.font_small,
+                    width=width - 20,
+                    tags="batch-processing-placeholder",
+                )
+                self._batch_placeholder_items[canvas] = (rect_id, text_id)
 
     def _shorten_file_name_for_placeholder(self, file_name: str, max_chars: int = 36) -> str:
         if max_chars <= 0 or len(file_name) <= max_chars:
@@ -2352,6 +2381,7 @@ class ResizeApp(customtkinter.CTk):
         if not self._batch_preview_placeholder_active:
             return
         self._batch_preview_placeholder_active = False
+        self._batch_placeholder_items = {}
 
         next_index = self.current_index
         if next_index is None or next_index >= len(self.jobs):
