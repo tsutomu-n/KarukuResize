@@ -1023,7 +1023,10 @@ def bootstrap_on_select_change(
     logging.getLogger(__name__).info("Selected: %s", previous_job.path.name)
 
     app._reset_zoom()
-    app._start_async_preview(idx)
+    if hasattr(app, "_start_async_preview") and callable(getattr(app, "_start_async_preview")):
+        app._start_async_preview(idx)
+    elif hasattr(app, "_draw_previews") and idx >= 0 and idx < len(app.jobs):
+        app._draw_previews(app.jobs[idx])
     app._update_metadata_preview(previous_job)
     app._refresh_status_indicators()
 

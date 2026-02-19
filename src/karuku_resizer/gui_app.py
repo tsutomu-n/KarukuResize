@@ -244,6 +244,8 @@ METALLIC_COLORS = {
 ZOOM_STEP = 1.1
 MIN_ZOOM = 0.2
 MAX_ZOOM = 10.0
+RESIZE_PREVIEW_DEBOUNCE_MS = 80
+ZOOM_PREVIEW_DEBOUNCE_MS = 50
 QUALITY_VALUES = [str(v) for v in range(5, 101, 5)]
 WEBP_METHOD_VALUES = [str(v) for v in range(0, 7)]
 AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
@@ -401,6 +403,8 @@ class ImageJob:
     path: Path
     image: Image.Image
     resized: Optional[Image.Image] = None  # cache of last processed result
+    preview_target_size: Optional[Tuple[int, int]] = None  # size used for resized cache
+    source_size_bytes: int = 0
     metadata_loaded: bool = False
     metadata_text: str = ""
     metadata_error: Optional[str] = None
@@ -706,6 +710,7 @@ class ResizeApp(customtkinter.CTk):
         self._single_save_thread: Optional[threading.Thread] = None
         self._single_save_cancel_event = threading.Event()
         self._single_save_version = 0
+        self._preview_draw_after_id: Optional[str] = None
         self._preview_thread: Optional[threading.Thread] = None
         self._preview_version = 0
         self._size_estimation_version = 0
@@ -1152,6 +1157,10 @@ class ResizeApp(customtkinter.CTk):
             values,
             merge_processing_values_fn=merge_processing_values,
         )
+
+    @staticmethod
+    def _merge_processing_values(values: Mapping[str, Any]) -> Mapping[str, Any]:
+        return merge_processing_values(values)
 
     @staticmethod
     def _normalize_recent_settings_entries(raw: Any) -> List[Dict[str, Any]]:
@@ -1757,6 +1766,12 @@ class ResizeApp(customtkinter.CTk):
     
     def _on_closing(self):
         """アプリ終了時の処理"""
+        if self._preview_draw_after_id is not None:
+            try:
+                self.after_cancel(self._preview_draw_after_id)
+            except Exception:
+                pass
+            self._preview_draw_after_id = None
         if self._is_loading_files:
             self._file_load_cancel_event.set()
         if self._single_save_thread is not None and self._single_save_thread.is_alive():
@@ -2043,6 +2058,23 @@ class ResizeApp(customtkinter.CTk):
             return
         self._start_async_preview(self.current_index)
 
+    def _schedule_preview_redraw(self, *, delay_ms: int = RESIZE_PREVIEW_DEBOUNCE_MS) -> None:
+        if self.current_index is None or self.current_index >= len(self.jobs):
+            return
+        if self._preview_draw_after_id is not None:
+            try:
+                self.after_cancel(self._preview_draw_after_id)
+            except Exception:
+                pass
+            self._preview_draw_after_id = None
+        self._preview_draw_after_id = self.after(delay_ms, self._flush_preview_redraw)
+
+    def _flush_preview_redraw(self) -> None:
+        self._preview_draw_after_id = None
+        if self.current_index is None or self.current_index >= len(self.jobs) or self._is_loading_files:
+            return
+        self._start_async_preview(self.current_index)
+
     def _setup_drag_and_drop(self) -> None:
         ui_bootstrap.bootstrap_setup_drag_and_drop(
             self,
@@ -2306,7 +2338,12 @@ class ResizeApp(customtkinter.CTk):
         self._update_empty_state_hint()
 
     def _append_loaded_job(self, path: Path, image: Image.Image) -> None:
-        self.jobs.append(ImageJob(path, image))
+        file_size = 0
+        try:
+            file_size = path.stat().st_size
+        except Exception:
+            file_size = 0
+        self.jobs.append(ImageJob(path, image, source_size_bytes=file_size))
 
     def _load_selected_paths(self, paths: List[Path]) -> None:
         # 新規選択として状態を初期化する
@@ -2364,6 +2401,12 @@ class ResizeApp(customtkinter.CTk):
 
     def _clear_preview_panels(self):
         self.current_index = None
+        if self._preview_draw_after_id is not None:
+            try:
+                self.after_cancel(self._preview_draw_after_id)
+            except Exception:
+                pass
+            self._preview_draw_after_id = None
         self._imgtk_org = None
         self._imgtk_resz = None
         self.canvas_org.delete("all")
@@ -2690,7 +2733,19 @@ class ResizeApp(customtkinter.CTk):
         if not target_size:
             self.after(
                 0,
-                lambda: self._apply_async_preview_result(job_index, None, version),
+                lambda: self._apply_async_preview_result(job_index, None, version, target_size=None),
+            )
+            return
+
+        if job.resized is not None and job.preview_target_size == target_size:
+            self.after(
+                0,
+                lambda: self._apply_async_preview_result(
+                    job_index,
+                    job.resized,
+                    version,
+                    target_size=target_size,
+                ),
             )
             return
 
@@ -2715,7 +2770,7 @@ class ResizeApp(customtkinter.CTk):
                 return
             self.after(
                 0,
-                lambda: self._apply_async_preview_result(job_index, resized, version),
+                lambda: self._apply_async_preview_result(job_index, resized, version, target_size=target_size),
             )
 
         self._preview_thread = threading.Thread(
@@ -2730,6 +2785,8 @@ class ResizeApp(customtkinter.CTk):
         job_index: int,
         resized: Optional[Image.Image],
         version: int,
+        *,
+        target_size: Optional[Tuple[int, int]],
     ) -> None:
         if version != self._preview_version:
             return
@@ -2740,9 +2797,12 @@ class ResizeApp(customtkinter.CTk):
             return
         if resized is None:
             self.status_var.set("リサイズ設定が無効です")
+            self.jobs[job_index].resized = None
+            self.jobs[job_index].preview_target_size = None
             self._draw_previews(self.jobs[job_index])
             return
         self.jobs[job_index].resized = resized
+        self.jobs[job_index].preview_target_size = target_size
         self._draw_previews(self.jobs[job_index])
 
     def _save_current(self):
@@ -2854,7 +2914,8 @@ class ResizeApp(customtkinter.CTk):
         # Original
         self._imgtk_org = self._draw_image_on_canvas(self.canvas_org, job.image, is_resized=False)
         size = job.image.size
-        self.info_orig_var.set(f"{size[0]} x {size[1]}  {Path(job.path).stat().st_size/1024:.1f}KB")
+        source_size_kb = (job.source_size_bytes / 1024) if job.source_size_bytes > 0 else 0.0
+        self.info_orig_var.set(f"{size[0]} x {size[1]}  {source_size_kb:.1f}KB")
 
         # Resized
         if job.resized:
@@ -2948,12 +3009,11 @@ class ResizeApp(customtkinter.CTk):
                 zoom = 1.0  # Fallback for zero-sized images
             label = f"Fit ({int(zoom*100)}%)"
         
-        disp = img.copy()
-        new_size = (int(disp.width * zoom), int(disp.height * zoom))
+        new_size = (int(img.width * zoom), int(img.height * zoom))
         if new_size[0] <= 0 or new_size[1] <= 0:
             return None # Avoids errors with tiny images
         
-        disp = disp.resize(new_size, Resampling.LANCZOS)
+        disp = img.resize(new_size, Resampling.LANCZOS)
         imgtk = ImageTk.PhotoImage(disp)
 
         # Center the image on the canvas
@@ -3112,7 +3172,7 @@ class ResizeApp(customtkinter.CTk):
             self._zoom_org = pct / 100.0
             self._zoom_resz = pct / 100.0
         if self.current_index is not None and self.current_index < len(self.jobs):
-            self._draw_previews(self.jobs[self.current_index])
+            self._schedule_preview_redraw(delay_ms=ZOOM_PREVIEW_DEBOUNCE_MS)
 
     def _get_fit_zoom_ratio(self, canvas: customtkinter.CTkCanvas, is_resized: bool) -> float:
         """Calculates the zoom ratio to fit the image to the canvas."""
@@ -3149,7 +3209,7 @@ class ResizeApp(customtkinter.CTk):
         setattr(self, zoom_attr, new_zoom)
         self.zoom_var.set(f"{int(new_zoom*100)}%")
         if self.current_index is not None and self.current_index < len(self.jobs):
-            self._draw_previews(self.jobs[self.current_index])
+            self._schedule_preview_redraw(delay_ms=ZOOM_PREVIEW_DEBOUNCE_MS)
 
     def _on_root_resize(self, _e):
         if self._topbar_controller is not None:
@@ -3159,7 +3219,7 @@ class ResizeApp(customtkinter.CTk):
         # redraw previews if zoom is 'Fit'
         if self._zoom_org is None or self._zoom_resz is None:
             if self.current_index is not None and self.current_index < len(self.jobs):
-                self._draw_previews(self.jobs[self.current_index])
+                self._schedule_preview_redraw(delay_ms=RESIZE_PREVIEW_DEBOUNCE_MS)
 
 # ----------------------------------------------------------------------
 
