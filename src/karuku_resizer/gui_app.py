@@ -761,7 +761,7 @@ class ResizeApp(customtkinter.CTk):
         _default_size, small_size = UI_FONT_SIZE_PAIRS.get(normalized, (16, 14))
         self.font_resized_info = customtkinter.CTkFont(
             family=self._system_font,
-            size=max(1, small_size - 1),
+            size=max(1, small_size - 2),
             weight="normal",
         )
 
@@ -2946,7 +2946,7 @@ class ResizeApp(customtkinter.CTk):
             orig_w, orig_h = job.image.size
             pct = (size[0] * size[1]) / (orig_w * orig_h) * 100
             fmt_label = FORMAT_ID_TO_LABEL.get(output_format, "JPEG")
-            self.info_resized_var.set(f"{size[0]}px x {size[1]}px. 計算中... ({pct:.1f}%) [{fmt_label}]")
+            self.info_resized_var.set(f"{fmt_label}|{size[0]}px x {size[1]}px|計算中...|-")
             self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
             self._start_preview_size_estimation(
                 job=job,
@@ -2962,13 +2962,13 @@ class ResizeApp(customtkinter.CTk):
 
     def _format_preview_size_with_reduction(self, source_bytes: int, estimated_kb: float) -> str:
         if source_bytes <= 0 or estimated_kb <= 0:
-            return ""
+            return "|-"
         source_kb = source_bytes / 1024
         if source_kb <= 0:
-            return ""
+            return "|-"
         ratio = (estimated_kb / source_kb) * 100
         ratio_int = int(round(ratio))
-        return f" /オリジナルの約{ratio_int}%"
+        return f"|-{ratio_int}%"
 
     def _start_preview_size_estimation(
         self,
@@ -3000,8 +3000,8 @@ class ResizeApp(customtkinter.CTk):
                     cached_kb,
                 )
                 self.info_resized_var.set(
-                    f"{source.width}px x {source.height}px. {cached_kb:.1f}KB "
-                    f"({pct:.1f}%) [{fmt_label}]{reduction_text}"
+                    f"{fmt_label}|{source.width}px x {source.height}px|"
+                    f"{int(cached_kb)}KB{reduction_text}"
                 )
                 return
 
@@ -3017,7 +3017,7 @@ class ResizeApp(customtkinter.CTk):
             except Exception:
                 pass
             self._size_estimation_timeout_id = None
-        self.info_resized_var.set(f"{source.width}px x {source.height}px. 計算中... ({pct:.1f}%) [{fmt_label}]")
+        self.info_resized_var.set(f"{fmt_label}|{source.width}px x {source.height}px|計算中...|-")
 
         def mark_timeout() -> None:
             if self._size_estimation_version != version:
@@ -3027,7 +3027,7 @@ class ResizeApp(customtkinter.CTk):
             if self.current_index is None or self.current_index >= len(self.jobs):
                 return
             self.info_resized_var.set(
-                f"{source.width}px x {source.height}px. 計算時間が長いため省略表示 ({pct:.1f}%) [{fmt_label}]"
+                f"{fmt_label}|{source.width}px x {source.height}px|計算中（省略）| -"
             )
             self._size_estimation_inflight_key = None
             self._size_estimation_timeout_id = None
@@ -3100,12 +3100,12 @@ class ResizeApp(customtkinter.CTk):
                 reduction_text = self._format_preview_size_with_reduction(job.source_size_bytes, kb)
                 if kb > 0:
                     self.info_resized_var.set(
-                        f"{source.width}px x {source.height}px. {kb:.1f}KB "
-                        f"({pct:.1f}%) [{fmt_label}]{reduction_text}"
+                        f"{fmt_label}|{source.width}px x {source.height}px|"
+                        f"{int(kb)}KB{reduction_text}"
                     )
                 else:
                     self.info_resized_var.set(
-                        f"{source.width}px x {source.height}px. 変換情報を取得できませんでした ({pct:.1f}%) [{fmt_label}]"
+                        f"{fmt_label}|{source.width}px x {source.height}px|計算失敗|-"
                     )
 
             self.after(0, apply)
