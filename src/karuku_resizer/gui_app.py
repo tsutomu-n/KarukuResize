@@ -2296,7 +2296,12 @@ class ResizeApp(customtkinter.CTk):
         if total_files > 0:
             placeholder_lines.append(f"対象: {total_files}枚")
         if current_file_name:
-            placeholder_lines.append(f"処理中: {current_file_name}")
+            max_chars = 36
+            if self.canvas_org.winfo_exists():
+                width = self.canvas_org.winfo_width()
+                if width > 1:
+                    max_chars = max(16, int((width - 40) / 8))
+            placeholder_lines.append(f"処理中: {self._shorten_file_name_for_placeholder(current_file_name, max_chars=max_chars)}")
         if current_index is not None and total_files > 0:
             placeholder_lines.append(f"進捗: {current_index}/{total_files}枚")
         placeholder_text = "\n".join(placeholder_lines)
@@ -2330,7 +2335,18 @@ class ResizeApp(customtkinter.CTk):
                 anchor="center",
                 fill=self._canvas_label_color(),
                 font=self.font_small,
+                width=width - 20,
             )
+
+    def _shorten_file_name_for_placeholder(self, file_name: str, max_chars: int = 36) -> str:
+        if max_chars <= 0 or len(file_name) <= max_chars:
+            return file_name
+        if max_chars <= 6:
+            return file_name[:max_chars]
+
+        head_chars = (max_chars - 3) // 2
+        tail_chars = max_chars - 3 - head_chars
+        return f"{file_name[:head_chars]}...{file_name[-tail_chars:]}"
 
     def _hide_batch_processing_placeholders(self) -> None:
         if not self._batch_preview_placeholder_active:
