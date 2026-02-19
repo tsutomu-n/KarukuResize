@@ -321,8 +321,20 @@ def register_recent_setting_from_current(app: Any) -> None:
     if values is None:
         return
     merged = merge_processing_values(values)
-    fingerprint = app._recent_settings_fingerprint(merged)
-    label = app._recent_setting_label_from_values(merged)
+    fingerprint_fn = getattr(app, "_recent_settings_fingerprint", None)
+    if callable(fingerprint_fn):
+        fingerprint = fingerprint_fn(merged)
+    else:
+        fingerprint = recent_settings_fingerprint(merged, merge_processing_values_fn=merge_processing_values)
+    label_fn = getattr(app, "_recent_setting_label_from_values", None)
+    if callable(label_fn):
+        label = label_fn(merged)
+    else:
+        label = recent_setting_label_from_values(
+            merged,
+            merge_processing_values_fn=merge_processing_values,
+            format_id_to_label={"auto": "自動", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP", "avif": "AVIF"},
+        )
     now = datetime.now().isoformat(timespec="seconds")
 
     entries = recent_settings_entries(app)
