@@ -2958,7 +2958,7 @@ class ResizeApp(customtkinter.CTk):
             return ""
         ratio = (estimated_kb / source_kb) * 100
         suffix = "※" if approximate else ""
-        return f" /元比{ratio:.1f}%{suffix}"
+        return f" /R{ratio:.1f}%{suffix}"
 
     def _start_preview_size_estimation(
         self,
