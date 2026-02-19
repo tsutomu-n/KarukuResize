@@ -182,18 +182,23 @@ def show_operation_result_dialog(
     next_row += 1
     status_label: Optional[customtkinter.CTkLabel] = None
     has_retry_button = retry_callback is not None and failed_count is not None and failed_count > 0
-    if has_retry_button:
-        status_label = customtkinter.CTkLabel(
-            dialog,
-            text="",
-            font=app.font_small,
-            text_color=colors["text_secondary"],
-            justify="left",
-            anchor="w",
-            wraplength=720,
-        )
-        status_label.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 8))
+    details_action_row: Optional[customtkinter.CTkFrame] = None
+    if failed_details:
+        details_action_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        details_action_row.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 8))
+        details_action_row.grid_columnconfigure(0, weight=1)
         next_row += 1
+
+        if has_retry_button:
+            status_label = customtkinter.CTkLabel(
+                details_action_row,
+                text="",
+                font=app.font_small,
+                text_color=colors["text_secondary"],
+                justify="left",
+                anchor="w",
+            )
+            status_label.pack(side="left", padx=(0, 8), fill="x", expand=True)
 
     button_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
     button_row.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 14))
@@ -233,14 +238,14 @@ def show_operation_result_dialog(
                 details_toggle_button.configure(text="失敗一覧を隠す")
 
         details_toggle_button = customtkinter.CTkButton(
-            button_row,
+            details_action_row or button_row,
             text="失敗一覧を表示",
             width=140,
             command=_toggle_details,
             font=app.font_default,
         )
         app._style_secondary_button(details_toggle_button)
-        details_toggle_button.pack(side="left", padx=(0, 8))
+        details_toggle_button.pack(side="right", padx=(0, 0))
 
     def _start_retry() -> None:
         nonlocal retry_in_progress
@@ -250,6 +255,8 @@ def show_operation_result_dialog(
         retry_button.configure(state="disabled", text="再試行中...")
         if copy_button is not None:
             copy_button.configure(state="disabled")
+        if details_toggle_button is not None:
+            details_toggle_button.configure(state="disabled")
         if status_label is not None:
             status_label.configure(text="再試行を開始しました。処理完了までお待ちください。")
         if close_button is not None:
@@ -263,6 +270,8 @@ def show_operation_result_dialog(
                 retry_button.configure(state="normal", text="失敗のみ再試行")
             if copy_button is not None:
                 copy_button.configure(state="normal")
+            if details_toggle_button is not None:
+                details_toggle_button.configure(state="normal")
             if close_button is not None:
                 close_button.configure(state="normal")
             if status_label is not None:
