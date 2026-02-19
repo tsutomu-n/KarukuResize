@@ -1277,6 +1277,11 @@ def bootstrap_run_batch_save(
         for i, job in enumerate(jobs_to_process):
             if app._cancel_batch:
                 break
+            if hasattr(app, "_show_batch_processing_placeholders"):
+                try:
+                    app._show_batch_processing_placeholders(total_files, job.path.name)
+                except Exception:
+                    logging.exception("Failed to update batch processing placeholders")
             try:
                 bootstrap_process_single_batch_job(
                     app,
@@ -1347,11 +1352,15 @@ def bootstrap_run_batch_save_async(
     def emit_progress(index: int, file_name: str) -> None:
         progress_queue.put(("progress", index, file_name, stats.processed_count, stats.failed_count, time.monotonic() - started_at))
 
+    def emit_processing(file_name: str) -> None:
+        progress_queue.put(("processing", file_name))
+
     def worker() -> None:
         try:
             for i, job in enumerate(jobs_to_process):
                 if app._cancel_batch:
                     break
+                emit_processing(job.path.name)
                 try:
                     bootstrap_process_single_batch_job(
                         app,
@@ -1400,6 +1409,13 @@ def bootstrap_run_batch_save_async(
                             mode_text=build_batch_run_mode_text(dry_run=batch_options.dry_run),
                         )
                     )
+                elif event_kind == "processing":
+                    if hasattr(app, "_show_batch_processing_placeholders"):
+                        try:
+                            _, current_file_name = event
+                            app._show_batch_processing_placeholders(total_files, current_file_name)
+                        except Exception:
+                            logging.exception("Failed to update batch processing placeholders")
                 elif event_kind == "done":
                     app._batch_save_thread = None
                     if hasattr(app, "_hide_batch_processing_placeholders"):
