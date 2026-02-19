@@ -12,6 +12,47 @@ import customtkinter
 from karuku_resizer.processing_preset_store import merge_processing_values
 
 ColorMap = Dict[str, Tuple[str, str]]
+DEFAULT_RECENT_SETTINGS_MAX = 6
+
+
+def _safe_recent_settings_max(app: Any) -> int:
+    value = getattr(app, "_recent_settings_max", None)
+    if value is None:
+        return DEFAULT_RECENT_SETTINGS_MAX
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_RECENT_SETTINGS_MAX
+    return normalized if normalized > 0 else DEFAULT_RECENT_SETTINGS_MAX
+
+
+def _safe_recent_setting_buttons(app: Any) -> List[customtkinter.CTkButton]:
+    buttons = getattr(app, "_recent_setting_buttons", [])
+    return buttons if isinstance(buttons, list) else []
+
+
+def _safe_recent_settings_entries(app: Any) -> List[Dict[str, Any]]:
+    settings = getattr(app, "settings", {})
+    if not isinstance(settings, Mapping):
+        return []
+    normalize_fn = getattr(app, "_normalize_recent_settings_entries", None)
+    if callable(normalize_fn):
+        return normalize_fn(settings.get("recent_processing_settings", []))
+
+    return normalize_recent_settings_entries(
+        settings.get("recent_processing_settings", []),
+        recent_settings_max=_safe_recent_settings_max(app),
+        merge_processing_values_fn=merge_processing_values,
+        recent_settings_fingerprint_fn=lambda values: recent_settings_fingerprint(
+            values,
+            merge_processing_values_fn=merge_processing_values,
+        ),
+        recent_setting_label_fn=lambda values: recent_setting_label_from_values(
+            values,
+            merge_processing_values_fn=merge_processing_values,
+            format_id_to_label={"auto": "自動", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP", "avif": "AVIF"},
+        ),
+    )
 
 
 def setup_settings_layers(
@@ -188,7 +229,7 @@ def normalize_recent_settings_entries(
 
 
 def recent_settings_entries(app: Any) -> List[Dict[str, Any]]:
-    entries = app._normalize_recent_settings_entries(app.settings.get("recent_processing_settings", []))
+    entries = _safe_recent_settings_entries(app)
     app.settings["recent_processing_settings"] = entries
     return entries
 
@@ -197,7 +238,7 @@ def refresh_recent_settings_buttons(app: Any) -> None:
     if not hasattr(app, "recent_settings_buttons_frame"):
         return
 
-    for button in app._recent_setting_buttons:
+    for button in _safe_recent_setting_buttons(app):
         button.destroy()
     app._recent_setting_buttons = []
 
@@ -259,11 +300,18 @@ def apply_recent_setting(app: Any, fingerprint: str) -> None:
         refresh_recent_settings_buttons(app)
         return
 
-    app._apply_processing_values(values)
+    apply_processing = getattr(app, "_apply_processing_values", None)
+    if not callable(apply_processing):
+        messagebox.showwarning("最近使った設定", "内部状態が未初期化です。")
+        return
+
+    apply_processing(values)
     entry["used_at"] = datetime.now().isoformat(timespec="seconds")
     entries.insert(0, entry)
-    app.settings["recent_processing_settings"] = entries[: app._recent_settings_max]
-    app._save_current_settings()
+    app.settings["recent_processing_settings"] = entries[: _safe_recent_settings_max(app)]
+    save_settings = getattr(app, "_save_current_settings", None)
+    if callable(save_settings):
+        save_settings()
     refresh_recent_settings_buttons(app)
     app.status_var.set(f"最近使った設定を適用: {entry.get('label', '')}")
 
@@ -288,6 +336,8 @@ def register_recent_setting_from_current(app: Any) -> None:
             "values": merged,
         },
     )
-    app.settings["recent_processing_settings"] = entries[: app._recent_settings_max]
-    app._save_current_settings()
+    app.settings["recent_processing_settings"] = entries[: _safe_recent_settings_max(app)]
+    save_settings = getattr(app, "_save_current_settings", None)
+    if callable(save_settings):
+        save_settings()
     refresh_recent_settings_buttons(app)
