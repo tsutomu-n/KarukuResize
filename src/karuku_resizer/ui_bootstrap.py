@@ -1255,6 +1255,11 @@ def bootstrap_run_batch_save(
     batch_options: Any,
     target_jobs: Optional[List[Any]] = None,
 ) -> tuple[Any, int]:
+    logging.warning(
+        "bootstrap_run_batch_save: legacy sync path invoked. target_jobs=%s total=%d",
+        "provided" if target_jobs is not None else "default",
+        len(target_jobs) if target_jobs is not None else len(app.jobs),
+    )
     stats = app._create_batch_stats()
     jobs_to_process = list(target_jobs) if target_jobs is not None else list(app.jobs)
     total_files = len(jobs_to_process)
@@ -1314,6 +1319,12 @@ def bootstrap_run_batch_save_async(
     target_jobs: Optional[List[Any]] = None,
     on_complete: Optional[Callable[[Any, int], None]] = None,
 ) -> threading.Thread:
+    logging.info(
+        "bootstrap_run_batch_save_async: invoked. target_jobs=%s total=%d output_dir=%s",
+        "provided" if target_jobs is not None else "default",
+        len(target_jobs) if target_jobs is not None else len(app.jobs),
+        output_dir,
+    )
     stats = app._create_batch_stats()
     jobs_to_process = list(target_jobs) if target_jobs is not None else list(app.jobs)
     total_files = len(jobs_to_process)
@@ -1353,8 +1364,13 @@ def bootstrap_run_batch_save_async(
         finally:
             progress_queue.put(("done",))
 
-    app._batch_save_thread = threading.Thread(target=worker, daemon=True)
+    app._batch_save_thread = threading.Thread(
+        target=worker,
+        daemon=True,
+        name="karuku-batch-save",
+    )
     app._batch_save_thread.start()
+    logging.info("bootstrap_run_batch_save_async: thread started: %s", app._batch_save_thread.name)
 
     def poll_queue() -> None:
         try:
@@ -1381,6 +1397,12 @@ def bootstrap_run_batch_save_async(
                     app._end_operation_scope()
                     app._populate_listbox()
                     app._refresh_status_indicators()
+                    logging.info(
+                        "bootstrap_run_batch_save_async: done total=%d processed=%d failed=%d",
+                        total_files,
+                        stats.processed_count,
+                        stats.failed_count,
+                    )
                     if on_complete is not None:
                         on_complete(stats, total_files)
                     return
@@ -1393,6 +1415,10 @@ def bootstrap_run_batch_save_async(
             poll_queue()
 
     bootstrap_prepare_batch_ui(app)
+    logging.info(
+        "bootstrap_run_batch_save_async: UI prepared. cancel=%s",
+        app._cancel_batch,
+    )
     app.after(0, poll_queue)
 
     return app._batch_save_thread
@@ -1496,6 +1522,7 @@ def bootstrap_batch_save(app: Any) -> None:
         output_dir=output_dir,
     ):
         return
+    logging.info("bootstrap_batch_save: using async flow")
 
     def _handle_batch_result(stats: Any, total_files: int) -> None:
         bootstrap_record_batch_run_summary(
