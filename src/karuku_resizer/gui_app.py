@@ -2950,6 +2950,16 @@ class ResizeApp(customtkinter.CTk):
             self.info_resized_var.set("--- x ---  ---  (---)")
             self.resized_title_label.configure(text="リサイズ後")
 
+    def _format_preview_size_with_reduction(self, source_bytes: int, estimated_kb: float, *, approximate: bool) -> str:
+        if source_bytes <= 0 or estimated_kb <= 0:
+            return ""
+        source_kb = source_bytes / 1024
+        if source_kb <= 0:
+            return ""
+        ratio = (estimated_kb / source_kb) * 100
+        suffix = "※" if approximate else ""
+        return f" /元比{ratio:.1f}%{suffix}"
+
     def _start_preview_size_estimation(
         self,
         *,
@@ -2976,9 +2986,14 @@ class ResizeApp(customtkinter.CTk):
             cached_kb, cached_is_approximate = cached_entry
             if cached_kb > 0:
                 approx_mark = " [概算]" if cached_is_approximate else ""
+                reduction_text = self._format_preview_size_with_reduction(
+                    job.source_size_bytes,
+                    cached_kb,
+                    approximate=cached_is_approximate,
+                )
                 self.info_resized_var.set(
-                    f"{source.width} x {source.height}  {cached_kb:.1f}KB{approx_mark} "
-                    f"({pct:.1f}%) [{fmt_label}]"
+                    f"{source.width}x{source.height} {cached_kb:.1f}KB{approx_mark} "
+                    f"({pct:.1f}%) [{fmt_label}]{reduction_text}"
                 )
                 return
 
@@ -3075,10 +3090,11 @@ class ResizeApp(customtkinter.CTk):
                         pass
                     self._size_estimation_timeout_id = None
                 approx_mark = " [概算]" if estimated else ""
+                reduction_text = self._format_preview_size_with_reduction(job.source_size_bytes, kb, approximate=estimated)
                 if kb > 0:
                     self.info_resized_var.set(
-                        f"{source.width} x {source.height}  {kb:.1f}KB{approx_mark} "
-                        f"({pct:.1f}%) [{fmt_label}]"
+                        f"{source.width}x{source.height} {kb:.1f}KB{approx_mark} "
+                        f"({pct:.1f}%) [{fmt_label}]{reduction_text}"
                     )
                 else:
                     self.info_resized_var.set(
