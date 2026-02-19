@@ -1279,7 +1279,7 @@ def bootstrap_run_batch_save(
                 break
             if hasattr(app, "_show_batch_processing_placeholders"):
                 try:
-                    app._show_batch_processing_placeholders(total_files, job.path.name)
+                    app._show_batch_processing_placeholders(total_files, job.path.name, i + 1)
                 except Exception:
                     logging.exception("Failed to update batch processing placeholders")
             try:
@@ -1350,17 +1350,26 @@ def bootstrap_run_batch_save_async(
     started_at = time.monotonic()
 
     def emit_progress(index: int, file_name: str) -> None:
-        progress_queue.put(("progress", index, file_name, stats.processed_count, stats.failed_count, time.monotonic() - started_at))
+        progress_queue.put(
+            (
+                "progress",
+                index,
+                file_name,
+                stats.processed_count,
+                stats.failed_count,
+                time.monotonic() - started_at,
+            )
+        )
 
-    def emit_processing(file_name: str) -> None:
-        progress_queue.put(("processing", file_name))
+    def emit_processing(file_name: str, current_index: int) -> None:
+        progress_queue.put(("processing", file_name, current_index))
 
     def worker() -> None:
         try:
             for i, job in enumerate(jobs_to_process):
                 if app._cancel_batch:
                     break
-                emit_processing(job.path.name)
+                emit_processing(job.path.name, i + 1)
                 try:
                     bootstrap_process_single_batch_job(
                         app,
@@ -1412,8 +1421,8 @@ def bootstrap_run_batch_save_async(
                 elif event_kind == "processing":
                     if hasattr(app, "_show_batch_processing_placeholders"):
                         try:
-                            _, current_file_name = event
-                            app._show_batch_processing_placeholders(total_files, current_file_name)
+                            _, current_file_name, current_index = event
+                            app._show_batch_processing_placeholders(total_files, current_file_name, current_index)
                         except Exception:
                             logging.exception("Failed to update batch processing placeholders")
                 elif event_kind == "done":

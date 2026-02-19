@@ -2285,13 +2285,20 @@ class ResizeApp(customtkinter.CTk):
         self._update_metadata_preview(None)
         self._refresh_status_indicators()
 
-    def _show_batch_processing_placeholders(self, total_files: int, current_file_name: Optional[str] = None) -> None:
+    def _show_batch_processing_placeholders(
+        self,
+        total_files: int,
+        current_file_name: Optional[str] = None,
+        current_index: Optional[int] = None,
+    ) -> None:
         self._batch_preview_placeholder_active = True
         placeholder_lines = ["一括保存中"]
         if total_files > 0:
             placeholder_lines.append(f"対象: {total_files}枚")
         if current_file_name:
             placeholder_lines.append(f"処理中: {current_file_name}")
+        if current_index is not None and total_files > 0:
+            placeholder_lines.append(f"進捗: {current_index}/{total_files}枚")
         placeholder_text = "\n".join(placeholder_lines)
 
         self.info_orig_var.set("処理中...")
