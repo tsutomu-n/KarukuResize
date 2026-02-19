@@ -68,6 +68,7 @@ def failure_center_text(
     failed_details: List[str],
     *,
     file_load_failure_preview_limit: int,
+    include_details: bool = True,
 ) -> str:
     if not failed_details:
         return "失敗はありません。"
@@ -75,6 +76,8 @@ def failure_center_text(
     lines: List[str] = ["原因別サマリー:"]
     for group_name, count in grouped.items():
         lines.append(f"- {group_name}: {count}件")
+    if not include_details:
+        return "\n".join(lines)
     lines.append("")
     lines.append("失敗一覧:")
     preview = failed_details[:file_load_failure_preview_limit]
@@ -134,9 +137,15 @@ def show_operation_result_dialog(
     if failed_count is None:
         failed_count = len(failed_details)
 
+    summary_text_for_box = failure_center_text(
+        failed_details,
+        file_load_failure_preview_limit=file_load_failure_preview_limit,
+        include_details=False,
+    )
     details_text = failure_center_text(
         failed_details,
         file_load_failure_preview_limit=file_load_failure_preview_limit,
+        include_details=True,
     )
 
     next_row = 2
@@ -155,7 +164,7 @@ def show_operation_result_dialog(
 
     details_box = customtkinter.CTkTextbox(
         dialog,
-        height=230,
+        height=120,
         corner_radius=8,
         border_width=1,
         border_color=colors["border_light"],
@@ -165,8 +174,10 @@ def show_operation_result_dialog(
         wrap="word",
     )
     details_box.grid(row=next_row, column=0, sticky="nsew", padx=16, pady=(0, 10))
-    details_box.insert("1.0", details_text)
+    details_box.insert("1.0", summary_text_for_box)
     details_box.configure(state="disabled")
+    details_box_height_collapsed = 120
+    details_box_height_expanded = 220
 
     next_row += 1
     status_label: Optional[customtkinter.CTkLabel] = None
@@ -198,6 +209,38 @@ def show_operation_result_dialog(
     retry_button: Optional[Any] = None
     copy_button: Optional[Any] = None
     close_button: Optional[Any] = None
+    details_expanded = False
+    details_toggle_button: Optional[Any] = None
+
+    if failed_details:
+        def _toggle_details() -> None:
+            nonlocal details_expanded
+            if details_toggle_button is None:
+                return
+            if details_expanded:
+                details_box.configure(state="normal")
+                details_box.delete("1.0", "end")
+                details_box.insert("1.0", summary_text_for_box)
+                details_box.configure(state="disabled", height=details_box_height_collapsed)
+                details_expanded = False
+                details_toggle_button.configure(text="失敗一覧を表示")
+            else:
+                details_box.configure(state="normal")
+                details_box.delete("1.0", "end")
+                details_box.insert("1.0", details_text)
+                details_box.configure(state="disabled", height=details_box_height_expanded)
+                details_expanded = True
+                details_toggle_button.configure(text="失敗一覧を隠す")
+
+        details_toggle_button = customtkinter.CTkButton(
+            button_row,
+            text="失敗一覧を表示",
+            width=140,
+            command=_toggle_details,
+            font=app.font_default,
+        )
+        app._style_secondary_button(details_toggle_button)
+        details_toggle_button.pack(side="left", padx=(0, 8))
 
     def _start_retry() -> None:
         nonlocal retry_in_progress
