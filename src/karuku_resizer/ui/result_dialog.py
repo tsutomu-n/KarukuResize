@@ -32,6 +32,11 @@ def build_failure_report_text(
     timestamp = datetime.now().isoformat(timespec="seconds")
     lines = [f"[{timestamp}] {title}", summary_text]
     if failed_details:
+        grouped = group_failure_details(failed_details)
+        lines.append("")
+        lines.append("原因別サマリー:")
+        for group_name, count in grouped.items():
+            lines.append(f"- {group_name}: {count}件")
         lines.append("")
         lines.append(f"失敗一覧 ({len(failed_details)}件):")
         lines.extend(f"- {detail}" for detail in failed_details)
@@ -164,6 +169,21 @@ def show_operation_result_dialog(
     details_box.configure(state="disabled")
 
     next_row += 1
+    status_label: Optional[customtkinter.CTkLabel] = None
+    has_retry_button = retry_callback is not None and failed_count is not None and failed_count > 0
+    if has_retry_button:
+        status_label = customtkinter.CTkLabel(
+            dialog,
+            text="",
+            font=app.font_small,
+            text_color=colors["text_secondary"],
+            justify="left",
+            anchor="w",
+            wraplength=720,
+        )
+        status_label.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 8))
+        next_row += 1
+
     button_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
     button_row.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 14))
     button_row.grid_columnconfigure(0, weight=1)
@@ -174,12 +194,43 @@ def show_operation_result_dialog(
             dialog.destroy()
         app._result_dialog = None
 
-    if retry_callback is not None and failed_count and failed_count > 0:
+    retry_in_progress = False
+    retry_button: Optional[Any] = None
+    copy_button: Optional[Any] = None
+    close_button: Optional[Any] = None
+
+    def _start_retry() -> None:
+        nonlocal retry_in_progress
+        if retry_button is None or retry_in_progress or retry_callback is None:
+            return
+        retry_in_progress = True
+        retry_button.configure(state="disabled", text="再試行中...")
+        if copy_button is not None:
+            copy_button.configure(state="disabled")
+        if status_label is not None:
+            status_label.configure(text="再試行を開始しました。処理完了までお待ちください。")
+        if close_button is not None:
+            close_button.configure(state="disabled")
+        try:
+            retry_callback()
+        except Exception:
+            retry_in_progress = False
+            logging.exception("Failed to start retry process")
+            if retry_button is not None:
+                retry_button.configure(state="normal", text="失敗のみ再試行")
+            if copy_button is not None:
+                copy_button.configure(state="normal")
+            if close_button is not None:
+                close_button.configure(state="normal")
+            if status_label is not None:
+                status_label.configure(text="再試行の開始に失敗しました。再度お試しください。")
+
+    if has_retry_button:
         retry_button = customtkinter.CTkButton(
             button_row,
             text="失敗のみ再試行",
             width=150,
-            command=lambda: (_close(), retry_callback()),
+            command=_start_retry,
             font=app.font_default,
         )
         app._style_primary_button(retry_button)
