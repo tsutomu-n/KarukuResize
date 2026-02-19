@@ -88,6 +88,7 @@ def show_operation_result_dialog(
     title: str,
     summary_text: str,
     failed_details: List[str],
+    failed_count: Optional[int] = None,
     retry_callback: Optional[Callable[[], None]] = None,
 ) -> None:
     if app._result_dialog is not None and app._result_dialog.winfo_exists():
@@ -125,10 +126,27 @@ def show_operation_result_dialog(
         wraplength=720,
     ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
 
+    if failed_count is None:
+        failed_count = len(failed_details)
+
     details_text = failure_center_text(
         failed_details,
         file_load_failure_preview_limit=file_load_failure_preview_limit,
     )
+
+    next_row = 2
+    if failed_count and failed_count > 0 and retry_callback is not None:
+        retry_hint = f"失敗ファイルが {failed_count} 件あります。再試行すると失敗したファイルのみ再実行できます。"
+        customtkinter.CTkLabel(
+            dialog,
+            text=f"⚠ {retry_hint}",
+            justify="left",
+            anchor="w",
+            font=app.font_default,
+            text_color=colors["warning"],
+            wraplength=720,
+        ).grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 8))
+        next_row += 1
 
     details_box = customtkinter.CTkTextbox(
         dialog,
@@ -141,12 +159,13 @@ def show_operation_result_dialog(
         font=app.font_small,
         wrap="word",
     )
-    details_box.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 10))
+    details_box.grid(row=next_row, column=0, sticky="nsew", padx=16, pady=(0, 10))
     details_box.insert("1.0", details_text)
     details_box.configure(state="disabled")
 
+    next_row += 1
     button_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
-    button_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 14))
+    button_row.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 14))
     button_row.grid_columnconfigure(0, weight=1)
 
     def _close() -> None:
@@ -155,21 +174,11 @@ def show_operation_result_dialog(
             dialog.destroy()
         app._result_dialog = None
 
-    close_button = customtkinter.CTkButton(
-        button_row,
-        text="閉じる",
-        width=110,
-        command=_close,
-        font=app.font_default,
-    )
-    app._style_secondary_button(close_button)
-    close_button.pack(side="right", padx=(8, 0))
-
-    if retry_callback is not None:
+    if retry_callback is not None and failed_count and failed_count > 0:
         retry_button = customtkinter.CTkButton(
             button_row,
             text="失敗のみ再試行",
-            width=140,
+            width=150,
             command=lambda: (_close(), retry_callback()),
             font=app.font_default,
         )
@@ -198,4 +207,14 @@ def show_operation_result_dialog(
             font=app.font_default,
         )
         app._style_secondary_button(copy_button)
-        copy_button.pack(side="right", padx=(0, 8))
+        copy_button.pack(side="right", padx=(8, 0))
+
+    close_button = customtkinter.CTkButton(
+        button_row,
+        text="閉じる",
+        width=110,
+        command=_close,
+        font=app.font_default,
+    )
+    app._style_secondary_button(close_button)
+    close_button.pack(side="right", padx=(0, 0))
