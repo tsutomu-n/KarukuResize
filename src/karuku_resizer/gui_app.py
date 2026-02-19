@@ -697,6 +697,7 @@ class ResizeApp(customtkinter.CTk):
             retention_days=DEFAULT_RETENTION_DAYS,
             max_files=DEFAULT_MAX_FILES,
         )
+        self._recent_settings_max = RECENT_SETTINGS_MAX
         self._run_summary_payload = self._create_initial_run_summary()
         self._run_summary_finalized = False
         self._topbar_density = "normal"
