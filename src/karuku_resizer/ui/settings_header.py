@@ -9,6 +9,8 @@ from typing import Any, Callable, Dict, List, Mapping, Tuple
 
 import customtkinter
 
+from karuku_resizer.processing_preset_store import merge_processing_values
+
 ColorMap = Dict[str, Tuple[str, str]]
 
 
@@ -270,7 +272,7 @@ def register_recent_setting_from_current(app: Any) -> None:
     values = app._capture_current_processing_values(require_valid_exif_datetime=False)
     if values is None:
         return
-    merged = app._merge_processing_values(values)
+    merged = merge_processing_values(values)
     fingerprint = app._recent_settings_fingerprint(merged)
     label = app._recent_setting_label_from_values(merged)
     now = datetime.now().isoformat(timespec="seconds")
