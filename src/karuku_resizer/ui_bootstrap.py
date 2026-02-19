@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import queue
+import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import customtkinter
@@ -1201,42 +1203,47 @@ def bootstrap_process_single_batch_job(
     batch_options: Any,
     stats: Any,
 ) -> None:
-    resized_img = app._resize_image_to_target(job.image, reference_target)
-    if not resized_img:
+    resized_img: Optional[Any] = None
+    try:
+        resized_img = app._resize_image_to_target(job.image, reference_target)
+        if not resized_img:
+            job.last_process_state = "failed"
+            job.last_error_detail = "リサイズ失敗"
+            stats.record_failure(job.path.name, "リサイズ失敗", file_path=job.path)
+            return
+
+        out_base = build_unique_batch_base_path(
+            output_dir=output_dir,
+            stem=job.path.stem,
+            output_format=reference_output_format,
+            destination_with_extension_func=destination_with_extension,
+            dry_run=batch_options.dry_run,
+        )
+        result, attempts = app._save_with_retry(
+            source_image=job.image,
+            resized_image=resized_img,
+            output_path=out_base,
+            options=batch_options,
+            allow_retry=app._is_pro_mode(),
+        )
+        if result.success:
+            job.last_process_state = "success"
+            job.last_error_detail = None
+            stats.record_success(result)
+            return
+
+        error_detail = result.error or "保存処理で不明なエラー"
+        if result.error_guidance:
+            error_detail = f"{error_detail}\n{result.error_guidance}"
+        if attempts > 1:
+            error_detail = f"{error_detail}（再試行後失敗）"
         job.last_process_state = "failed"
-        job.last_error_detail = "リサイズ失敗"
-        stats.record_failure(job.path.name, "リサイズ失敗", file_path=job.path)
-        return
-
-    out_base = build_unique_batch_base_path(
-        output_dir=output_dir,
-        stem=job.path.stem,
-        output_format=reference_output_format,
-        destination_with_extension_func=destination_with_extension,
-        dry_run=batch_options.dry_run,
-    )
-    result, attempts = app._save_with_retry(
-        source_image=job.image,
-        resized_image=resized_img,
-        output_path=out_base,
-        options=batch_options,
-        allow_retry=app._is_pro_mode(),
-    )
-    if result.success:
-        job.last_process_state = "success"
-        job.last_error_detail = None
-        stats.record_success(result)
-        return
-
-    error_detail = result.error or "保存処理で不明なエラー"
-    if result.error_guidance:
-        error_detail = f"{error_detail}\n{result.error_guidance}"
-    if attempts > 1:
-        error_detail = f"{error_detail}（再試行後失敗）"
-    job.last_process_state = "failed"
-    job.last_error_detail = error_detail
-    stats.record_failure(job.path.name, error_detail, file_path=job.path)
-    logging.error("Failed to save %s", result.output_path)
+        job.last_error_detail = error_detail
+        stats.record_failure(job.path.name, error_detail, file_path=job.path)
+        logging.error("Failed to save %s", result.output_path)
+    finally:
+        if resized_img is not None:
+            resized_img.close()
 
 
 def bootstrap_run_batch_save(
@@ -1295,6 +1302,100 @@ def bootstrap_run_batch_save(
         app._populate_listbox()
         app._refresh_status_indicators()
     return stats, total_files
+
+
+def bootstrap_run_batch_save_async(
+    app: Any,
+    *,
+    output_dir: Path,
+    reference_target: Tuple[int, int],
+    reference_output_format: SaveFormat,
+    batch_options: Any,
+    target_jobs: Optional[List[Any]] = None,
+    on_complete: Optional[Callable[[Any, int], None]] = None,
+) -> threading.Thread:
+    stats = app._create_batch_stats()
+    jobs_to_process = list(target_jobs) if target_jobs is not None else list(app.jobs)
+    total_files = len(jobs_to_process)
+    for job in jobs_to_process:
+        job.last_process_state = "unprocessed"
+        job.last_error_detail = None
+
+    progress_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue()
+    started_at = time.monotonic()
+
+    def emit_progress(index: int, file_name: str) -> None:
+        progress_queue.put(("progress", index, file_name, stats.processed_count, stats.failed_count, time.monotonic() - started_at))
+
+    def worker() -> None:
+        try:
+            for i, job in enumerate(jobs_to_process):
+                if app._cancel_batch:
+                    break
+                try:
+                    bootstrap_process_single_batch_job(
+                        app,
+                        job=job,
+                        output_dir=output_dir,
+                        reference_target=reference_target,
+                        reference_output_format=reference_output_format,
+                        batch_options=batch_options,
+                        stats=stats,
+                    )
+                except Exception as e:
+                    job.last_process_state = "failed"
+                    job.last_error_detail = f"例外 {e}"
+                    stats.record_failure(job.path.name, f"例外 {e}", file_path=job.path)
+                    logging.exception("Unexpected error during batch save: %s", job.path)
+                finally:
+                    done = i + 1
+                    emit_progress(done, job.path.name)
+        finally:
+            progress_queue.put(("done",))
+
+    app._batch_save_thread = threading.Thread(target=worker, daemon=True)
+    app._batch_save_thread.start()
+
+    def poll_queue() -> None:
+        try:
+            while True:
+                event = progress_queue.get_nowait()
+                event_kind = event[0]
+                if event_kind == "progress":
+                    _, done_count, current_file_name, processed_count, failed_count, elapsed_sec = event
+                    app.progress_bar.set(done_count / total_files if total_files > 0 else 1.0)
+                    app.status_var.set(
+                        build_batch_progress_status_text(
+                            done_count=done_count,
+                            total_count=total_files,
+                            processed_count=processed_count,
+                            failed_count=failed_count,
+                            elapsed_sec=elapsed_sec,
+                            current_file_name=current_file_name,
+                            mode_text=build_batch_run_mode_text(dry_run=batch_options.dry_run),
+                        )
+                    )
+                    app.update_idletasks()
+                elif event_kind == "done":
+                    app._batch_save_thread = None
+                    app._end_operation_scope()
+                    app._populate_listbox()
+                    app._refresh_status_indicators()
+                    if on_complete is not None:
+                        on_complete(stats, total_files)
+                    return
+        except queue.Empty:
+            pass
+        if app._batch_save_thread is not None and app._batch_save_thread.is_alive():
+            app.after(50, poll_queue)
+        else:
+            progress_queue.put(("done",))
+            poll_queue()
+
+    bootstrap_prepare_batch_ui(app)
+    app.after(0, poll_queue)
+
+    return app._batch_save_thread
 
 
 def bootstrap_record_batch_run_summary(
@@ -1396,81 +1497,89 @@ def bootstrap_batch_save(app: Any) -> None:
     ):
         return
 
-    stats, total_files = bootstrap_run_batch_save(
+    def _handle_batch_result(stats: Any, total_files: int) -> None:
+        bootstrap_record_batch_run_summary(
+            app,
+            stats=stats,
+            output_dir=output_dir,
+            selected_count=total_files,
+            reference_job=reference_job,
+            reference_target=reference_target,
+            reference_format_label=reference_format_label,
+            batch_options=batch_options,
+        )
+        msg = build_batch_completion_message(
+            total_files=total_files,
+            processed_count=stats.processed_count,
+            failed_count=stats.failed_count,
+            exif_applied_count=stats.exif_applied_count,
+            exif_fallback_count=stats.exif_fallback_count,
+            gps_removed_count=stats.gps_removed_count,
+            reference_job_name=reference_job.path.name,
+            reference_target=reference_target,
+            reference_format_label=reference_format_label,
+            dry_run=batch_options.dry_run,
+            batch_cancelled=app._cancel_batch,
+            dry_run_count=stats.dry_run_count,
+        )
+        if stats.processed_count > 0:
+            app._register_recent_setting_from_current()
+        app.status_var.set(msg)
+        retry_callback: Optional[Callable[[], None]] = None
+        if stats.failed_paths and not app._cancel_batch:
+            failed_path_set = {path for path in stats.failed_paths}
+
+            def _retry_failed_batch_only() -> None:
+                retry_jobs = [job for job in app.jobs if job.path in failed_path_set]
+                if not retry_jobs:
+                    messagebox.showinfo("再試行", "再試行対象の失敗ファイルが見つかりません。")
+                    return
+
+                def _handle_retry_result(retry_stats: Any, retry_total_files: int) -> None:
+                    retry_msg = (
+                        f"失敗再試行完了。成功: {retry_stats.processed_count}件 / "
+                        f"失敗: {retry_stats.failed_count}件 / 対象: {retry_total_files}件"
+                    )
+                    app.status_var.set(retry_msg)
+                    show_operation_result_dialog(
+                        app,
+                        colors=bootstrap_resolve_app_colors(app),
+                        file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
+                        title="失敗再試行結果",
+                        summary_text=retry_msg,
+                        failed_details=retry_stats.failed_details,
+                        retry_callback=None,
+                    )
+
+                bootstrap_run_batch_save_async(
+                    app,
+                    output_dir=output_dir,
+                    reference_target=reference_target,
+                    reference_output_format=reference_output_format,
+                    batch_options=batch_options,
+                    target_jobs=retry_jobs,
+                    on_complete=_handle_retry_result,
+                )
+
+            retry_callback = _retry_failed_batch_only
+
+        show_operation_result_dialog(
+            app,
+            colors=bootstrap_resolve_app_colors(app),
+            file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
+            title="一括処理結果",
+            summary_text=msg,
+            failed_details=stats.failed_details,
+            retry_callback=retry_callback,
+        )
+
+    bootstrap_run_batch_save_async(
         app,
         output_dir=output_dir,
         reference_target=reference_target,
         reference_output_format=reference_output_format,
         batch_options=batch_options,
-    )
-    bootstrap_record_batch_run_summary(
-        app,
-        stats=stats,
-        output_dir=output_dir,
-        selected_count=total_files,
-        reference_job=reference_job,
-        reference_target=reference_target,
-        reference_format_label=reference_format_label,
-        batch_options=batch_options,
-    )
-    msg = build_batch_completion_message(
-        total_files=total_files,
-        processed_count=stats.processed_count,
-        failed_count=stats.failed_count,
-        exif_applied_count=stats.exif_applied_count,
-        exif_fallback_count=stats.exif_fallback_count,
-        gps_removed_count=stats.gps_removed_count,
-        reference_job_name=reference_job.path.name,
-        reference_target=reference_target,
-        reference_format_label=reference_format_label,
-        dry_run=batch_options.dry_run,
-        batch_cancelled=app._cancel_batch,
-        dry_run_count=stats.dry_run_count,
-    )
-    if stats.processed_count > 0:
-        app._register_recent_setting_from_current()
-    app.status_var.set(msg)
-    retry_callback: Optional[Callable[[], None]] = None
-    if stats.failed_paths and not app._cancel_batch:
-        failed_path_set = {path for path in stats.failed_paths}
-
-        def _retry_failed_batch_only() -> None:
-            retry_jobs = [job for job in app.jobs if job.path in failed_path_set]
-            if not retry_jobs:
-                messagebox.showinfo("再試行", "再試行対象の失敗ファイルが見つかりません。")
-                return
-            retry_stats, retry_total_files = bootstrap_run_batch_save(
-                app,
-                output_dir=output_dir,
-                reference_target=reference_target,
-                reference_output_format=reference_output_format,
-                batch_options=batch_options,
-                target_jobs=retry_jobs,
-            )
-            retry_msg = (
-                f"失敗再試行完了。成功: {retry_stats.processed_count}件 / "
-                f"失敗: {retry_stats.failed_count}件 / 対象: {retry_total_files}件"
-            )
-            app.status_var.set(retry_msg)
-            show_operation_result_dialog(
-                app,
-                colors=bootstrap_resolve_app_colors(app),
-                file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
-                title="失敗再試行結果",
-                summary_text=retry_msg,
-                failed_details=retry_stats.failed_details,
-                retry_callback=None,
-            )
-
-        retry_callback = _retry_failed_batch_only
-    show_operation_result_dialog(
-        app,
-        colors=bootstrap_resolve_app_colors(app),
-        file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
-        title="一括処理結果",
-        summary_text=msg,
-        failed_details=stats.failed_details,
-        retry_callback=retry_callback,
+        on_complete=_handle_batch_result,
     )
 
 
