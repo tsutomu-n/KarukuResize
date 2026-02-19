@@ -468,9 +468,38 @@ def build_encoder_save_kwargs(
     webp_method: int = 6,
     webp_lossless: bool = False,
     avif_speed: int = 6,
+    *,
+    for_preview: bool = False,
 ) -> Dict[str, Any]:
     """出力形式に応じたエンコーダ設定を返す。"""
     normalized_quality = normalize_quality(quality)
+    if for_preview:
+        if output_format == "jpeg":
+            return {
+                "format": "JPEG",
+                "quality": min(normalized_quality, 85),
+                "optimize": False,
+                "progressive": False,
+            }
+        if output_format == "png":
+            return {
+                "format": "PNG",
+                "optimize": False,
+                "compress_level": 1,
+            }
+        if output_format == "webp":
+            return {
+                "format": "WEBP",
+                "quality": normalized_quality,
+                "method": normalize_webp_method(webp_method),
+                "lossless": bool(webp_lossless),
+            }
+        # avif
+        return {
+            "format": "AVIF",
+            "quality": normalized_quality,
+            "speed": normalize_avif_speed(avif_speed),
+        }
 
     if output_format == "jpeg":
         return {

@@ -17,6 +17,7 @@ import logging
 import os
 import platform
 import queue
+import math
 import re
 import subprocess
 import sys
@@ -246,6 +247,9 @@ MIN_ZOOM = 0.2
 MAX_ZOOM = 10.0
 RESIZE_PREVIEW_DEBOUNCE_MS = 80
 ZOOM_PREVIEW_DEBOUNCE_MS = 50
+PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS = 800_000
+PREVIEW_ESTIMATION_FAST_QUALITY = 75
+PREVIEW_ESTIMATION_TIMEOUT_MS = 1500
 QUALITY_VALUES = [str(v) for v in range(5, 101, 5)]
 WEBP_METHOD_VALUES = [str(v) for v in range(0, 7)]
 AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
@@ -404,6 +408,9 @@ class ImageJob:
     image: Image.Image
     resized: Optional[Image.Image] = None  # cache of last processed result
     preview_target_size: Optional[Tuple[int, int]] = None  # size used for resized cache
+    preview_size_cache: Dict[Tuple[Any, ...], Tuple[float, bool]] = field(
+        default_factory=dict,
+    )
     source_size_bytes: int = 0
     metadata_loaded: bool = False
     metadata_text: str = ""
@@ -715,6 +722,8 @@ class ResizeApp(customtkinter.CTk):
         self._preview_thread: Optional[threading.Thread] = None
         self._preview_version = 0
         self._size_estimation_version = 0
+        self._size_estimation_inflight_key: Optional[Tuple[Any, ...]] = None
+        self._size_estimation_timeout_id: Optional[str] = None
         self.appearance_mode_var = customtkinter.StringVar(
             value=APPEARANCE_ID_TO_LABEL.get(
                 self._normalize_appearance_mode(self.settings.get("appearance_mode", "system")),
@@ -2930,6 +2939,7 @@ class ResizeApp(customtkinter.CTk):
             self.info_resized_var.set(f"{size[0]} x {size[1]}  計算中... ({pct:.1f}%) [{fmt_label}]")
             self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
             self._start_preview_size_estimation(
+                job=job,
                 source=job.resized,
                 output_format=output_format,
                 pct=pct,
@@ -2943,36 +2953,110 @@ class ResizeApp(customtkinter.CTk):
     def _start_preview_size_estimation(
         self,
         *,
+        job: ImageJob,
         source: Image.Image,
         output_format: SaveFormat,
         pct: float,
         fmt_label: str,
     ) -> None:
         quality, webp_method, avif_speed, webp_lossless = self._snapshot_encoder_settings()
+        quality_for_preview = min(quality, PREVIEW_ESTIMATION_FAST_QUALITY)
+        cache_key = (
+            source.width,
+            source.height,
+            source.mode,
+            output_format,
+            quality_for_preview,
+            webp_method,
+            avif_speed,
+            bool(webp_lossless),
+        )
+        cached_entry = job.preview_size_cache.get(cache_key)
+        if cached_entry is not None:
+            cached_kb, cached_is_approximate = cached_entry
+            if cached_kb > 0:
+                approx_mark = " [概算]" if cached_is_approximate else ""
+                self.info_resized_var.set(
+                    f"{source.width} x {source.height}  {cached_kb:.1f}KB{approx_mark} "
+                    f"({pct:.1f}%) [{fmt_label}]"
+                )
+                return
 
         self._size_estimation_version += 1
         version = self._size_estimation_version
+        request_key = (id(job), cache_key)
+        if self._size_estimation_inflight_key == request_key:
+            return
+        self._size_estimation_inflight_key = request_key
+        if self._size_estimation_timeout_id is not None:
+            try:
+                self.after_cancel(self._size_estimation_timeout_id)
+            except Exception:
+                pass
+            self._size_estimation_timeout_id = None
         self.info_resized_var.set(f"{source.width} x {source.height}  計算中... ({pct:.1f}%) [{fmt_label}]")
+
+        def mark_timeout() -> None:
+            if self._size_estimation_version != version:
+                return
+            if self._size_estimation_inflight_key != request_key:
+                return
+            if self.current_index is None or self.current_index >= len(self.jobs):
+                return
+            self.info_resized_var.set(
+                f"{source.width} x {source.height}  計算時間が長いため省略表示 ({pct:.1f}%) [{fmt_label}]"
+            )
+            self._size_estimation_inflight_key = None
+            self._size_estimation_timeout_id = None
+
+        self._size_estimation_timeout_id = self.after(
+            PREVIEW_ESTIMATION_TIMEOUT_MS,
+            mark_timeout,
+        )
 
         def worker() -> None:
             save_img = source
+            estimated = False
+            sample_scale = 1.0
+            source_pixels = source.width * source.height
+            if source_pixels > PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS:
+                estimated = True
+                sample_scale = math.sqrt(PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS / source_pixels)
+                sample_size = (
+                    max(1, int(source.width * sample_scale)),
+                    max(1, int(source.height * sample_scale)),
+                )
+                save_img = source.resize(sample_size, Image.Resampling.LANCZOS)
             if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
                 save_img = save_img.convert("RGB")
             preview_kwargs = build_encoder_save_kwargs(
                 output_format=output_format,
-                quality=quality,
+                quality=quality_for_preview,
                 webp_method=webp_method,
                 webp_lossless=webp_lossless,
                 avif_speed=avif_speed,
+                for_preview=True,
             )
             try:
                 with io.BytesIO() as bio:
                     save_img.save(bio, **cast(Dict[str, Any], preview_kwargs))
                     kb = len(bio.getvalue()) / 1024
+                if estimated and sample_scale > 0:
+                    sample_area = sample_scale * sample_scale
+                    if sample_area > 0:
+                        kb = kb / sample_area
             except Exception:
                 kb = 0.0
 
             if version != self._size_estimation_version:
+                if self._size_estimation_inflight_key == request_key:
+                    self._size_estimation_inflight_key = None
+                if self._size_estimation_timeout_id is not None:
+                    try:
+                        self.after_cancel(self._size_estimation_timeout_id)
+                    except Exception:
+                        pass
+                    self._size_estimation_timeout_id = None
                 return
 
             def apply() -> None:
@@ -2980,9 +3064,26 @@ class ResizeApp(customtkinter.CTk):
                     return
                 if self.current_index is None or self.current_index >= len(self.jobs):
                     return
-                self.info_resized_var.set(
-                    f"{source.width} x {source.height}  {kb:.1f}KB ({pct:.1f}%) [{fmt_label}]"
-                )
+                if kb > 0:
+                    job.preview_size_cache[cache_key] = (kb, estimated)
+                if self._size_estimation_inflight_key == request_key:
+                    self._size_estimation_inflight_key = None
+                if self._size_estimation_timeout_id is not None:
+                    try:
+                        self.after_cancel(self._size_estimation_timeout_id)
+                    except Exception:
+                        pass
+                    self._size_estimation_timeout_id = None
+                approx_mark = " [概算]" if estimated else ""
+                if kb > 0:
+                    self.info_resized_var.set(
+                        f"{source.width} x {source.height}  {kb:.1f}KB{approx_mark} "
+                        f"({pct:.1f}%) [{fmt_label}]"
+                    )
+                else:
+                    self.info_resized_var.set(
+                        f"{source.width} x {source.height}  変換情報を取得できませんでした ({pct:.1f}%) [{fmt_label}]"
+                    )
 
             self.after(0, apply)
 
