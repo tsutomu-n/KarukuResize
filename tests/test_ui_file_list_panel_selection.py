@@ -19,6 +19,7 @@ def _dummy_refs() -> FileListRefs:
         file_list_frame=object(),  # type: ignore[arg-type]
         file_filter_var=object(),  # type: ignore[arg-type]
         file_filter_segment=object(),  # type: ignore[arg-type]
+        clear_loaded_button=_FakeButton(),  # type: ignore[arg-type]
         file_buttons=[_FakeButton(), _FakeButton()],  # type: ignore[list-item]
         empty_state_label=object(),  # type: ignore[arg-type]
         font_small=None,
