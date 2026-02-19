@@ -2405,6 +2405,9 @@ class ResizeApp(customtkinter.CTk):
             stats=stats,
         )
 
+    def _create_batch_stats(self) -> BatchSaveStats:
+        return BatchSaveStats()
+
     def _run_batch_save(
         self,
         output_dir: Path,
