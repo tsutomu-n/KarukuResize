@@ -256,7 +256,7 @@ def show_operation_result_dialog(
         if copy_button is not None:
             copy_button.configure(state="disabled")
         if details_toggle_button is not None:
-            details_toggle_button.configure(state="disabled")
+            details_toggle_button.configure(state="disabled", text="停止中")
         if status_label is not None:
             status_label.configure(text="再試行を開始しました。処理完了までお待ちください。")
         if close_button is not None:
@@ -271,7 +271,7 @@ def show_operation_result_dialog(
             if copy_button is not None:
                 copy_button.configure(state="normal")
             if details_toggle_button is not None:
-                details_toggle_button.configure(state="normal")
+                details_toggle_button.configure(state="normal", text="失敗一覧を表示")
             if close_button is not None:
                 close_button.configure(state="normal")
             if status_label is not None:
