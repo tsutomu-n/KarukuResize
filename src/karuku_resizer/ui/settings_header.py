@@ -12,7 +12,7 @@ import customtkinter
 from karuku_resizer.processing_preset_store import merge_processing_values
 
 ColorMap = Dict[str, Tuple[str, str]]
-DEFAULT_RECENT_SETTINGS_MAX = 6
+DEFAULT_RECENT_SETTINGS_MAX = 1
 
 
 def _safe_recent_settings_max(app: Any) -> int:
