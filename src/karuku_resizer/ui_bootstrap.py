@@ -1231,7 +1231,6 @@ def bootstrap_save_current(app: Any) -> None:
                 msg = f"✅ {result.output_path.name} を保存しました"
             if attempts > 1:
                 msg = f"{msg}（再試行後に成功）"
-            detail_line = build_exif_status_text(result)
             if (
                 app.current_index is not None
                 and app.current_index < len(app.jobs)
@@ -1239,7 +1238,7 @@ def bootstrap_save_current(app: Any) -> None:
                 app._draw_previews(app.jobs[app.current_index])
             app._register_recent_setting_from_current()
             app._populate_listbox()
-            status_text = f"{msg} / {detail_line}"
+            status_text = msg
             app.status_var.set(status_text)
             previous_after_id = getattr(app, "_status_flash_after_id", None)
             if previous_after_id is not None:

@@ -131,11 +131,11 @@ def build_file_list_panel(
 
 def file_button_label(job: Any) -> str:
     """Build a human-readable list label for a job."""
-    base_name = truncate_middle(getattr(job.path, "name", str(job)), max_length=34)
+    base_name = truncate_middle(getattr(job.path, "name", str(job)), max_length=40)
     if getattr(job, "last_process_state", "") == "failed":
-        return f"［失敗］ {base_name}"
+        return f"! {base_name}"
     if getattr(job, "last_process_state", "") == "success":
-        return f"［完了］ {base_name}"
+        return f"✓ {base_name}"
     return base_name
 
 
