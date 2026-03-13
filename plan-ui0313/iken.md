@@ -42,8 +42,8 @@
 
 #### ダイアログ改善
 - [-] 設定ダイアログを `CTkTabview` 等でカテゴリ分割
-  - 現状: `ui_settings_dialog.py` を「基本」「出力」「高度な設定」の見出しブロックへ再編済み。
-  - 未了: `CTkTabview` 化までは未実装。
+  - 現状: `ui_settings_dialog.py` を `CTkTabview` ベースの「基本」「出力」「高度な設定」3タブへ再編済み。
+  - 未了: 実機でのタブ切り替え体験と高さバランスの最終確認のみ。
 - [x] 設定ダイアログの「ヘルプ/管理」配置を再構成
 - [ ] プリセット管理ダイアログの情報表示を `key: value` グリッドへ再構成
   - 現状: `ui/preset_dialog.py` で、`種別 / ID / サイズ / 形式 / 品質 / EXIF / GPS削除 / ドライラン / 更新日時` を `key: value` の整列表現へ変更済み。
@@ -51,7 +51,8 @@
 - [ ] 読込結果/結果ダイアログの情報設計見直し
 
 #### アーキテクチャ提案
-- [ ] `customtkinter` のカスタムテーマ JSON へ配色ルールを集約
+- [x] `customtkinter` のカスタムテーマ JSON へ配色ルールを集約
+  - 現状: `src/karuku_resizer/karuku_metallic_theme.json` を追加し、`gui_app.py` 起動時の `set_default_color_theme("blue")` をテーマファイル読込へ置換済み。
 - [ ] `ui_text_presenter.py` で UI 用サマリとログ用詳細を分離
 - [ ] `ui_main_panel.py` を 3 ペイン化またはタブ化前提で再設計
 
@@ -63,9 +64,9 @@
 
 #### 進め方メモ
 - 次の高ROI候補:
-  1. `CTkTabview` を使った設定ダイアログのタブ化
-  2. `customtkinter` テーマ JSON への配色ルール集約
-  3. 読込結果/結果ダイアログの情報設計見直し
+  1. 読込結果/結果ダイアログの情報設計見直し
+  2. 実機確認後の余白・高さバランス微調整
+  3. `ui_text_presenter.py` の UI/ログ責務分離
 
 
 

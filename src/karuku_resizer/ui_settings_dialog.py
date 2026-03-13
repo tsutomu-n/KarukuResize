@@ -141,16 +141,62 @@ def open_settings_dialog(
     dialog.grid_rowconfigure(1, weight=0)
     dialog.grid_columnconfigure(0, weight=1)
 
-    settings_content = customtkinter.CTkScrollableFrame(dialog, fg_color="transparent")
-    settings_content.grid(
+    def _scale_px(value: int) -> int:
+        return callbacks.scale_px(value)
+
+    def _scale_pad(value: Any) -> Any:
+        if isinstance(value, (list, tuple)):
+            return tuple(_scale_px(int(v)) for v in value)
+        return _scale_px(int(value))
+
+    tabview = customtkinter.CTkTabview(
+        dialog,
+        fg_color=callbacks.colors["bg_secondary"],
+        border_color=callbacks.colors["border_light"],
+        segmented_button_fg_color=callbacks.colors["bg_tertiary"],
+        segmented_button_selected_color=callbacks.colors["primary"],
+        segmented_button_selected_hover_color=callbacks.colors["hover"],
+        segmented_button_unselected_color=callbacks.colors["bg_primary"],
+        segmented_button_unselected_hover_color=callbacks.colors["accent_soft"],
+        text_color=callbacks.colors["text_primary"],
+    )
+    tabview.grid(
         row=0,
         column=0,
         padx=callbacks.scale_px(8),
         pady=(0, 0),
         sticky="nsew",
     )
-    settings_content.grid_columnconfigure(0, weight=0)
-    settings_content.grid_columnconfigure(1, weight=1)
+    content_frames: dict[str, customtkinter.CTkScrollableFrame] = {}
+    for tab_name, description in (
+        ("基本", "見た目と日常操作に関わる設定です。"),
+        ("出力", "起動時の既定出力や保存先を決めます。"),
+        ("高度な設定", "Pro向けの既定動作と補助メニューです。"),
+    ):
+        tabview.add(tab_name)
+        tab_frame = tabview.tab(tab_name)
+        tab_frame.grid_rowconfigure(0, weight=1)
+        tab_frame.grid_columnconfigure(0, weight=1)
+        content = customtkinter.CTkScrollableFrame(tab_frame, fg_color="transparent")
+        content.grid(row=0, column=0, sticky="nsew", padx=callbacks.scale_px(6), pady=callbacks.scale_px(6))
+        content.grid_columnconfigure(0, weight=0)
+        content.grid_columnconfigure(1, weight=1)
+        content_frames[tab_name] = content
+        customtkinter.CTkLabel(
+            content,
+            text=description,
+            font=callbacks.font_small,
+            text_color=callbacks.colors["text_tertiary"],
+            justify="left",
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=2, padx=_scale_pad((20, 20)), pady=_scale_pad((8, 10)), sticky="ew")
+
+    basic_content = content_frames["基本"]
+    output_content = content_frames["出力"]
+    advanced_content = content_frames["高度な設定"]
+    basic_row = 1
+    output_row = 1
+    advanced_row = 1
 
     ui_mode_var = customtkinter.StringVar(value=state.ui_mode_label)
     appearance_var = customtkinter.StringVar(value=state.appearance_label)
@@ -172,67 +218,6 @@ def open_settings_dialog(
     )
     show_tooltips_var = customtkinter.BooleanVar(value=state.show_tooltips)
     default_output_dir_var = customtkinter.StringVar(value=state.default_output_dir)
-
-    def _scale_px(value: int) -> int:
-        return callbacks.scale_px(value)
-
-    def _scale_pad(value: Any) -> Any:
-        if isinstance(value, (list, tuple)):
-            return tuple(_scale_px(int(v)) for v in value)
-        return _scale_px(int(value))
-
-    section_title_font = customtkinter.CTkFont(
-        size=max(13, round(13 * mappings.ui_scale_factor)),
-        weight="bold",
-    )
-
-    row = 0
-
-    def _add_section(title: str, description: str, *, top_padding: int = 18) -> None:
-        nonlocal row
-        customtkinter.CTkLabel(
-            settings_content,
-            text=title,
-            font=section_title_font,
-            text_color=callbacks.colors["text_primary"],
-        ).grid(
-            row=row,
-            column=0,
-            columnspan=2,
-            padx=_scale_pad((20, 20)),
-            pady=_scale_pad((top_padding, 2)),
-            sticky="w",
-        )
-        row += 1
-        customtkinter.CTkLabel(
-            settings_content,
-            text=description,
-            font=callbacks.font_small,
-            text_color=callbacks.colors["text_tertiary"],
-            justify="left",
-            anchor="w",
-        ).grid(
-            row=row,
-            column=0,
-            columnspan=2,
-            padx=_scale_pad((20, 20)),
-            pady=_scale_pad((0, 6)),
-            sticky="ew",
-        )
-        row += 1
-        customtkinter.CTkFrame(
-            settings_content,
-            height=1,
-            fg_color=callbacks.colors["border_light"],
-        ).grid(
-            row=row,
-            column=0,
-            columnspan=2,
-            padx=_scale_pad((20, 20)),
-            pady=_scale_pad((0, 10)),
-            sticky="ew",
-        )
-        row += 1
 
     def _close_dialog() -> None:
         if dialog.winfo_exists():
@@ -350,19 +335,14 @@ def open_settings_dialog(
         callbacks.on_status_set("設定を保存しました。")
         _close_dialog()
 
-    _add_section(
-        "基本",
-        "見た目と日常操作に関わる設定です。",
-    )
-
     customtkinter.CTkLabel(
-        settings_content,
+        basic_content,
         text="Proモード",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=basic_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     ui_mode_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        basic_content,
         values=list(mappings.ui_mode_label_to_id.keys()),
         variable=ui_mode_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -372,18 +352,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    ui_mode_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    ui_mode_menu.grid(row=basic_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(ui_mode_menu, "Pro向け機能のオン/オフを切り替えます。")
 
-    row += 1
+    basic_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        basic_content,
         text="カラーテーマ",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=basic_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     appearance_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        basic_content,
         values=list(mappings.appearance_label_to_id.keys()),
         variable=appearance_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -393,18 +373,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    appearance_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    appearance_menu.grid(row=basic_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(appearance_menu, "OSに従う/ライト/ダークを選択します。")
 
-    row += 1
+    basic_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        basic_content,
         text="文字サイズ",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=basic_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     ui_scale_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        basic_content,
         values=list(mappings.ui_scale_label_to_id.keys()),
         variable=ui_scale_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -414,18 +394,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    ui_scale_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    ui_scale_menu.grid(row=basic_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(ui_scale_menu, "通常 / 大きめ の文字サイズを切り替えます。")
 
-    row += 1
+    basic_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        basic_content,
         text="プレビュー拡大率",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=basic_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     zoom_pref_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        basic_content,
         values=list(mappings.zoom_preference_values),
         variable=zoom_pref_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -435,18 +415,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    zoom_pref_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    zoom_pref_menu.grid(row=basic_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(zoom_pref_menu, "プレビューの既定拡大率を設定します。")
 
-    row += 1
+    basic_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        basic_content,
         text="ホバー説明",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=basic_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     show_tooltips_check = customtkinter.CTkCheckBox(
-        settings_content,
+        basic_content,
         text="有効にする",
         variable=show_tooltips_var,
         font=callbacks.font_default,
@@ -455,24 +435,17 @@ def open_settings_dialog(
         border_color=callbacks.colors["border_medium"],
         text_color=callbacks.colors["text_primary"],
     )
-    show_tooltips_check.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
+    show_tooltips_check.grid(row=basic_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
     callbacks.register_tooltip(show_tooltips_check, "ホバー説明の表示を切り替えます。")
 
-    row += 1
-    _add_section(
-        "出力",
-        "起動時の既定出力や保存先を決めます。",
-        top_padding=12,
-    )
-
     customtkinter.CTkLabel(
-        settings_content,
+        output_content,
         text="既定の出力形式",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=output_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     output_format_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        output_content,
         values=list(mappings.build_output_format_labels()),
         variable=output_format_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -482,18 +455,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    output_format_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    output_format_menu.grid(row=output_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(output_format_menu, "起動時の既定出力形式を選択します。")
 
-    row += 1
+    output_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        output_content,
         text="既定の品質",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=output_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     quality_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        output_content,
         values=list(mappings.quality_values),
         variable=quality_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -503,18 +476,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    quality_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    quality_menu.grid(row=output_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(quality_menu, "起動時の既定品質を選択します。")
 
-    row += 1
+    output_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        output_content,
         text="既定プリセット",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=output_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     default_preset_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        output_content,
         values=list(mappings.preset_labels_with_none()),
         variable=default_preset_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -524,18 +497,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    default_preset_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    default_preset_menu.grid(row=output_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(default_preset_menu, "起動時に使うプリセットを選択します。")
 
-    row += 1
+    output_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        output_content,
         text="既定の保存先フォルダ",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-    default_output_frame = customtkinter.CTkFrame(settings_content, fg_color="transparent")
-    default_output_frame.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    ).grid(row=output_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    default_output_frame = customtkinter.CTkFrame(output_content, fg_color="transparent")
+    default_output_frame.grid(row=output_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     default_output_frame.grid_columnconfigure(0, weight=1)
     default_output_entry = customtkinter.CTkEntry(
         default_output_frame,
@@ -557,21 +530,14 @@ def open_settings_dialog(
     browse_button.grid(row=0, column=1, padx=_scale_pad((8, 0)))
     callbacks.register_tooltip(browse_button, "フォルダ選択を開きます。")
 
-    row += 1
-    _add_section(
-        "高度な設定",
-        "Pro向けの既定動作と補助メニューです。",
-        top_padding=12,
-    )
-
     customtkinter.CTkLabel(
-        settings_content,
+        advanced_content,
         text="プロモード入力方式",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    ).grid(row=advanced_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     pro_input_menu = customtkinter.CTkOptionMenu(
-        settings_content,
+        advanced_content,
         values=list(mappings.pro_input_label_to_id.keys()),
         variable=pro_input_var,
         fg_color=callbacks.colors["bg_tertiary"],
@@ -581,18 +547,18 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    pro_input_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    pro_input_menu.grid(row=advanced_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(pro_input_menu, "プロモードの既定入力方式を選択します。")
 
-    row += 1
+    advanced_row += 1
     customtkinter.CTkLabel(
-        settings_content,
+        advanced_content,
         text="ヘルプ/管理",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-    support_actions = customtkinter.CTkFrame(settings_content, fg_color="transparent")
-    support_actions.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
+    ).grid(row=advanced_row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    support_actions = customtkinter.CTkFrame(advanced_content, fg_color="transparent")
+    support_actions.grid(row=advanced_row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
     help_in_settings_button = customtkinter.CTkButton(
         support_actions,
         text="使い方を開く",
