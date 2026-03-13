@@ -11,7 +11,7 @@
 - [x] Phase 1: プレビュー領域の「対称性」を回復する
 - [-] Phase 2: 設定の「近接化」とノイズの「削除」
 - [x] Phase 3: アクションボタンの「視覚的階層（色）」の再定義
-- [ ] Phase 4: 致命的な物理制約（スケーリング死）の解除
+- [x] Phase 4: 致命的な物理制約（スケーリング死）の解除
 
 #### 高優先の提案
 - [x] プレビュー下の「メタデータ(プロ)」を撤去し、左カラム側へ移設
@@ -55,15 +55,16 @@
 - [ ] `ui_main_panel.py` を 3 ペイン化またはタブ化前提で再設計
 
 #### 物理制約・スケーリング
-- [ ] 最小横幅の正規化を `1024` または `960` へ引き下げる
-  - 注記: 現在の実装は逆方向で、`gui_app.py` / `gui_settings_store.py` の既定値と最小幅を `1440` に引き上げている。
-- [ ] `TOPBAR_DENSITY_COMPACT_MAX_WIDTH` と compact モードの再設計
+- [x] 最小横幅の正規化を `1024` または `960` へ引き下げる
+  - 現状: `gui_app.py` の `MIN_WINDOW_WIDTH` を `1120`、`DEFAULT_WINDOW_GEOMETRY` を `1280x860` に見直し、`gui_settings_store.py` の既定 `window_geometry` も追従済み。
+- [x] `TOPBAR_DENSITY_COMPACT_MAX_WIDTH` と compact モードの再設計
+  - 現状: `ui_display_policy.py` の compact 閾値を `1400` に引き上げ、compact 時の `画像/フォルダ` / `一括保存` ラベル短縮も導入済み。
 
 #### 進め方メモ
 - 次の高ROI候補:
-  1. Phase 4 の横幅/compact モード再設計
-  2. `customtkinter` テーマ JSON への配色ルール集約
-  3. `CTkTabview` を使った設定ダイアログのタブ化
+  1. `customtkinter` テーマ JSON への配色ルール集約
+  2. `CTkTabview` を使った設定ダイアログのタブ化
+  3. プリセット管理ダイアログの `key: value` グリッド化
 
 
 

@@ -55,9 +55,9 @@
 
 ## Task 4: 横幅/compact モード再設計
 
-- [ ] `MIN_WINDOW_WIDTH` と `window_geometry` の既定値を再検討する
-- [ ] `TOPBAR_DENSITY_COMPACT_MAX_WIDTH` の閾値を見直す
-- [ ] 狭い幅でラベル省略、広い幅で完全表示の方針を明文化する
+- [x] `MIN_WINDOW_WIDTH` と `window_geometry` の既定値を再検討する
+- [x] `TOPBAR_DENSITY_COMPACT_MAX_WIDTH` の閾値を見直す
+- [x] 狭い幅でラベル省略、広い幅で完全表示の方針を明文化する
 
 対象ファイル:
 - `src/karuku_resizer/gui_app.py`

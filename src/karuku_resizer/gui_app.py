@@ -214,8 +214,8 @@ except ImportError:  # Pillow<10 fallback
     Resampling = _Resampling()  # type: ignore
 
 DEFAULT_PREVIEW = 480
-DEFAULT_WINDOW_GEOMETRY = "1440x860"
-MIN_WINDOW_WIDTH = 1440
+DEFAULT_WINDOW_GEOMETRY = "1280x860"
+MIN_WINDOW_WIDTH = 1120
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
@@ -1349,7 +1349,7 @@ class ResizeApp(customtkinter.CTk):
     def _select_button_text_for_state(self) -> str:
         if self._is_pro_mode():
             if self._topbar_density == "compact":
-                return "画像/フォルダ選択"
+                return "画像/フォルダ"
             return "画像/フォルダを選択"
         return "画像を選択"
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1366
+TOPBAR_DENSITY_COMPACT_MAX_WIDTH = 1400
 
 
 @dataclass(frozen=True)
