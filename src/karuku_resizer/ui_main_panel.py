@@ -144,7 +144,7 @@ def build_main_panel(
     )
 
     metadata = build_metadata_panel(
-        parent=preview.preview_pane,
+        parent=file_list.file_list_column,
         state=MetadataPanelState(
             font_default=state.font_default,
             font_small=state.font_small,

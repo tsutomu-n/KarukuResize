@@ -162,7 +162,7 @@ class TopBarController:
             command=self._on_select,
             font=self._font_default,
         )
-        self._style_primary_button(select_button)
+        self._style_secondary_button(select_button)
         select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(1))
 
         size_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
@@ -262,7 +262,7 @@ class TopBarController:
             command=self._on_batch,
             font=self._font_default,
         )
-        self._style_secondary_button(batch_button)
+        self._style_primary_button(batch_button)
         batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
 
         zoom_cb = customtkinter.CTkComboBox(

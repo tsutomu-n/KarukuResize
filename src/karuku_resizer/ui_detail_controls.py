@@ -120,6 +120,8 @@ class DetailOutputRefs:
     exif_preview_button: customtkinter.CTkButton
     open_log_folder_button: customtkinter.CTkButton
     codec_controls_frame: customtkinter.CTkFrame
+    webp_codec_frame: customtkinter.CTkFrame
+    avif_codec_frame: customtkinter.CTkFrame
     webp_method_menu: customtkinter.CTkOptionMenu
     webp_lossless_check: customtkinter.CTkCheckBox
     avif_speed_menu: customtkinter.CTkOptionMenu
@@ -326,13 +328,6 @@ def apply_detail_controls_visibility(
                     padx=scale_px(10),
                     pady=(0, scale_px(6)),
                 )
-            if refs.output.codec_controls_frame.winfo_manager() != "pack":
-                refs.output.codec_controls_frame.pack(
-                    side="top",
-                    fill="x",
-                    padx=scale_px(10),
-                    pady=(0, scale_px(6)),
-                )
         refs.header.details_toggle_button.configure(text="詳細設定を隠す")
         if refs.header.recent_settings_row.winfo_manager() != "pack":
             refs.header.recent_settings_row.pack(
@@ -347,8 +342,6 @@ def apply_detail_controls_visibility(
         refs.output.basic_controls_frame.pack_forget()
     if refs.output.advanced_controls_frame.winfo_manager():
         refs.output.advanced_controls_frame.pack_forget()
-    if refs.output.codec_controls_frame.winfo_manager():
-        refs.output.codec_controls_frame.pack_forget()
     refs.header.details_toggle_button.configure(text="詳細設定を表示")
     if refs.header.recent_settings_row.winfo_manager():
         refs.header.recent_settings_row.pack_forget()
@@ -376,6 +369,27 @@ def apply_detail_output_state(
     output_refs.webp_method_menu.configure(state=webp_state)
     output_refs.webp_lossless_check.configure(state=webp_state)
     output_refs.avif_speed_menu.configure(state=avif_state)
+    show_codec_controls = is_pro_mode and details_expanded and output_format_id in {"webp", "avif"}
+    if show_codec_controls:
+        if output_refs.codec_controls_frame.winfo_manager() != "pack":
+            output_refs.codec_controls_frame.pack(side="left", padx=(0, scale_px(12)), pady=scale_px(8))
+        if output_format_id == "webp":
+            if output_refs.avif_codec_frame.winfo_manager():
+                output_refs.avif_codec_frame.pack_forget()
+            if output_refs.webp_codec_frame.winfo_manager() != "pack":
+                output_refs.webp_codec_frame.pack(side="left")
+        else:
+            if output_refs.webp_codec_frame.winfo_manager():
+                output_refs.webp_codec_frame.pack_forget()
+            if output_refs.avif_codec_frame.winfo_manager() != "pack":
+                output_refs.avif_codec_frame.pack(side="left")
+    else:
+        if output_refs.webp_codec_frame.winfo_manager():
+            output_refs.webp_codec_frame.pack_forget()
+        if output_refs.avif_codec_frame.winfo_manager():
+            output_refs.avif_codec_frame.pack_forget()
+        if output_refs.codec_controls_frame.winfo_manager():
+            output_refs.codec_controls_frame.pack_forget()
 
     is_edit_mode = is_exif_edit_mode
     state = "normal" if is_edit_mode else "disabled"
@@ -426,13 +440,6 @@ def build_detail_header(
         anchor="w",
         font=state.font_default,
         text_color=state.colors["primary"],
-    )
-    settings_summary_label.pack(
-        side="left",
-        fill="x",
-        expand=True,
-        padx=(state.scale_px(10), 0),
-        pady=state.scale_px(4),
     )
 
     details_toggle_button = customtkinter.CTkButton(
@@ -685,6 +692,79 @@ def build_detail_output_controls(
     )
     output_format_menu.pack(side="left", padx=(0, state.scale_px(12)), pady=state.scale_px(8))
 
+    codec_controls_frame = customtkinter.CTkFrame(basic_controls_frame, fg_color="transparent")
+
+    webp_codec_frame = customtkinter.CTkFrame(codec_controls_frame, fg_color="transparent")
+    customtkinter.CTkLabel(
+        webp_codec_frame,
+        text="WEBP",
+        font=state.font_small,
+        text_color=state.colors["text_secondary"],
+    ).pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
+    customtkinter.CTkLabel(
+        webp_codec_frame,
+        text="method",
+        font=state.font_small,
+        text_color=state.colors["text_secondary"],
+    ).pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
+    webp_method_menu = customtkinter.CTkOptionMenu(
+        webp_codec_frame,
+        variable=webp_method_var,
+        values=list(state.webp_method_values),
+        width=state.scale_px(80),
+        command=callbacks.on_webp_method_changed,
+        font=state.font_small,
+        fg_color=state.colors["bg_tertiary"],
+        button_color=state.colors["primary"],
+        button_hover_color=state.colors["hover"],
+        text_color=state.colors["text_primary"],
+        dropdown_fg_color=state.colors["bg_secondary"],
+        dropdown_text_color=state.colors["text_primary"],
+    )
+    webp_method_menu.pack(side="left", padx=(0, state.scale_px(8)), pady=state.scale_px(8))
+
+    webp_lossless_check = customtkinter.CTkCheckBox(
+        webp_codec_frame,
+        text="lossless",
+        variable=webp_lossless_var,
+        command=callbacks.on_webp_lossless_changed,
+        font=state.font_small,
+        fg_color=state.colors["primary"],
+        hover_color=state.colors["hover"],
+        border_color=state.colors["border_medium"],
+        text_color=state.colors["text_primary"],
+    )
+    webp_lossless_check.pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
+
+    avif_codec_frame = customtkinter.CTkFrame(codec_controls_frame, fg_color="transparent")
+    customtkinter.CTkLabel(
+        avif_codec_frame,
+        text="AVIF",
+        font=state.font_small,
+        text_color=state.colors["text_secondary"],
+    ).pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
+    customtkinter.CTkLabel(
+        avif_codec_frame,
+        text="speed",
+        font=state.font_small,
+        text_color=state.colors["text_secondary"],
+    ).pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
+    avif_speed_menu = customtkinter.CTkOptionMenu(
+        avif_codec_frame,
+        variable=avif_speed_var,
+        values=list(state.avif_speed_values),
+        width=state.scale_px(80),
+        command=callbacks.on_avif_speed_changed,
+        font=state.font_small,
+        fg_color=state.colors["bg_tertiary"],
+        button_color=state.colors["primary"],
+        button_hover_color=state.colors["hover"],
+        text_color=state.colors["text_primary"],
+        dropdown_fg_color=state.colors["bg_secondary"],
+        dropdown_text_color=state.colors["text_primary"],
+    )
+    avif_speed_menu.pack(side="left", padx=(0, state.scale_px(8)), pady=state.scale_px(8))
+
     customtkinter.CTkLabel(
         basic_controls_frame,
         text="品質",
@@ -795,72 +875,6 @@ def build_detail_output_controls(
     state.style_secondary_button(open_log_folder_button)
     open_log_folder_button.pack(side="left", padx=(0, state.scale_px(10)), pady=state.scale_px(8))
 
-    codec_controls_frame = customtkinter.CTkFrame(parent)
-    state.style_card_frame(codec_controls_frame, corner_radius=10)
-    codec_controls_frame.pack(
-        side="top",
-        fill="x",
-        padx=state.scale_px(10),
-        pady=(0, state.scale_px(6)),
-    )
-
-    customtkinter.CTkLabel(
-        codec_controls_frame,
-        text="WEBP method",
-        font=state.font_small,
-        text_color=state.colors["text_secondary"],
-    ).pack(side="left", padx=(state.scale_px(10), state.scale_px(4)), pady=state.scale_px(8))
-    webp_method_menu = customtkinter.CTkOptionMenu(
-        codec_controls_frame,
-        variable=webp_method_var,
-        values=list(state.webp_method_values),
-        width=state.scale_px(80),
-        command=callbacks.on_webp_method_changed,
-        font=state.font_small,
-        fg_color=state.colors["bg_tertiary"],
-        button_color=state.colors["primary"],
-        button_hover_color=state.colors["hover"],
-        text_color=state.colors["text_primary"],
-        dropdown_fg_color=state.colors["bg_secondary"],
-        dropdown_text_color=state.colors["text_primary"],
-    )
-    webp_method_menu.pack(side="left", padx=(0, state.scale_px(8)), pady=state.scale_px(8))
-
-    webp_lossless_check = customtkinter.CTkCheckBox(
-        codec_controls_frame,
-        text="WEBP lossless",
-        variable=webp_lossless_var,
-        command=callbacks.on_webp_lossless_changed,
-        font=state.font_small,
-        fg_color=state.colors["primary"],
-        hover_color=state.colors["hover"],
-        border_color=state.colors["border_medium"],
-        text_color=state.colors["text_primary"],
-    )
-    webp_lossless_check.pack(side="left", padx=(0, state.scale_px(14)), pady=state.scale_px(8))
-
-    customtkinter.CTkLabel(
-        codec_controls_frame,
-        text="AVIF speed（低速=高品質）",
-        font=state.font_small,
-        text_color=state.colors["text_secondary"],
-    ).pack(side="left", padx=(0, state.scale_px(4)), pady=state.scale_px(8))
-    avif_speed_menu = customtkinter.CTkOptionMenu(
-        codec_controls_frame,
-        variable=avif_speed_var,
-        values=list(state.avif_speed_values),
-        width=state.scale_px(80),
-        command=callbacks.on_avif_speed_changed,
-        font=state.font_small,
-        fg_color=state.colors["bg_tertiary"],
-        button_color=state.colors["primary"],
-        button_hover_color=state.colors["hover"],
-        text_color=state.colors["text_primary"],
-        dropdown_fg_color=state.colors["bg_secondary"],
-        dropdown_text_color=state.colors["text_primary"],
-    )
-    avif_speed_menu.pack(side="left", padx=(0, state.scale_px(8)), pady=state.scale_px(8))
-
     exif_artist_var = customtkinter.StringVar(value="")
     exif_copyright_var = customtkinter.StringVar(value="")
     exif_user_comment_var = customtkinter.StringVar(value="")
@@ -963,6 +977,8 @@ def build_detail_output_controls(
         exif_preview_button=exif_preview_button,
         open_log_folder_button=open_log_folder_button,
         codec_controls_frame=codec_controls_frame,
+        webp_codec_frame=webp_codec_frame,
+        avif_codec_frame=avif_codec_frame,
         webp_method_menu=webp_method_menu,
         webp_lossless_check=webp_lossless_check,
         avif_speed_menu=avif_speed_menu,

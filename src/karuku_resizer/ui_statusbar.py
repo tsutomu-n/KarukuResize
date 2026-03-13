@@ -92,7 +92,7 @@ def build_statusbar(parent: Any, state: StatusBarState, callbacks: StatusBarCall
         corner_radius=10,
         padx=10,
     )
-    session_summary_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+    session_summary_label.pack_forget()
 
     status_var = customtkinter.StringVar(value="準備完了")
     status_label = customtkinter.CTkLabel(

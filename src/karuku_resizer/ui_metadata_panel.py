@@ -99,12 +99,12 @@ def build_metadata_panel(parent: Any, state: MetadataPanelState, callbacks: Meta
 
 def apply_metadata_mode(refs: MetadataPanelRefs, *, is_pro_mode: bool) -> None:
     if is_pro_mode:
-        if refs.metadata_frame.winfo_manager() != "grid":
-            refs.metadata_frame.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        if refs.metadata_frame.winfo_manager() != "pack":
+            refs.metadata_frame.pack(side="top", fill="x", padx=8, pady=(8, 0))
         return
 
     if refs.metadata_frame.winfo_manager():
-        refs.metadata_frame.grid_remove()
+        refs.metadata_frame.pack_forget()
 
 
 def apply_metadata_expanded(refs: MetadataPanelRefs, *, expanded: bool) -> None:

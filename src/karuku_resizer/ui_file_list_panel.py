@@ -26,6 +26,7 @@ class FileListCallbacks:
 @dataclass
 class FileListRefs:
     main_content: customtkinter.CTkFrame
+    file_list_column: customtkinter.CTkFrame
     file_list_frame: customtkinter.CTkScrollableFrame
     file_filter_var: customtkinter.StringVar
     file_filter_segment: customtkinter.CTkSegmentedButton
@@ -55,13 +56,13 @@ def build_file_list_panel(
     main_content.pack(fill="both", expand=True, padx=12, pady=8)
 
     file_list_column = customtkinter.CTkFrame(main_content, fg_color="transparent")
-    file_list_column.pack(side="left", fill="y", padx=(0, 6))
+    file_list_column.pack(side="left", fill="y", padx=(0, 8))
 
     file_list_frame = customtkinter.CTkScrollableFrame(
         file_list_column,
         label_text="ファイルリスト",
         label_font=state.font_small,
-        width=250,
+        width=300,
         fg_color=state.colors["bg_secondary"],
         border_width=1,
         border_color=state.colors["border_light"],
@@ -77,7 +78,7 @@ def build_file_list_panel(
         values=filter_values,
         variable=file_filter_var,
         command=callbacks.on_filter_changed,
-        width=220,
+        width=270,
         font=state.font_small,
         selected_color=state.colors["primary"],
         selected_hover_color=state.colors["hover"],
@@ -99,14 +100,14 @@ def build_file_list_panel(
         anchor="w",
         font=state.font_small,
         text_color=state.colors["text_secondary"],
-        wraplength=220,
+        wraplength=270,
     )
     empty_state_label.pack(fill="x", padx=8, pady=(8, 4))
 
     clear_loaded_button = customtkinter.CTkButton(
         file_list_column,
         text="読み込み一覧をクリア",
-        width=220,
+        width=270,
         command=callbacks.on_clear_loaded,
         font=state.font_small,
     )
@@ -115,6 +116,7 @@ def build_file_list_panel(
 
     return FileListRefs(
         main_content=main_content,
+        file_list_column=file_list_column,
         file_list_frame=file_list_frame,
         file_filter_var=file_filter_var,
         file_filter_segment=file_filter_segment,

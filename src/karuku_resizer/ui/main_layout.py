@@ -179,13 +179,7 @@ def update_session_summary(
 ) -> None:
     if not hasattr(app, "session_summary_var"):
         return
-    app.session_summary_var.set(
-        session_status_text(
-            app,
-            file_filter_label_to_id=file_filter_label_to_id,
-            file_filter_id_to_label=file_filter_id_to_label,
-        )
-    )
+    app.session_summary_var.set("")
 
 
 def refresh_status_indicators(
