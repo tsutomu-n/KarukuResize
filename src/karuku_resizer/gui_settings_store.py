@@ -42,7 +42,7 @@ def default_gui_settings() -> dict[str, Any]:
         "max_files_pro_mode": 600,
         "details_expanded": False,
         "metadata_panel_expanded": False,
-        "window_geometry": "1200x800",
+        "window_geometry": "1440x860",
         "zoom_preference": "画面に合わせる",
         "last_input_dir": "",
         "last_output_dir": "",

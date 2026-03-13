@@ -210,8 +210,8 @@ except ImportError:  # Pillow<10 fallback
     Resampling = _Resampling()  # type: ignore
 
 DEFAULT_PREVIEW = 480
-DEFAULT_WINDOW_GEOMETRY = "1200x800"
-MIN_WINDOW_WIDTH = 1200
+DEFAULT_WINDOW_GEOMETRY = "1440x860"
+MIN_WINDOW_WIDTH = 1440
 MIN_WINDOW_HEIGHT = 1
 WINDOW_GEOMETRY_PATTERN = re.compile(r"^\s*(\d+)x(\d+)([+-]\d+[+-]\d+)?\s*$")
 TOOLTIP_DELAY_MS = 400
