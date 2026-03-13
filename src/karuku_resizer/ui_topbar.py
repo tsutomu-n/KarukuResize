@@ -156,8 +156,8 @@ class TopBarController:
         top_row_primary.pack(
             side="top",
             fill="x",
-            padx=self._scale_px(8),
-            pady=(0, self._scale_px(0)),
+            padx=self._scale_px(6),
+            pady=(0, 0),
         )
         topbar_widths = self._scale_topbar_widths("normal")
 
@@ -168,14 +168,8 @@ class TopBarController:
                 border_width=0,
                 corner_radius=10,
             )
-            customtkinter.CTkLabel(
-                group,
-                text=title,
-                font=self._font_small,
-                text_color=self._colors["text_tertiary"],
-            ).pack(anchor="w", padx=self._scale_px(2), pady=(0, 0))
             content = customtkinter.CTkFrame(group, fg_color="transparent")
-            content.pack(fill="x", padx=0, pady=(0, self._scale_px(2)))
+            content.pack(fill="x", padx=0, pady=0)
             return group, content
 
         output_group, output_content = _build_group(top_row_primary, "実行")
@@ -186,7 +180,7 @@ class TopBarController:
             width=max(1, self._scale_px(1)),
             fg_color=self._colors["border_light"],
         )
-        output_separator.pack(side="right", fill="y", padx=self._scale_px(8), pady=self._scale_px(4))
+        output_separator.pack(side="right", fill="y", padx=self._scale_px(6), pady=self._scale_px(2))
 
         parameter_group, parameter_content = _build_group(top_row_primary, "設定")
         parameter_group.pack(side="right")
@@ -196,7 +190,7 @@ class TopBarController:
             width=max(1, self._scale_px(1)),
             fg_color=self._colors["border_light"],
         )
-        parameter_separator.pack(side="left", fill="y", padx=self._scale_px(8), pady=self._scale_px(4))
+        parameter_separator.pack(side="left", fill="y", padx=self._scale_px(6), pady=self._scale_px(2))
 
         input_group, input_content = _build_group(top_row_primary, "入力")
         input_group.pack(side="left")
@@ -211,7 +205,7 @@ class TopBarController:
             font=self._font_default,
         )
         self._style_secondary_button(select_button)
-        select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(1))
+        select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=0)
 
         size_controls_frame = customtkinter.CTkFrame(input_content, fg_color="transparent")
         size_controls_frame.pack(side="left", padx=(0, self._scale_px(8)))
@@ -227,7 +221,7 @@ class TopBarController:
             font=self._font_default,
         )
         self._style_tertiary_button(settings_button)
-        settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
+        settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=0)
         help_button = customtkinter.CTkButton(
             parameter_content,
             text="使い方",
@@ -261,15 +255,15 @@ class TopBarController:
             dropdown_fg_color=self._colors["bg_secondary"],
             dropdown_text_color=self._colors["text_primary"],
         )
-        preset_menu.pack(side="right", padx=(0, 0), pady=self._scale_px(1))
-        preset_manage_button.pack(side="right", padx=(self._scale_px(2), self._scale_px(2)), pady=self._scale_px(1))
+        preset_menu.pack(side="right", padx=(0, 0), pady=0)
+        preset_manage_button.pack(side="right", padx=(self._scale_px(2), self._scale_px(2)), pady=0)
         preset_caption_label = customtkinter.CTkLabel(
             parameter_content,
             text="プリセット",
             font=self._font_small,
             text_color=self._colors["text_secondary"],
         )
-        preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(1))
+        preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=0)
 
         # Mode segmented button is built inside `setup_entry_widgets`
         preview_button = customtkinter.CTkButton(
@@ -282,7 +276,7 @@ class TopBarController:
             font=self._font_default,
         )
         self._style_secondary_button(preview_button)
-        preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(2))
+        preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=0)
         save_button = customtkinter.CTkButton(
             output_content,
             text="保存",
@@ -293,7 +287,7 @@ class TopBarController:
             font=self._font_default,
         )
         self._style_primary_button(save_button)
-        save_button.pack(side="left", pady=self._scale_px(2))
+        save_button.pack(side="left", pady=0)
         batch_button = customtkinter.CTkButton(
             output_content,
             image=self._icon_folder_open,
@@ -304,7 +298,7 @@ class TopBarController:
             font=self._font_default,
         )
         self._style_primary_button(batch_button)
-        batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
+        batch_button.pack(side="left", padx=self._scale_px(8), pady=0)
 
         zoom_cb = customtkinter.CTkComboBox(
             output_content,
@@ -322,7 +316,7 @@ class TopBarController:
             dropdown_fg_color=self._colors["bg_secondary"],
             dropdown_text_color=self._colors["text_primary"],
         )
-        zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=self._scale_px(2))
+        zoom_cb.pack(side="left", padx=(self._scale_px(4), self._scale_px(8)), pady=0)
         zoom_cb.pack_forget()
 
         widgets = TopBarWidgets(
