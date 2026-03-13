@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 import customtkinter
 
 from karuku_resizer.processing_preset_store import ProcessingPreset, merge_processing_values
+from karuku_resizer.ui.dialog_positioning import center_window_on_parent
 
 ColorMap = Dict[str, Tuple[str, str]]
 
@@ -28,7 +29,10 @@ def open_preset_manager_dialog(
     dialog = customtkinter.CTkToplevel(app)
     app._preset_dialog = dialog
     dialog.title("プリセット管理")
-    dialog.geometry("700x360")
+    dialog_width = 700
+    dialog_height = 360
+    dialog.geometry(f"{dialog_width}x{dialog_height}")
+    center_window_on_parent(app, dialog, width=dialog_width, height=dialog_height)
     dialog.resizable(False, False)
     dialog.transient(app)
     dialog.grab_set()

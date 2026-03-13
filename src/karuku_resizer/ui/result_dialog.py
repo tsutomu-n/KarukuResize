@@ -9,6 +9,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import customtkinter
 
+from karuku_resizer.ui.dialog_positioning import center_window_on_parent
+
 ColorMap = Dict[str, Tuple[str, str]]
 
 
@@ -106,10 +108,12 @@ def show_operation_result_dialog(
             pass
         app._result_dialog.destroy()
 
+    dialog_width = 760
+    dialog_height = 430
     dialog = customtkinter.CTkToplevel(app)
     app._result_dialog = dialog
     dialog.title(title)
-    dialog.geometry("760x430")
+    center_window_on_parent(app, dialog, width=dialog_width, height=dialog_height)
     dialog.resizable(False, False)
     dialog.transient(app)
     dialog.grab_set()

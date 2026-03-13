@@ -9,6 +9,8 @@
 import tkinter as tk
 from typing import Optional
 
+from karuku_resizer.ui.dialog_positioning import center_window_on_parent
+
 class HelpDialog:
     """ヘルプダイアログクラス"""
     
@@ -31,7 +33,10 @@ class HelpDialog:
         # 新しいウィンドウを作成
         self.window = tk.Toplevel(self.parent)
         self.window.title("画像リサイズツールの使い方")
-        self.window.geometry("800x600")
+        window_width = 800
+        window_height = 600
+        self.window.geometry(f"{window_width}x{window_height}")
+        center_window_on_parent(self.parent, self.window, width=window_width, height=window_height)
         self.window.minsize(640, 480)
         
         # フォント設定

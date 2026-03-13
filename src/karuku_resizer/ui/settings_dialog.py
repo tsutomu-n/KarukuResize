@@ -10,6 +10,7 @@ import customtkinter
 
 from karuku_resizer.gui_settings_store import default_gui_settings
 from karuku_resizer.image_save_pipeline import normalize_quality
+from karuku_resizer.ui.dialog_positioning import center_window_on_parent
 
 ColorMap = Dict[str, Tuple[str, str]]
 
@@ -35,7 +36,10 @@ def open_settings_dialog(
     dialog = customtkinter.CTkToplevel(app)
     app._settings_dialog = dialog
     dialog.title("設定")
-    dialog.geometry("640x470")
+    dialog_width = 640
+    dialog_height = 470
+    dialog.geometry(f"{dialog_width}x{dialog_height}")
+    center_window_on_parent(app, dialog, width=dialog_width, height=dialog_height)
     dialog.resizable(False, False)
     dialog.transient(app)
     dialog.grab_set()

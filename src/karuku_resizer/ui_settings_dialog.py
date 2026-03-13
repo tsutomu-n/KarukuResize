@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox
 
 from karuku_resizer.gui_settings_store import default_gui_settings
 from karuku_resizer.image_save_pipeline import normalize_quality
+from karuku_resizer.ui.dialog_positioning import center_window_on_parent
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,7 @@ def open_settings_dialog(
     width = max(base_width, round(base_width * mappings.ui_scale_factor))
     height = max(base_height, round(base_height * mappings.ui_scale_factor))
     dialog.geometry(f"{width}x{height}")
+    center_window_on_parent(parent, dialog, width=width, height=height)
     dialog.minsize(width, height)
     dialog.resizable(True, True)
     dialog.transient(parent)
