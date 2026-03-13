@@ -332,10 +332,10 @@ def apply_detail_controls_visibility(
         refs.header.details_toggle_button.configure(text="詳細設定を隠す")
         if refs.header.recent_settings_row.winfo_manager() != "pack":
             refs.header.recent_settings_row.pack(
-                side="bottom",
+                side="top",
                 fill="x",
                 padx=scale_px(10),
-                pady=(0, scale_px(8)),
+                pady=(0, scale_px(6)),
             )
         return
 

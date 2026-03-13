@@ -27,6 +27,9 @@ class TopBarWidgets:
     top_action_guide_var: customtkinter.StringVar
     top_action_guide_label: customtkinter.CTkLabel
     top_row_primary: customtkinter.CTkFrame
+    input_group: customtkinter.CTkFrame
+    parameter_group: customtkinter.CTkFrame
+    output_group: customtkinter.CTkFrame
     select_button: customtkinter.CTkButton
     help_button: customtkinter.CTkButton
     settings_button: customtkinter.CTkButton
@@ -155,8 +158,31 @@ class TopBarController:
         )
         topbar_widths = self._scale_topbar_widths("normal")
 
-        select_button = customtkinter.CTkButton(
+        output_group = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        output_group.pack(side="right")
+
+        output_separator = customtkinter.CTkFrame(
             top_row_primary,
+            width=max(1, self._scale_px(1)),
+            fg_color=self._colors["border_light"],
+        )
+        output_separator.pack(side="right", fill="y", padx=self._scale_px(8), pady=self._scale_px(4))
+
+        parameter_group = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        parameter_group.pack(side="right")
+
+        parameter_separator = customtkinter.CTkFrame(
+            top_row_primary,
+            width=max(1, self._scale_px(1)),
+            fg_color=self._colors["border_light"],
+        )
+        parameter_separator.pack(side="left", fill="y", padx=self._scale_px(8), pady=self._scale_px(4))
+
+        input_group = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        input_group.pack(side="left")
+
+        select_button = customtkinter.CTkButton(
+            input_group,
             text="画像を選択",
             image=self._icon_folder,
             compound="left",
@@ -167,12 +193,12 @@ class TopBarController:
         self._style_secondary_button(select_button)
         select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(1))
 
-        size_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        size_controls_frame = customtkinter.CTkFrame(input_group, fg_color="transparent")
         size_controls_frame.pack(side="left", padx=(0, self._scale_px(8)))
         setup_entry_widgets(size_controls_frame)
 
         settings_button = customtkinter.CTkButton(
-            top_row_primary,
+            parameter_group,
             text="設定",
             image=self._icon_settings,
             compound="left",
@@ -181,13 +207,9 @@ class TopBarController:
             font=self._font_default,
         )
         self._style_tertiary_button(settings_button)
-        settings_button.pack(
-            side="right",
-            padx=(self._scale_px(4), 0),
-            pady=self._scale_px(1),
-        )
+        settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
         help_button = customtkinter.CTkButton(
-            top_row_primary,
+            parameter_group,
             text="使い方",
             image=self._icon_circle_help,
             compound="left",
@@ -198,7 +220,7 @@ class TopBarController:
         self._style_secondary_button(help_button)
 
         preset_manage_button = customtkinter.CTkButton(
-            top_row_primary,
+            parameter_group,
             text="管理",
             width=topbar_widths["preset_action"],
             command=self._on_preset_manage,
@@ -206,7 +228,7 @@ class TopBarController:
         )
         self._style_tertiary_button(preset_manage_button)
         preset_menu = customtkinter.CTkOptionMenu(
-            top_row_primary,
+            parameter_group,
             variable=self._preset_var,
             values=[self._preset_var.get()],
             width=topbar_widths["preset_menu"],
@@ -222,7 +244,7 @@ class TopBarController:
         preset_menu.pack(side="right", padx=(0, 0), pady=self._scale_px(1))
         preset_manage_button.pack(side="right", padx=(self._scale_px(2), self._scale_px(2)), pady=self._scale_px(1))
         preset_caption_label = customtkinter.CTkLabel(
-            top_row_primary,
+            parameter_group,
             text="プリセット",
             font=self._font_small,
             text_color=self._colors["text_secondary"],
@@ -230,11 +252,8 @@ class TopBarController:
         preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=self._scale_px(1))
 
         # Mode segmented button is built inside `setup_entry_widgets`
-
-        action_controls_frame = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
-        action_controls_frame.pack(side="right")
         preview_button = customtkinter.CTkButton(
-            action_controls_frame,
+            output_group,
             text="プレビュー",
             image=self._icon_refresh,
             compound="left",
@@ -245,7 +264,7 @@ class TopBarController:
         self._style_secondary_button(preview_button)
         preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(2))
         save_button = customtkinter.CTkButton(
-            action_controls_frame,
+            output_group,
             text="保存",
             image=self._icon_save,
             compound="left",
@@ -256,7 +275,7 @@ class TopBarController:
         self._style_primary_button(save_button)
         save_button.pack(side="left", pady=self._scale_px(2))
         batch_button = customtkinter.CTkButton(
-            action_controls_frame,
+            output_group,
             image=self._icon_folder_open,
             compound="left",
             text=self._batch_button_text_for_density(self._get_topbar_density()),
@@ -268,7 +287,7 @@ class TopBarController:
         batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
 
         zoom_cb = customtkinter.CTkComboBox(
-            action_controls_frame,
+            output_group,
             variable=self._zoom_var,
             values=["画面に合わせる", "100%", "200%", "300%"],
             width=topbar_widths["zoom"],
@@ -292,6 +311,9 @@ class TopBarController:
             top_action_guide_var=top_action_guide_var,
             top_action_guide_label=top_action_guide_label,
             top_row_primary=top_row_primary,
+            input_group=input_group,
+            parameter_group=parameter_group,
+            output_group=output_group,
             select_button=select_button,
             help_button=help_button,
             settings_button=settings_button,
