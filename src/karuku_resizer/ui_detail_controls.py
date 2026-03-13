@@ -15,6 +15,7 @@ class DetailHeaderState:
     font_default: Any
     colors: Mapping[str, Any]
     style_card_frame: "StyleCardFrame"
+    style_tertiary_button: Callable[[Any], None]
 
 
 @dataclass(frozen=True)
@@ -449,6 +450,7 @@ def build_detail_header(
         command=callbacks.on_toggle_details,
         font=state.font_small,
     )
+    state.style_tertiary_button(details_toggle_button)
     details_toggle_button.pack(side="right", padx=(0, state.scale_px(6)), pady=state.scale_px(4))
 
     recent_settings_row = customtkinter.CTkFrame(settings_header_frame, fg_color="transparent")

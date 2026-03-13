@@ -243,6 +243,7 @@ def handle_file_load_message(app: Any, message: Dict[str, Any]) -> None:
         app._file_scan_pulse = (app._file_scan_pulse + 0.08) % 1.0
         scan_elapsed = time.monotonic() - app._file_load_started_at
         app.progress_bar.set(max(0.05, app._file_scan_pulse))
+        app.operation_stage_var.set(f"探索中: {detected}件検出")
         app.status_var.set(
             f"{app._file_load_mode_label}: 探索中 {detected} 件検出 / "
             f"経過{build_format_duration(scan_elapsed)} / "
@@ -259,11 +260,15 @@ def handle_file_load_message(app: Any, message: Dict[str, Any]) -> None:
         app._set_operation_stage("読込中")
         if app._file_load_total_candidates == 0:
             app.progress_bar.set(1.0)
+            app.operation_stage_var.set("対象画像なし")
             app.status_var.set(
                 f"{app._file_load_mode_label}: 対象画像（jpg/jpeg/png）は0件でした"
             )
         else:
             app.progress_bar.set(0)
+            app.operation_stage_var.set(
+                f"{app._file_load_mode_label}: 0/{app._file_load_total_candidates}"
+            )
             app.status_var.set(
                 f"{app._file_load_mode_label}: 読込開始 0/{app._file_load_total_candidates} / "
                 f"{build_loading_hint_text(cancel_hint='中止のみ可能')}"
@@ -281,8 +286,10 @@ def handle_file_load_message(app: Any, message: Dict[str, Any]) -> None:
         total = app._file_load_total_candidates
         failed_count = len(app._file_load_failed_details)
         done_count = app._file_load_loaded_count + failed_count
+        display_path = _format_path_for_display(app, path)
         if total > 0:
             app.progress_bar.set(min(1.0, done_count / total))
+            app.operation_stage_var.set(f"読込: {display_path}")
             app.status_var.set(
                 build_loading_progress_status_text(
                     total=total,
@@ -290,14 +297,14 @@ def handle_file_load_message(app: Any, message: Dict[str, Any]) -> None:
                     failed_count=failed_count,
                     done_count=done_count,
                     elapsed_seconds=time.monotonic() - app._file_load_started_at,
-                    path_text=_format_path_for_display(app, path),
+                    path_text=display_path,
                     failed=False,
                     loading_hint=build_loading_hint_text(cancel_hint="中止のみ可能"),
                 )
             )
         else:
             app.status_var.set(
-                f"{app._file_load_mode_label}: 読込中 / 処理: {_format_path_for_display(app, path)} / "
+                f"{app._file_load_mode_label}: 読込中 / 処理: {display_path} / "
                 f"{build_loading_hint_text(cancel_hint='中止のみ可能')}"
             )
         return
@@ -319,6 +326,7 @@ def handle_file_load_message(app: Any, message: Dict[str, Any]) -> None:
         done_count = app._file_load_loaded_count + failed_count
         if total > 0:
             app.progress_bar.set(min(1.0, done_count / total))
+            app.operation_stage_var.set(f"失敗: {display_path}")
             app.status_var.set(
                 build_loading_progress_status_text(
                     total=total,

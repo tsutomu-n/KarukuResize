@@ -7,7 +7,10 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 import customtkinter
 from PIL import Image
 from PIL.ExifTags import GPSTAGS
-from karuku_resizer.ui_text_presenter import build_action_hint_text, build_session_status_text
+from karuku_resizer.ui_text_presenter import (
+    build_action_hint_text,
+    build_status_counts_text,
+)
 
 ColorMap = Dict[str, Tuple[str, str]]
 
@@ -118,15 +121,15 @@ def setup_status_bar(app: Any, *, colors: ColorMap) -> None:
 def show_operation_stage(app: Any, stage_text: str, *, operation_only_cancel_hint: str) -> None:
     if not stage_text:
         return
-    app.operation_stage_var.set(f"処理段階: {stage_text} / {operation_only_cancel_hint}")
-    if app.operation_stage_label.winfo_manager() != "pack":
-        app.operation_stage_label.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+    app.operation_stage_var.set(stage_text)
+    if app.operation_stage_label.winfo_manager() != "grid":
+        app.operation_stage_label.grid()
 
 
 def hide_operation_stage(app: Any) -> None:
     app.operation_stage_var.set("")
     if app.operation_stage_label.winfo_manager():
-        app.operation_stage_label.pack_forget()
+        app.operation_stage_label.grid_remove()
 
 
 def shorten_path_for_summary(path_text: str, max_len: int = 46) -> str:
@@ -144,30 +147,15 @@ def session_status_text(
     file_filter_label_to_id: Mapping[str, str],
     file_filter_id_to_label: Mapping[str, str],
 ) -> str:
-    mode = app.ui_mode_var.get() if hasattr(app, "ui_mode_var") else "簡易"
-    is_pro_mode = mode in {"pro", "Pro", "オン", "オン（Pro）", "on", "on(pro)", "on（pro）"}
-    dry_run = "ON" if (hasattr(app, "dry_run_var") and app.dry_run_var.get()) else "OFF"
     total = len(app.jobs)
+    success = sum(1 for job in app.jobs if job.last_process_state == "success")
     failed = sum(1 for job in app.jobs if job.last_process_state == "failed")
     unprocessed = sum(1 for job in app.jobs if job.last_process_state == "unprocessed")
-    visible = len(app._visible_job_indices)
-    if hasattr(app, "file_filter_var"):
-        filter_label_value = app.file_filter_var.get()
-    else:
-        filter_label_value = "全件"
-    filter_id = file_filter_label_to_id.get(filter_label_value, "all")
-    filter_label = file_filter_id_to_label.get(filter_id, filter_label_value)
-    output_dir = str(app.settings.get("last_output_dir") or app.settings.get("default_output_dir") or "-")
-    output_dir = shorten_path_for_summary(output_dir)
-    return build_session_status_text(
-        is_pro_mode=is_pro_mode,
-        dry_run=(dry_run == "ON"),
+    return build_status_counts_text(
         total_jobs=total,
+        success_jobs=success,
         failed_jobs=failed,
         unprocessed_jobs=unprocessed,
-        visible_jobs=visible,
-        file_filter_label=filter_label,
-        output_dir=output_dir,
     )
 
 
@@ -179,7 +167,13 @@ def update_session_summary(
 ) -> None:
     if not hasattr(app, "session_summary_var"):
         return
-    app.session_summary_var.set("")
+    app.session_summary_var.set(
+        session_status_text(
+            app,
+            file_filter_label_to_id=file_filter_label_to_id,
+            file_filter_id_to_label=file_filter_id_to_label,
+        )
+    )
 
 
 def refresh_status_indicators(
@@ -215,15 +209,15 @@ def show_progress_with_cancel(
     cancel_command: Callable[[], None],
     initial_progress: float,
 ) -> None:
-    app.progress_bar.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+    app.progress_bar.grid()
     app.cancel_button.configure(text=cancel_text, command=cancel_command)
-    app.cancel_button.pack(side="bottom", pady=(0, 10))
+    app.cancel_button.grid()
     app.progress_bar.set(max(0.0, min(1.0, initial_progress)))
 
 
 def hide_progress_with_cancel(app: Any) -> None:
-    app.progress_bar.pack_forget()
-    app.cancel_button.pack_forget()
+    app.progress_bar.grid_remove()
+    app.cancel_button.grid_remove()
     app.cancel_button.configure(text="キャンセル", command=app._cancel_active_operation)
 
 

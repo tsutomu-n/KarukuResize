@@ -58,6 +58,7 @@ class TopBarController:
         scale_topbar_widths: Callable[[str], Dict[str, int]],
         style_primary_button: Callable[[Any], None],
         style_secondary_button: Callable[[Any], None],
+        style_tertiary_button: Callable[[Any], None],
         style_card_frame: StyleCardFrame,
         font_default: Any,
         font_small: Any,
@@ -87,6 +88,7 @@ class TopBarController:
         self._scale_topbar_widths = scale_topbar_widths
         self._style_primary_button = style_primary_button
         self._style_secondary_button = style_secondary_button
+        self._style_tertiary_button = style_tertiary_button
         self._style_card_frame = style_card_frame
         self._font_default = font_default
         self._font_small = font_small
@@ -178,7 +180,7 @@ class TopBarController:
             command=self._on_settings,
             font=self._font_default,
         )
-        self._style_secondary_button(settings_button)
+        self._style_tertiary_button(settings_button)
         settings_button.pack(
             side="right",
             padx=(self._scale_px(4), 0),
@@ -202,7 +204,7 @@ class TopBarController:
             command=self._on_preset_manage,
             font=self._font_small,
         )
-        self._style_secondary_button(preset_manage_button)
+        self._style_tertiary_button(preset_manage_button)
         preset_menu = customtkinter.CTkOptionMenu(
             top_row_primary,
             variable=self._preset_var,

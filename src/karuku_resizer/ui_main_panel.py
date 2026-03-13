@@ -47,6 +47,7 @@ class MainPanelState:
     colors: Mapping[str, Any]
     style_card_frame: StyleCardFrame
     style_secondary_button: Callable[[Any], None]
+    style_tertiary_button: Callable[[Any], None]
     canvas_background_color: Callable[[], str]
 
 
@@ -120,6 +121,7 @@ def build_main_panel(
             on_filter_changed=callbacks.on_filter_changed,
             on_clear_loaded=callbacks.on_clear_loaded,
             style_secondary_button=state.style_secondary_button,
+            style_tertiary_button=state.style_tertiary_button,
             register_tooltip=callbacks.register_tooltip,
         ),
         filter_values=list(filter_values),

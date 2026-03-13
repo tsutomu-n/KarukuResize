@@ -61,6 +61,18 @@ def build_settings_summary_text(
     return "  ".join(f"[{p}]" for p in parts)
 
 
+def build_status_counts_text(
+    *,
+    total_jobs: int,
+    success_jobs: int,
+    failed_jobs: int,
+    unprocessed_jobs: int,
+) -> str:
+    if total_jobs <= 0:
+        return "対象 0"
+    return f"成功 {success_jobs} | 失敗 {failed_jobs} | 未処理 {unprocessed_jobs}"
+
+
 def build_session_status_text(
     *,
     is_pro_mode: bool,
@@ -79,6 +91,25 @@ def build_session_status_text(
         f"セッション: モード {mode} / 表示 {visible_jobs}/{total_jobs} ({file_filter_label}) / "
         f"未処理 {unprocessed_jobs} / 失敗 {failed_jobs} / ドライラン {dry_run_text} / 保存先 {output_dir}"
     )
+
+
+def build_original_preview_info_text(*, width: int | None, height: int | None, size_kb: float | None) -> str:
+    if not width or not height:
+        return "--- × --- px | ---KB"
+    if size_kb is None or size_kb <= 0:
+        return f"{width} × {height} px | ---KB"
+    return f"{width} × {height} px | {size_kb:.1f}KB"
+
+
+def build_resized_preview_info_text(
+    *,
+    format_label: str,
+    width: int,
+    height: int,
+    size_label: str,
+    ratio_label: str = "-",
+) -> str:
+    return f"{format_label} | {width} × {height} px | {size_label} | {ratio_label}"
 
 
 def build_action_hint_text(*, is_loading_files: bool, is_processing: bool, has_jobs: bool, has_current_selection: bool) -> str:
@@ -273,11 +304,7 @@ def build_loading_progress_status_text(
             remaining_text = build_format_duration(remaining_sec)
             speed_text = f"{speed:.1f}件/秒"
 
-    prefix = f"読込中 {done_count}/{total} (成功{loaded} 失敗{failed_count})"
-    if path_text:
-        action = "失敗" if failed else "処理"
-        prefix += f" / {action}: {path_text}"
-    return f"{prefix} / 残り約{remaining_text} / {speed_text} / {loading_hint}"
+    return f"読込中 {done_count}/{total} | 成功 {loaded} | 失敗 {failed_count} | 残り約{remaining_text}"
 
 
 def build_batch_run_mode_text(dry_run: bool) -> str:
@@ -299,10 +326,7 @@ def build_batch_progress_status_text(
     speed = done_count / max(0.001, elapsed_sec)
     remaining_sec = max(0.0, (total_count - done_count) / max(speed, 0.001))
     remaining_text = build_format_duration(remaining_sec)
-    return (
-        f"保存中 {done_count}/{total_count} (成功{processed_count} 失敗{failed_count}) "
-        f"/ 対象: {current_file_name} / 残り約{remaining_text} / {speed:.1f}件/秒"
-    )
+    return f"保存中 {done_count}/{total_count} | 成功 {processed_count} | 失敗 {failed_count} | 残り約{remaining_text}"
 
 
 def build_batch_completion_message(
@@ -337,4 +361,3 @@ def build_batch_completion_message(
         msg += f"\nドライラン件数: {dry_run_count}件"
         msg += "\nドライランのため、実ファイルは作成していません。"
     return msg
-

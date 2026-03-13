@@ -20,6 +20,7 @@ class FileListCallbacks:
     on_filter_changed: Callable[[str], None]
     on_clear_loaded: Callable[[], None]
     style_secondary_button: Callable[[Any], None]
+    style_tertiary_button: Callable[[Any], None]
     register_tooltip: Callable[[Any, str], None]
 
 
@@ -111,7 +112,7 @@ def build_file_list_panel(
         command=callbacks.on_clear_loaded,
         font=state.font_small,
     )
-    callbacks.style_secondary_button(clear_loaded_button)
+    callbacks.style_tertiary_button(clear_loaded_button)
     clear_loaded_button.pack(side="top", fill="x", padx=8, pady=(6, 0))
 
     return FileListRefs(

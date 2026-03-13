@@ -36,28 +36,32 @@ class StatusBarRefs:
 
 
 def build_statusbar(parent: Any, state: StatusBarState, callbacks: StatusBarCallbacks) -> StatusBarRefs:
+    status_row = customtkinter.CTkFrame(parent, fg_color="transparent")
+    status_row.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
+    status_row.grid_columnconfigure(0, weight=3)
+    status_row.grid_columnconfigure(1, weight=4)
+    status_row.grid_columnconfigure(2, weight=2)
+
     progress_bar = customtkinter.CTkProgressBar(
-        parent,
-        width=400,
+        status_row,
+        width=260,
         height=20,
         fg_color=state.colors["bg_tertiary"],
         progress_color=state.colors["primary"],
     )
     progress_bar.set(0)
-    progress_bar.pack_forget()
 
     cancel_button = customtkinter.CTkButton(
-        parent,
+        status_row,
         text="キャンセル",
         width=100,
         command=callbacks.on_cancel,
     )
     state.style_secondary_button(cancel_button)
-    cancel_button.pack_forget()
 
     operation_stage_var = customtkinter.StringVar(value="")
     operation_stage_label = customtkinter.CTkLabel(
-        parent,
+        status_row,
         textvariable=operation_stage_var,
         anchor="w",
         font=state.font_small,
@@ -66,7 +70,17 @@ def build_statusbar(parent: Any, state: StatusBarState, callbacks: StatusBarCall
         corner_radius=10,
         padx=10,
     )
-    operation_stage_label.pack_forget()
+    operation_stage_label.grid(row=0, column=1, sticky="ew", padx=(12, 12), pady=(0, 4))
+    operation_stage_label.grid_remove()
+
+    progress_controls_frame = customtkinter.CTkFrame(status_row, fg_color="transparent")
+    progress_controls_frame.grid(row=1, column=1, sticky="ew", padx=(12, 12))
+    progress_controls_frame.grid_columnconfigure(0, weight=1)
+
+    progress_bar.grid(row=0, column=0, sticky="ew")
+    progress_bar.grid_remove()
+    cancel_button.grid(row=0, column=1, padx=(8, 0))
+    cancel_button.grid_remove()
 
     action_hint_var = customtkinter.StringVar(value="")
     action_hint_label = customtkinter.CTkLabel(
@@ -83,20 +97,20 @@ def build_statusbar(parent: Any, state: StatusBarState, callbacks: StatusBarCall
 
     session_summary_var = customtkinter.StringVar(value="")
     session_summary_label = customtkinter.CTkLabel(
-        parent,
+        status_row,
         textvariable=session_summary_var,
-        anchor="w",
+        anchor="e",
         font=state.font_small,
         text_color=state.colors["text_tertiary"],
         fg_color=state.colors["bg_secondary"],
         corner_radius=10,
         padx=10,
     )
-    session_summary_label.pack_forget()
+    session_summary_label.grid(row=0, column=2, rowspan=2, sticky="e")
 
     status_var = customtkinter.StringVar(value="準備完了")
     status_label = customtkinter.CTkLabel(
-        parent,
+        status_row,
         textvariable=status_var,
         anchor="w",
         font=state.font_default,
@@ -105,7 +119,7 @@ def build_statusbar(parent: Any, state: StatusBarState, callbacks: StatusBarCall
         corner_radius=10,
         padx=10,
     )
-    status_label.pack(side="bottom", fill="x", padx=12, pady=(0, 8))
+    status_label.grid(row=0, column=0, rowspan=2, sticky="ew")
 
     return StatusBarRefs(
         progress_bar=progress_bar,

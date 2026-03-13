@@ -107,6 +107,7 @@ from karuku_resizer.ui_bootstrap import (
     bootstrap_style_card_frame,
     bootstrap_style_primary_button,
     bootstrap_style_secondary_button,
+    bootstrap_style_tertiary_button,
     bootstrap_runtime_base_dir,
     bootstrap_topbar_density_window_width,
     bootstrap_to_bool,
@@ -167,6 +168,8 @@ from karuku_resizer.ui_text_presenter import (
     build_load_error_detail,
     build_loading_hint_text,
     build_loading_progress_status_text,
+    build_original_preview_info_text,
+    build_resized_preview_info_text,
     build_save_failure_hint,
     build_settings_summary_text,
     build_trim_preview_text,
@@ -557,6 +560,10 @@ class ResizeApp(customtkinter.CTk):
             colors=METALLIC_COLORS,
         )
         self._style_secondary_button = lambda button: bootstrap_style_secondary_button(
+            button,
+            colors=METALLIC_COLORS,
+        )
+        self._style_tertiary_button = lambda button: bootstrap_style_tertiary_button(
             button,
             colors=METALLIC_COLORS,
         )
@@ -2431,8 +2438,8 @@ class ResizeApp(customtkinter.CTk):
         self._imgtk_resz = None
         self.canvas_org.delete("all")
         self.canvas_resz.delete("all")
-        self.info_orig_var.set("--- x ---  ---")
-        self.info_resized_var.set("--- x ---  ---  (---)")
+        self.info_orig_var.set("--- × --- px | ---KB")
+        self.info_resized_var.set("--- × --- px | --- | -")
         self.resized_title_label.configure(text="リサイズ後")
         self._update_metadata_preview(None)
         self._refresh_status_indicators()
@@ -2935,7 +2942,13 @@ class ResizeApp(customtkinter.CTk):
         self._imgtk_org = self._draw_image_on_canvas(self.canvas_org, job.image, is_resized=False)
         size = job.image.size
         source_size_kb = (job.source_size_bytes / 1024) if job.source_size_bytes > 0 else 0.0
-        self.info_orig_var.set(f"{size[0]} x {size[1]}  {source_size_kb:.1f}KB")
+        self.info_orig_var.set(
+            build_original_preview_info_text(
+                width=size[0],
+                height=size[1],
+                size_kb=source_size_kb,
+            )
+        )
 
         # Resized
         if job.resized:
@@ -2946,7 +2959,14 @@ class ResizeApp(customtkinter.CTk):
             orig_w, orig_h = job.image.size
             pct = (size[0] * size[1]) / (orig_w * orig_h) * 100
             fmt_label = FORMAT_ID_TO_LABEL.get(output_format, "JPEG")
-            self.info_resized_var.set(f"{fmt_label}|{size[0]}px x {size[1]}px|計算中...|-")
+            self.info_resized_var.set(
+                build_resized_preview_info_text(
+                    format_label=fmt_label,
+                    width=size[0],
+                    height=size[1],
+                    size_label="サイズ計算中",
+                )
+            )
             self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
             self._start_preview_size_estimation(
                 job=job,
@@ -2957,18 +2977,18 @@ class ResizeApp(customtkinter.CTk):
             )
         else:
             self.canvas_resz.delete("all")
-            self.info_resized_var.set("--- x ---  ---  (---)")
+            self.info_resized_var.set("--- × --- px | --- | -")
             self.resized_title_label.configure(text="リサイズ後")
 
     def _format_preview_size_with_reduction(self, source_bytes: int, estimated_kb: float) -> str:
         if source_bytes <= 0 or estimated_kb <= 0:
-            return "|-"
+            return "-"
         source_kb = source_bytes / 1024
         if source_kb <= 0:
-            return "|-"
+            return "-"
         ratio = (estimated_kb / source_kb) * 100
         ratio_int = int(round(ratio))
-        return f"|-{ratio_int}%"
+        return f"原寸比 {ratio_int}%"
 
     def _start_preview_size_estimation(
         self,
@@ -3000,8 +3020,13 @@ class ResizeApp(customtkinter.CTk):
                     cached_kb,
                 )
                 self.info_resized_var.set(
-                    f"{fmt_label}|{source.width}px x {source.height}px|"
-                    f"{int(cached_kb)}KB{reduction_text}"
+                    build_resized_preview_info_text(
+                        format_label=fmt_label,
+                        width=source.width,
+                        height=source.height,
+                        size_label=f"{int(cached_kb)}KB",
+                        ratio_label=reduction_text,
+                    )
                 )
                 return
 
@@ -3017,7 +3042,14 @@ class ResizeApp(customtkinter.CTk):
             except Exception:
                 pass
             self._size_estimation_timeout_id = None
-        self.info_resized_var.set(f"{fmt_label}|{source.width}px x {source.height}px|計算中...|-")
+        self.info_resized_var.set(
+            build_resized_preview_info_text(
+                format_label=fmt_label,
+                width=source.width,
+                height=source.height,
+                size_label="サイズ計算中",
+            )
+        )
 
         def mark_timeout() -> None:
             if self._size_estimation_version != version:
@@ -3027,7 +3059,12 @@ class ResizeApp(customtkinter.CTk):
             if self.current_index is None or self.current_index >= len(self.jobs):
                 return
             self.info_resized_var.set(
-                f"{fmt_label}|{source.width}px x {source.height}px|計算中（省略）| -"
+                build_resized_preview_info_text(
+                    format_label=fmt_label,
+                    width=source.width,
+                    height=source.height,
+                    size_label="サイズ計算中（省略）",
+                )
             )
             self._size_estimation_inflight_key = None
             self._size_estimation_timeout_id = None
@@ -3100,12 +3137,22 @@ class ResizeApp(customtkinter.CTk):
                 reduction_text = self._format_preview_size_with_reduction(job.source_size_bytes, kb)
                 if kb > 0:
                     self.info_resized_var.set(
-                        f"{fmt_label}|{source.width}px x {source.height}px|"
-                        f"{int(kb)}KB{reduction_text}"
+                        build_resized_preview_info_text(
+                            format_label=fmt_label,
+                            width=source.width,
+                            height=source.height,
+                            size_label=f"{int(kb)}KB",
+                            ratio_label=reduction_text,
+                        )
                     )
                 else:
                     self.info_resized_var.set(
-                        f"{fmt_label}|{source.width}px x {source.height}px|計算失敗|-"
+                        build_resized_preview_info_text(
+                            format_label=fmt_label,
+                            width=source.width,
+                            height=source.height,
+                            size_label="サイズ計算失敗",
+                        )
                     )
 
             self.after(0, apply)

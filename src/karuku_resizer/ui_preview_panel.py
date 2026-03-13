@@ -70,7 +70,7 @@ def build_preview_panel(
         highlightthickness=0,
     )
     canvas_org.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-    info_orig_var = customtkinter.StringVar(value="--- x ---  ---")
+    info_orig_var = customtkinter.StringVar(value="--- × --- px | ---KB")
     customtkinter.CTkLabel(
         frame_original,
         textvariable=info_orig_var,
@@ -97,7 +97,7 @@ def build_preview_panel(
         highlightthickness=0,
     )
     canvas_resz.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-    info_resized_var = customtkinter.StringVar(value="--- x ---  ---  (---)")
+    info_resized_var = customtkinter.StringVar(value="--- × --- px | --- | -")
     customtkinter.CTkLabel(
         frame_resized,
         textvariable=info_resized_var,

@@ -138,6 +138,7 @@ def setup_resize_app_layout(
         scale_topbar_widths=app._scale_topbar_widths,
         style_primary_button=app._style_primary_button,
         style_secondary_button=app._style_secondary_button,
+        style_tertiary_button=app._style_tertiary_button,
         style_card_frame=app._style_card_frame,
         font_default=app.font_default,
         font_small=app.font_small,
@@ -196,6 +197,7 @@ def setup_resize_app_layout(
                 font_default=app.font_default,
                 colors=colors,
                 style_card_frame=app._style_card_frame,
+                style_tertiary_button=app._style_tertiary_button,
             ),
             entry=DetailEntryState(
                 scale_px=app._scale_px,
@@ -249,6 +251,7 @@ def setup_resize_app_layout(
             colors=colors,
             style_card_frame=app._style_card_frame,
             style_secondary_button=app._style_secondary_button,
+            style_tertiary_button=app._style_tertiary_button,
             canvas_background_color=app._canvas_background_color,
         ),
         callbacks=MainPanelCallbacks(
@@ -355,9 +358,22 @@ def bootstrap_style_secondary_button(button: Any, *, colors: Mapping[str, Any]) 
         return
     hover_color = colors.get("accent_soft", colors.get("hover", colors.get("bg_tertiary")))
     button.configure(
-        fg_color=colors["bg_tertiary"],
+        fg_color="transparent",
         hover_color=hover_color,
         text_color=colors["text_primary"],
+        border_width=1,
+        border_color=colors["primary"],
+        corner_radius=10,
+    )
+
+
+def bootstrap_style_tertiary_button(button: Any, *, colors: Mapping[str, Any]) -> None:
+    if isinstance(button, customtkinter.CTkRadioButton):
+        return
+    button.configure(
+        fg_color=colors["bg_tertiary"],
+        hover_color=colors["bg_primary"],
+        text_color=colors["text_secondary"],
         border_width=1,
         border_color=colors["border_light"],
         corner_radius=10,
@@ -1515,6 +1531,7 @@ def bootstrap_run_batch_save_async(
         if latest_progress is not None:
             _, done_count, current_file_name, processed_count, failed_count, elapsed_sec = latest_progress
             app.progress_bar.set(done_count / total_files if total_files > 0 else 1.0)
+            app.operation_stage_var.set(f"保存: {current_file_name}")
             app.status_var.set(
                 build_batch_progress_status_text(
                     done_count=done_count,
@@ -1530,6 +1547,7 @@ def bootstrap_run_batch_save_async(
         if latest_processing is not None and hasattr(app, "_show_batch_processing_placeholders"):
             try:
                 _, current_file_name, current_index = latest_processing
+                app.operation_stage_var.set(f"処理中: {current_file_name}")
                 app._show_batch_processing_placeholders(total_files, current_file_name, current_index)
             except Exception:
                 logging.exception("Failed to update batch processing placeholders")
