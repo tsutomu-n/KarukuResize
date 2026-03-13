@@ -380,6 +380,18 @@ def bootstrap_style_tertiary_button(button: Any, *, colors: Mapping[str, Any]) -
     )
 
 
+def bootstrap_style_danger_button(button: Any, *, colors: Mapping[str, Any]) -> None:
+    if isinstance(button, customtkinter.CTkRadioButton):
+        return
+    button.configure(
+        fg_color="#C44536",
+        hover_color="#A93428",
+        text_color="#FFFFFF",
+        border_width=0,
+        corner_radius=10,
+    )
+
+
 def bootstrap_style_card_frame(frame: customtkinter.CTkFrame, *, colors: Mapping[str, Any], corner_radius: int = 12) -> None:
     frame.configure(
         fg_color=colors["bg_secondary"],

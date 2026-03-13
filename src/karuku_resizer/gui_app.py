@@ -107,6 +107,7 @@ from karuku_resizer.ui_bootstrap import (
     bootstrap_style_card_frame,
     bootstrap_style_primary_button,
     bootstrap_style_secondary_button,
+    bootstrap_style_danger_button,
     bootstrap_style_tertiary_button,
     bootstrap_runtime_base_dir,
     bootstrap_topbar_density_window_width,
@@ -564,6 +565,10 @@ class ResizeApp(customtkinter.CTk):
             colors=METALLIC_COLORS,
         )
         self._style_tertiary_button = lambda button: bootstrap_style_tertiary_button(
+            button,
+            colors=METALLIC_COLORS,
+        )
+        self._style_danger_button = lambda button: bootstrap_style_danger_button(
             button,
             colors=METALLIC_COLORS,
         )
@@ -3282,6 +3287,8 @@ class ResizeApp(customtkinter.CTk):
             register_tooltip=self._register_tooltip,
             style_primary_button=self._style_primary_button,
             style_secondary_button=self._style_secondary_button,
+            style_tertiary_button=self._style_tertiary_button,
+            style_danger_button=self._style_danger_button,
             scale_px=self._scale_px,
             on_show_help=self._show_help,
             on_open_preset_manager=lambda: open_preset_manager_dialog(

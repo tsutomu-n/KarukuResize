@@ -78,6 +78,8 @@ class SettingsDialogCallbacks:
     register_tooltip: Callable[[Any, str], None]
     style_primary_button: Callable[[Any], None]
     style_secondary_button: Callable[[Any], None]
+    style_tertiary_button: Callable[[Any], None]
+    style_danger_button: Callable[[Any], None]
     scale_px: Callable[[int], int]
     on_show_help: Callable[[], None]
     on_open_preset_manager: Callable[[], None]
@@ -631,7 +633,7 @@ def open_settings_dialog(
         command=_reset_dialog_values,
         font=callbacks.font_small,
     )
-    callbacks.style_secondary_button(reset_button)
+    callbacks.style_danger_button(reset_button)
     reset_button.pack(side="left", padx=_scale_pad((0, 8)))
     callbacks.register_tooltip(reset_button, "設定値を初期状態へ戻します。")
 
@@ -642,7 +644,7 @@ def open_settings_dialog(
         command=_close_dialog,
         font=callbacks.font_small,
     )
-    callbacks.style_secondary_button(cancel_button)
+    callbacks.style_tertiary_button(cancel_button)
     cancel_button.pack(side="left", padx=_scale_pad((0, 8)))
     callbacks.register_tooltip(cancel_button, "変更を保存せず閉じます。")
 

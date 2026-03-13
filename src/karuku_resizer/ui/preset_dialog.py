@@ -315,7 +315,7 @@ def open_preset_manager_dialog(
         command=_clear_default_preset,
         font=app.font_small,
     )
-    app._style_secondary_button(clear_default_button)
+    app._style_tertiary_button(clear_default_button)
     clear_default_button.pack(side="left", padx=(0, 8))
 
     update_button = customtkinter.CTkButton(
@@ -335,7 +335,7 @@ def open_preset_manager_dialog(
         command=_delete_user_preset,
         font=app.font_small,
     )
-    app._style_secondary_button(delete_button)
+    app._style_danger_button(delete_button)
     delete_button.pack(side="left", padx=(0, 8))
 
     close_button = customtkinter.CTkButton(
@@ -345,7 +345,7 @@ def open_preset_manager_dialog(
         command=_close_dialog,
         font=app.font_small,
     )
-    app._style_secondary_button(close_button)
+    app._style_tertiary_button(close_button)
     close_button.pack(side="left")
 
     selected_label_var.trace_add("write", _refresh_dialog_fields)
