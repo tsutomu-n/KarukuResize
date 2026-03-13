@@ -1255,6 +1255,8 @@ def bootstrap_save_current(app: Any) -> None:
                     return
                 if str(app.status_var.get()).strip() == status_text:
                     app._refresh_status_indicators()
+                    if hasattr(app, "_action_hint_reason") and app._action_hint_reason:
+                        app.status_var.set(app._action_hint_reason)
                 app._status_flash_after_id = None
 
             app._status_flash_after_id = app.after(3000, _restore_status_hint)

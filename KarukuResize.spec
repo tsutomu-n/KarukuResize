@@ -7,12 +7,13 @@ SCRIPT_PATH = PROJECT_ROOT / "src" / "karuku_resizer" / "gui_app.py"
 HOOKS_DIR = PROJECT_ROOT / "src" / "karuku_resizer" / "tools"
 ICON_PATH = PROJECT_ROOT / "assets" / "app.ico"
 ICON_ARG = str(ICON_PATH) if ICON_PATH.is_file() else None
+THEME_PATH = PROJECT_ROOT / "src" / "karuku_resizer" / "karuku_metallic_theme.json"
 
 a = Analysis(
     [str(SCRIPT_PATH)],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[(str(THEME_PATH), ".")] if THEME_PATH.is_file() else [],
     hiddenimports=['pillow_avif'],
     hookspath=[str(HOOKS_DIR)],
     hooksconfig={},

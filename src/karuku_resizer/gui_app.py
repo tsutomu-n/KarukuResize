@@ -649,7 +649,11 @@ class ResizeApp(customtkinter.CTk):
 
         # --- Theme ---
         customtkinter.set_appearance_mode("system")
-        theme_path = Path(__file__).with_name("karuku_metallic_theme.json")
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            theme_path = Path(meipass) / "karuku_metallic_theme.json"
+        else:
+            theme_path = Path(__file__).with_name("karuku_metallic_theme.json")
         customtkinter.set_default_color_theme(str(theme_path))
         self.configure(fg_color=METALLIC_COLORS["bg_primary"])
 
