@@ -36,6 +36,8 @@ ResizeApp (gui_app.py)
   ├─ Text / display policy
   │   ├─ ui_text_presenter.py
   │   └─ ui_display_policy.py
+  ├─ Dialog positioning
+  │   └─ ui/dialog_positioning.py
   ├─ Async file load session
   │   └─ ui/file_load_session.py (+ ui_file_load_helpers.py)
   ├─ Save pipeline
@@ -80,6 +82,13 @@ ResizeApp (gui_app.py)
 - ステータス文言、進捗文言、EXIF表示文言を純関数で生成
 - GUI 本体から文言ロジックを分離
 
+### `src/karuku_resizer/ui/dialog_positioning.py`
+
+- モーダルダイアログの共通配置ヘルパー
+- 親ウィンドウ中央を基準に `Toplevel` / `CTkToplevel` を配置
+- 仮想スクリーン座標（`winfo_vroot*`）を使い、Windows のマルチモニタ負座標も考慮
+- 配置計算に失敗してもサイズだけは維持するフォールバックを提供
+
 ### `src/karuku_resizer/ui_display_policy.py`
 
 - 表示ルールの純関数
@@ -107,10 +116,17 @@ ResizeApp
   │   ├─ プリセット（Pro ON）
   │   └─ プレビュー/保存/一括保存（一括は Pro ON）
   ├─ Detail Controls（折りたたみ）
+  │   └─ 最近使った設定（直近1件のみ表示）
   ├─ Main Panel
   │   ├─ File List + フィルタ + クリア
   │   ├─ Preview（原寸 / リサイズ後）
   │   └─ Metadata（Pro ON時中心）
+  ├─ Modal Dialogs
+  │   ├─ 設定
+  │   ├─ プリセット管理
+  │   ├─ 使い方
+  │   ├─ 読込結果
+  │   └─ 一括処理結果
   └─ StatusBar（進捗 + キャンセル + セッション要約）
 ```
 
@@ -156,6 +172,12 @@ ResizeApp
 - Top guide:
   - 通常時は非表示
   - 読込中/処理中のみ表示
+- 最近使った設定:
+  - 保存・表示ともに直近1件のみ保持
+  - 既存の複数件履歴があっても、読み込み時に先頭1件へ正規化する
+- ダイアログ表示:
+  - 設定/プリセット管理/ヘルプ/結果ダイアログは本体ウィンドウ中央へ表示
+  - 画面外に出ないよう仮想スクリーン範囲で丸める
 
 ## 設定永続化
 
@@ -172,6 +194,12 @@ ResizeApp
 - `exif_mode`, `remove_gps`, `exif_*`
 - `zoom_preference`, `default_output_dir`, `default_preset_id`
 - `pro_input_mode`, `recent_processing_settings`
+
+ウィンドウサイズ関連の現行既定値:
+
+- `window_geometry`: `1440x860`
+- 最小横幅: `1440`
+- 保存済み `window_geometry` がこれより狭い場合も、起動時正規化で最小横幅まで引き上げる
 
 ## エラー処理方針
 
@@ -193,4 +221,3 @@ PYTHONPATH=src uv run ruff check src tests
 PYTHONPATH=src uv run pytest -q
 uvx basedpyright src
 ```
-
