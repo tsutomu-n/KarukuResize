@@ -179,6 +179,59 @@ def open_settings_dialog(
             return tuple(_scale_px(int(v)) for v in value)
         return _scale_px(int(value))
 
+    section_title_font = customtkinter.CTkFont(
+        size=max(13, round(13 * mappings.ui_scale_factor)),
+        weight="bold",
+    )
+
+    row = 0
+
+    def _add_section(title: str, description: str, *, top_padding: int = 18) -> None:
+        nonlocal row
+        customtkinter.CTkLabel(
+            settings_content,
+            text=title,
+            font=section_title_font,
+            text_color=callbacks.colors["text_primary"],
+        ).grid(
+            row=row,
+            column=0,
+            columnspan=2,
+            padx=_scale_pad((20, 20)),
+            pady=_scale_pad((top_padding, 2)),
+            sticky="w",
+        )
+        row += 1
+        customtkinter.CTkLabel(
+            settings_content,
+            text=description,
+            font=callbacks.font_small,
+            text_color=callbacks.colors["text_tertiary"],
+            justify="left",
+            anchor="w",
+        ).grid(
+            row=row,
+            column=0,
+            columnspan=2,
+            padx=_scale_pad((20, 20)),
+            pady=_scale_pad((0, 6)),
+            sticky="ew",
+        )
+        row += 1
+        customtkinter.CTkFrame(
+            settings_content,
+            height=1,
+            fg_color=callbacks.colors["border_light"],
+        ).grid(
+            row=row,
+            column=0,
+            columnspan=2,
+            padx=_scale_pad((20, 20)),
+            pady=_scale_pad((0, 10)),
+            sticky="ew",
+        )
+        row += 1
+
     def _close_dialog() -> None:
         if dialog.winfo_exists():
             dialog.grab_release()
@@ -295,14 +348,17 @@ def open_settings_dialog(
         callbacks.on_status_set("設定を保存しました。")
         _close_dialog()
 
-    row = 0
+    _add_section(
+        "基本",
+        "見た目と日常操作に関わる設定です。",
+    )
 
     customtkinter.CTkLabel(
         settings_content,
         text="Proモード",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_pad((18, 8)), sticky="w")
+    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
     ui_mode_menu = customtkinter.CTkOptionMenu(
         settings_content,
         values=list(mappings.ui_mode_label_to_id.keys()),
@@ -314,7 +370,7 @@ def open_settings_dialog(
         dropdown_fg_color=callbacks.colors["bg_secondary"],
         dropdown_text_color=callbacks.colors["text_primary"],
     )
-    ui_mode_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_pad((18, 8)), sticky="ew")
+    ui_mode_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
     callbacks.register_tooltip(ui_mode_menu, "Pro向け機能のオン/オフを切り替えます。")
 
     row += 1
@@ -383,39 +439,6 @@ def open_settings_dialog(
     row += 1
     customtkinter.CTkLabel(
         settings_content,
-        text="ヘルプ/管理",
-        font=callbacks.font_default,
-        text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-    support_actions = customtkinter.CTkFrame(settings_content, fg_color="transparent")
-    support_actions.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
-    help_in_settings_button = customtkinter.CTkButton(
-        support_actions,
-        text="使い方を開く",
-        width=_scale_px(132),
-        command=callbacks.on_show_help,
-        font=callbacks.font_default,
-    )
-    callbacks.style_secondary_button(help_in_settings_button)
-    help_in_settings_button.pack(side="left", padx=(0, _scale_px(8)))
-    preset_manage_in_settings_button = customtkinter.CTkButton(
-        support_actions,
-        text="プリセット管理",
-        width=_scale_px(132),
-        command=callbacks.on_open_preset_manager,
-        font=callbacks.font_default,
-    )
-    callbacks.style_secondary_button(preset_manage_in_settings_button)
-    preset_manage_in_settings_button.pack(side="left")
-    callbacks.register_tooltip(help_in_settings_button, "使い方ガイドを表示します。")
-    callbacks.register_tooltip(
-        preset_manage_in_settings_button,
-        "プリセットの追加・編集・削除を行います。",
-    )
-
-    row += 1
-    customtkinter.CTkLabel(
-        settings_content,
         text="ホバー説明",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
@@ -434,6 +457,12 @@ def open_settings_dialog(
     callbacks.register_tooltip(show_tooltips_check, "ホバー説明の表示を切り替えます。")
 
     row += 1
+    _add_section(
+        "出力",
+        "起動時の既定出力や保存先を決めます。",
+        top_padding=12,
+    )
+
     customtkinter.CTkLabel(
         settings_content,
         text="既定の出力形式",
@@ -499,27 +528,6 @@ def open_settings_dialog(
     row += 1
     customtkinter.CTkLabel(
         settings_content,
-        text="プロモード入力方式",
-        font=callbacks.font_default,
-        text_color=callbacks.colors["text_secondary"],
-    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
-    pro_input_menu = customtkinter.CTkOptionMenu(
-        settings_content,
-        values=list(mappings.pro_input_label_to_id.keys()),
-        variable=pro_input_var,
-        fg_color=callbacks.colors["bg_tertiary"],
-        button_color=callbacks.colors["primary"],
-        button_hover_color=callbacks.colors["hover"],
-        text_color=callbacks.colors["text_primary"],
-        dropdown_fg_color=callbacks.colors["bg_secondary"],
-        dropdown_text_color=callbacks.colors["text_primary"],
-    )
-    pro_input_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
-    callbacks.register_tooltip(pro_input_menu, "プロモードの既定入力方式を選択します。")
-
-    row += 1
-    customtkinter.CTkLabel(
-        settings_content,
         text="既定の保存先フォルダ",
         font=callbacks.font_default,
         text_color=callbacks.colors["text_secondary"],
@@ -546,6 +554,66 @@ def open_settings_dialog(
     callbacks.style_secondary_button(browse_button)
     browse_button.grid(row=0, column=1, padx=_scale_pad((8, 0)))
     callbacks.register_tooltip(browse_button, "フォルダ選択を開きます。")
+
+    row += 1
+    _add_section(
+        "高度な設定",
+        "Pro向けの既定動作と補助メニューです。",
+        top_padding=12,
+    )
+
+    customtkinter.CTkLabel(
+        settings_content,
+        text="プロモード入力方式",
+        font=callbacks.font_default,
+        text_color=callbacks.colors["text_secondary"],
+    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    pro_input_menu = customtkinter.CTkOptionMenu(
+        settings_content,
+        values=list(mappings.pro_input_label_to_id.keys()),
+        variable=pro_input_var,
+        fg_color=callbacks.colors["bg_tertiary"],
+        button_color=callbacks.colors["primary"],
+        button_hover_color=callbacks.colors["hover"],
+        text_color=callbacks.colors["text_primary"],
+        dropdown_fg_color=callbacks.colors["bg_secondary"],
+        dropdown_text_color=callbacks.colors["text_primary"],
+    )
+    pro_input_menu.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="ew")
+    callbacks.register_tooltip(pro_input_menu, "プロモードの既定入力方式を選択します。")
+
+    row += 1
+    customtkinter.CTkLabel(
+        settings_content,
+        text="ヘルプ/管理",
+        font=callbacks.font_default,
+        text_color=callbacks.colors["text_secondary"],
+    ).grid(row=row, column=0, padx=_scale_pad((20, 10)), pady=_scale_px(8), sticky="w")
+    support_actions = customtkinter.CTkFrame(settings_content, fg_color="transparent")
+    support_actions.grid(row=row, column=1, padx=_scale_pad((0, 20)), pady=_scale_px(8), sticky="w")
+    help_in_settings_button = customtkinter.CTkButton(
+        support_actions,
+        text="使い方を開く",
+        width=_scale_px(132),
+        command=callbacks.on_show_help,
+        font=callbacks.font_default,
+    )
+    callbacks.style_secondary_button(help_in_settings_button)
+    help_in_settings_button.pack(side="left", padx=(0, _scale_px(8)))
+    preset_manage_in_settings_button = customtkinter.CTkButton(
+        support_actions,
+        text="プリセット管理",
+        width=_scale_px(132),
+        command=callbacks.on_open_preset_manager,
+        font=callbacks.font_default,
+    )
+    callbacks.style_secondary_button(preset_manage_in_settings_button)
+    preset_manage_in_settings_button.pack(side="left")
+    callbacks.register_tooltip(help_in_settings_button, "使い方ガイドを表示します。")
+    callbacks.register_tooltip(
+        preset_manage_in_settings_button,
+        "プリセットの追加・編集・削除を行います。",
+    )
 
     button_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
     button_frame.grid(
