@@ -42,8 +42,18 @@ def open_preset_manager_dialog(
     selected_label_var = customtkinter.StringVar(value=app.preset_var.get())
     name_var = customtkinter.StringVar(value="")
     description_var = customtkinter.StringVar(value="")
-    info_var = customtkinter.StringVar(value="")
     default_status_var = customtkinter.StringVar(value="")
+    info_value_vars = {
+        "種別": customtkinter.StringVar(value="-"),
+        "ID": customtkinter.StringVar(value="-"),
+        "サイズ": customtkinter.StringVar(value="-"),
+        "形式": customtkinter.StringVar(value="-"),
+        "品質": customtkinter.StringVar(value="-"),
+        "EXIF": customtkinter.StringVar(value="-"),
+        "GPS削除": customtkinter.StringVar(value="-"),
+        "ドライラン": customtkinter.StringVar(value="-"),
+        "更新日時": customtkinter.StringVar(value="-"),
+    }
 
     def _close_dialog() -> None:
         if dialog.winfo_exists():
@@ -65,7 +75,7 @@ def open_preset_manager_dialog(
         elif selected_label_var.get() not in labels:
             selected_label_var.set(labels[0])
 
-    def _build_preset_info_text(preset: ProcessingPreset) -> str:
+    def _build_preset_info_items(preset: ProcessingPreset) -> Dict[str, str]:
         values = merge_processing_values(preset.values)
         mode = str(values.get("mode", "ratio"))
         if mode == "ratio":
@@ -81,13 +91,17 @@ def open_preset_manager_dialog(
         exif_mode_label = exif_id_to_label.get(str(values.get("exif_mode", "keep")), "保持")
         preset_kind = "組み込み" if preset.is_builtin else "ユーザー"
         updated_at = preset.updated_at or "-"
-        return (
-            f"種別: {preset_kind} / ID: {preset.preset_id}\n"
-            f"サイズ: {size_text} / 形式: {format_label} / 品質: {values.get('quality', '85')}\n"
-            f"EXIF: {exif_mode_label} / GPS削除: {'ON' if app._to_bool(values.get('remove_gps', False)) else 'OFF'} / "
-            f"ドライラン: {'ON' if app._to_bool(values.get('dry_run', False)) else 'OFF'}\n"
-            f"更新日時: {updated_at}"
-        )
+        return {
+            "種別": preset_kind,
+            "ID": preset.preset_id,
+            "サイズ": size_text,
+            "形式": format_label,
+            "品質": str(values.get("quality", "85")),
+            "EXIF": exif_mode_label,
+            "GPS削除": "ON" if app._to_bool(values.get("remove_gps", False)) else "OFF",
+            "ドライラン": "ON" if app._to_bool(values.get("dry_run", False)) else "OFF",
+            "更新日時": updated_at,
+        }
 
     def _refresh_dialog_fields(*_args: object) -> None:
         preset = _current_preset()
@@ -95,8 +109,9 @@ def open_preset_manager_dialog(
         if preset is None:
             name_var.set("")
             description_var.set("")
-            info_var.set("プリセットを選択してください。")
             default_status_var.set("既定プリセット: 未設定")
+            for var in info_value_vars.values():
+                var.set("-")
             name_entry.configure(state="disabled")
             description_entry.configure(state="disabled")
             update_button.configure(state="disabled")
@@ -107,7 +122,8 @@ def open_preset_manager_dialog(
 
         name_var.set(preset.name)
         description_var.set(preset.description)
-        info_var.set(_build_preset_info_text(preset))
+        for key, value in _build_preset_info_items(preset).items():
+            info_value_vars[key].set(value)
         default_label = app._preset_label_for_id(default_id, preset_none_label) if default_id else preset_none_label
         default_status_var.set(f"既定プリセット: {default_label}")
 
@@ -275,14 +291,34 @@ def open_preset_manager_dialog(
     ).grid(row=row, column=0, columnspan=2, padx=20, pady=(2, 6), sticky="ew")
 
     row += 1
-    customtkinter.CTkLabel(
+    info_frame = customtkinter.CTkFrame(
         dialog,
-        textvariable=info_var,
-        font=app.font_small,
-        text_color=colors["text_tertiary"],
-        anchor="w",
-        justify="left",
-    ).grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+        fg_color=colors["bg_secondary"],
+        border_width=1,
+        border_color=colors["border_light"],
+        corner_radius=10,
+    )
+    info_frame.grid(row=row, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+    info_frame.grid_columnconfigure(1, weight=1)
+
+    info_row = 0
+    for label_text, value_var in info_value_vars.items():
+        customtkinter.CTkLabel(
+            info_frame,
+            text=label_text,
+            font=app.font_small,
+            text_color=colors["text_secondary"],
+            anchor="w",
+        ).grid(row=info_row, column=0, padx=(12, 10), pady=(8 if info_row == 0 else 4, 4), sticky="w")
+        customtkinter.CTkLabel(
+            info_frame,
+            textvariable=value_var,
+            font=app.font_small,
+            text_color=colors["text_primary"],
+            anchor="w",
+            justify="left",
+        ).grid(row=info_row, column=1, padx=(0, 12), pady=(8 if info_row == 0 else 4, 4), sticky="ew")
+        info_row += 1
 
     row += 1
     action_frame = customtkinter.CTkFrame(dialog, fg_color="transparent")
