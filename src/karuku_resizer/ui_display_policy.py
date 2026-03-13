@@ -33,7 +33,7 @@ def topbar_density_for_width(window_width: int, ui_scale_factor: float = 1.0) ->
 
 def topbar_batch_button_text(density: str) -> str:
     """Return density-dependent label for the batch action."""
-    return "一括適用保存"
+    return "一括保存" if density == "compact" else "一括適用保存"
 
 
 def should_show_pro_elements(is_pro_mode: bool) -> bool:
@@ -48,4 +48,3 @@ def top_action_guide_text(state: TopActionGuideState) -> str:
     if state.is_processing:
         return "処理中 — キャンセル以外の操作はできません"
     return ""
-
