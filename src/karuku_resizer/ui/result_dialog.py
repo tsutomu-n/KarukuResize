@@ -98,6 +98,8 @@ def show_operation_result_dialog(
     title: str,
     summary_text: str,
     failed_details: List[str],
+    summary_metrics: Optional[List[Tuple[str, str]]] = None,
+    detail_note: Optional[str] = None,
     failed_count: Optional[int] = None,
     retry_callback: Optional[Callable[[], None]] = None,
 ) -> None:
@@ -138,6 +140,47 @@ def show_operation_result_dialog(
         wraplength=720,
     ).grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
 
+    next_row = 2
+    if summary_metrics:
+        metrics_row = customtkinter.CTkFrame(dialog, fg_color="transparent")
+        metrics_row.grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 8))
+        for index in range(len(summary_metrics)):
+            metrics_row.grid_columnconfigure(index, weight=1)
+        for index, (label_text, value_text) in enumerate(summary_metrics):
+            metric_frame = customtkinter.CTkFrame(
+                metrics_row,
+                fg_color=colors["bg_secondary"],
+                border_width=1,
+                border_color=colors["border_light"],
+                corner_radius=10,
+            )
+            metric_frame.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 6, 0))
+            customtkinter.CTkLabel(
+                metric_frame,
+                text=label_text,
+                font=app.font_small,
+                text_color=colors["text_tertiary"],
+            ).pack(anchor="w", padx=10, pady=(6, 0))
+            customtkinter.CTkLabel(
+                metric_frame,
+                text=value_text,
+                font=app.font_default,
+                text_color=colors["text_primary"],
+            ).pack(anchor="w", padx=10, pady=(0, 6))
+        next_row += 1
+
+    if detail_note:
+        customtkinter.CTkLabel(
+            dialog,
+            text=detail_note,
+            justify="left",
+            anchor="w",
+            font=app.font_small,
+            text_color=colors["text_tertiary"],
+            wraplength=720,
+        ).grid(row=next_row, column=0, sticky="ew", padx=16, pady=(0, 8))
+        next_row += 1
+
     if failed_count is None:
         failed_count = len(failed_details)
 
@@ -152,7 +195,6 @@ def show_operation_result_dialog(
         include_details=True,
     )
 
-    next_row = 2
     if failed_count and failed_count > 0 and retry_callback is not None:
         retry_hint = f"失敗ファイルが {failed_count} 件あります。再試行すると失敗したファイルのみ再実行できます。"
         customtkinter.CTkLabel(

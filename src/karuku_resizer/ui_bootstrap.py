@@ -1724,10 +1724,7 @@ def bootstrap_batch_save(app: Any) -> None:
                     return
 
                 def _handle_retry_result(retry_stats: Any, retry_total_files: int) -> None:
-                    retry_msg = (
-                        f"失敗再試行完了。成功: {retry_stats.processed_count}件 / "
-                        f"失敗: {retry_stats.failed_count}件 / 対象: {retry_total_files}件"
-                    )
+                    retry_msg = "失敗再試行完了。"
                     app.status_var.set(retry_msg)
                     show_operation_result_dialog(
                         app,
@@ -1736,6 +1733,11 @@ def bootstrap_batch_save(app: Any) -> None:
                         title="失敗再試行結果",
                         summary_text=retry_msg,
                         failed_details=retry_stats.failed_details,
+                        summary_metrics=[
+                            ("成功", f"{retry_stats.processed_count}件"),
+                            ("失敗", f"{retry_stats.failed_count}件"),
+                            ("対象", f"{retry_total_files}件"),
+                        ],
                         retry_callback=None,
                     )
 
@@ -1756,8 +1758,14 @@ def bootstrap_batch_save(app: Any) -> None:
             colors=bootstrap_resolve_app_colors(app),
             file_load_failure_preview_limit=FILE_LOAD_FAILURE_PREVIEW_LIMIT,
             title="一括処理結果",
-            summary_text=msg,
+            summary_text="一括処理が完了しました。" if not app._cancel_batch else "一括処理を中止しました。",
             failed_details=stats.failed_details,
+            summary_metrics=[
+                ("成功", f"{stats.processed_count}件"),
+                ("失敗", f"{stats.failed_count}件"),
+                ("対象", f"{total_files}件"),
+            ],
+            detail_note=msg,
             retry_callback=retry_callback,
         )
 

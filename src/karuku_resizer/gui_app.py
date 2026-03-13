@@ -2296,15 +2296,12 @@ class ResizeApp(customtkinter.CTk):
         loaded = self._file_load_loaded_count
         failed = len(self._file_load_failed_details)
         if canceled:
-            msg = f"{self._file_load_mode_label}を中止しました。成功: {loaded}件 / 失敗: {failed}件 / 対象: {total}件"
+            msg = f"{self._file_load_mode_label}を中止しました。"
         else:
             limit_suffix = (
                 f"（上限到達: {self._file_load_limit}枚）" if self._file_load_limited else ""
             )
-            msg = (
-                f"{self._file_load_mode_label}完了。成功: {loaded}件 / "
-                f"失敗: {failed}件 / 対象: {total}件{limit_suffix}"
-            )
+            msg = f"{self._file_load_mode_label}完了。{limit_suffix}" if limit_suffix else f"{self._file_load_mode_label}完了。"
         self.status_var.set(msg)
         retry_callback: Optional[Callable[[], None]] = None
         if (not canceled) and retry_paths:
@@ -2319,6 +2316,15 @@ class ResizeApp(customtkinter.CTk):
             title="読込結果",
             summary_text=msg,
             failed_details=self._file_load_failed_details,
+            summary_metrics=[
+                ("成功", f"{loaded}件"),
+                ("失敗", f"{failed}件"),
+                ("対象", f"{total}件"),
+            ],
+            detail_note=(
+                f"モード: {self._file_load_mode_label}"
+                + (f" / 上限: {self._file_load_limit}枚" if self._file_load_limited else "")
+            ),
             retry_callback=retry_callback,
         )
         self._refresh_status_indicators()
