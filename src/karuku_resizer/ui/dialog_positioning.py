@@ -14,6 +14,8 @@ def center_window_on_parent(
     height: int | None = None,
 ) -> None:
     """Place a child window near the visual center of its parent."""
+    resolved_width = max(int(width if width is not None else 0), 1)
+    resolved_height = max(int(height if height is not None else 0), 1)
     try:
         parent.update_idletasks()
         window.update_idletasks()
@@ -23,13 +25,15 @@ def center_window_on_parent(
         parent_height = max(parent.winfo_height(), 1)
         parent_x = parent.winfo_rootx()
         parent_y = parent.winfo_rooty()
-        screen_width = max(window.winfo_screenwidth(), 1)
-        screen_height = max(window.winfo_screenheight(), 1)
+        screen_x = window.winfo_vrootx()
+        screen_y = window.winfo_vrooty()
+        screen_width = max(window.winfo_vrootwidth(), 1)
+        screen_height = max(window.winfo_vrootheight(), 1)
         x = parent_x + (parent_width - resolved_width) // 2
         y = parent_y + (parent_height - resolved_height) // 2
-        x = max(min(x, screen_width - resolved_width), 0)
-        y = max(min(y, screen_height - resolved_height), 0)
+        x = max(min(x, screen_x + screen_width - resolved_width), screen_x)
+        y = max(min(y, screen_y + screen_height - resolved_height), screen_y)
         window.geometry(f"{resolved_width}x{resolved_height}+{x}+{y}")
     except Exception:
         logging.exception("Failed to center child window on parent")
-
+        window.geometry(f"{resolved_width}x{resolved_height}")
