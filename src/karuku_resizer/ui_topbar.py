@@ -122,6 +122,7 @@ class TopBarController:
 
     def build(self, parent: Any, setup_entry_widgets: Callable[[Any], None]) -> TopBarWidgets:
         """Build top bar widgets."""
+        control_height = self._scale_px(30)
         top_container = customtkinter.CTkFrame(parent)
         self._style_card_frame(top_container)
         top_container.pack(
@@ -200,6 +201,7 @@ class TopBarController:
             text="画像を選択",
             image=self._icon_folder,
             compound="left",
+            height=control_height,
             width=topbar_widths["select"],
             command=self._on_select,
             font=self._font_default,
@@ -216,6 +218,7 @@ class TopBarController:
             text="設定",
             image=self._icon_settings,
             compound="left",
+            height=control_height,
             width=topbar_widths["settings"],
             command=self._on_settings,
             font=self._font_default,
@@ -227,6 +230,7 @@ class TopBarController:
             text="使い方",
             image=self._icon_circle_help,
             compound="left",
+            height=control_height,
             width=topbar_widths["help"],
             command=self._on_help,
             font=self._font_default,
@@ -236,6 +240,7 @@ class TopBarController:
         preset_manage_button = customtkinter.CTkButton(
             parameter_content,
             text="管理",
+            height=control_height,
             width=topbar_widths["preset_action"],
             command=self._on_preset_manage,
             font=self._font_small,
@@ -245,6 +250,7 @@ class TopBarController:
             parameter_content,
             variable=self._preset_var,
             values=[self._preset_var.get()],
+            height=control_height,
             width=topbar_widths["preset_menu"],
             command=self._on_preset_changed,
             font=self._font_small,
@@ -259,11 +265,10 @@ class TopBarController:
         preset_manage_button.pack(side="right", padx=(self._scale_px(2), self._scale_px(2)), pady=0)
         preset_caption_label = customtkinter.CTkLabel(
             parameter_content,
-            text="プリセット",
+            text="",
             font=self._font_small,
             text_color=self._colors["text_secondary"],
         )
-        preset_caption_label.pack(side="right", padx=(0, self._scale_px(4)), pady=0)
 
         # Mode segmented button is built inside `setup_entry_widgets`
         preview_button = customtkinter.CTkButton(
@@ -271,6 +276,7 @@ class TopBarController:
             text="プレビュー",
             image=self._icon_refresh,
             compound="left",
+            height=control_height,
             width=topbar_widths["preview"],
             command=self._on_preview,
             font=self._font_default,
@@ -282,6 +288,7 @@ class TopBarController:
             text="保存",
             image=self._icon_save,
             compound="left",
+            height=control_height,
             width=topbar_widths["save"],
             command=self._on_save,
             font=self._font_default,
@@ -293,6 +300,7 @@ class TopBarController:
             image=self._icon_folder_open,
             compound="left",
             text=self._batch_button_text_for_density(self._get_topbar_density()),
+            height=control_height,
             width=topbar_widths["batch"],
             command=self._on_batch,
             font=self._font_default,
@@ -304,6 +312,7 @@ class TopBarController:
             output_content,
             variable=self._zoom_var,
             values=["画面に合わせる", "100%", "200%", "300%"],
+            height=control_height,
             width=topbar_widths["zoom"],
             state="readonly",
             command=self._on_zoom_changed,

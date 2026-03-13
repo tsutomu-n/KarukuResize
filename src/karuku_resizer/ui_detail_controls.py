@@ -492,11 +492,13 @@ def build_detail_entry_controls(
     state: DetailEntryState,
     callbacks: DetailEntryCallbacks,
 ) -> DetailEntryRefs:
+    control_height = state.scale_px(30)
     mode_var = customtkinter.StringVar(value="ratio")
     mode_segment = customtkinter.CTkSegmentedButton(
         parent,
         values=["比率 %", "幅 px", "高さ px", "幅×高"],
         command=lambda _: callbacks.on_mode_changed(),
+        height=control_height,
         font=state.font_default,
         selected_color=state.colors["primary"],
         selected_hover_color=state.colors["hover"],
@@ -524,6 +526,7 @@ def build_detail_entry_controls(
     ratio_entry = customtkinter.CTkEntry(
         frame_ratio,
         textvariable=customtkinter.StringVar(value="100"),
+        height=control_height,
         width=54,
         validate="key",
         validatecommand=vcmd,
@@ -545,6 +548,7 @@ def build_detail_entry_controls(
     entry_w_single = customtkinter.CTkEntry(
         frame_width,
         textvariable=customtkinter.StringVar(),
+        height=control_height,
         width=64,
         validate="key",
         validatecommand=vcmd,
@@ -565,6 +569,7 @@ def build_detail_entry_controls(
     entry_h_single = customtkinter.CTkEntry(
         frame_height,
         textvariable=customtkinter.StringVar(),
+        height=control_height,
         width=64,
         validate="key",
         validatecommand=vcmd,
@@ -585,6 +590,7 @@ def build_detail_entry_controls(
     entry_w_fixed = customtkinter.CTkEntry(
         frame_fixed,
         textvariable=customtkinter.StringVar(),
+        height=control_height,
         width=64,
         validate="key",
         validatecommand=vcmd,
@@ -603,6 +609,7 @@ def build_detail_entry_controls(
     entry_h_fixed = customtkinter.CTkEntry(
         frame_fixed,
         textvariable=customtkinter.StringVar(),
+        height=control_height,
         width=64,
         validate="key",
         validatecommand=vcmd,
