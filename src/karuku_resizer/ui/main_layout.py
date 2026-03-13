@@ -200,7 +200,16 @@ def update_action_hint(app: Any) -> None:
         has_current_selection=app.current_index is not None,
     )
     app._action_hint_reason = reason
-    app.action_hint_var.set(f"操作ガイド: {reason}")
+    app.action_hint_var.set(reason)
+    if hasattr(app, "status_var"):
+        current_status = str(app.status_var.get() or "").strip()
+        if not current_status or current_status in {
+            "準備完了",
+            "画像が未選択です。まず画像を読み込んでください。",
+            "左の一覧から対象画像を選択してください。",
+            "準備完了です。プレビュー・保存を実行できます。",
+        }:
+            app.status_var.set(reason)
 
 
 def show_progress_with_cancel(

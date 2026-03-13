@@ -7,6 +7,7 @@ from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 import customtkinter
 
+from karuku_resizer.ui_text_presenter import truncate_middle
 
 @dataclass(frozen=True)
 class FileListState:
@@ -130,11 +131,12 @@ def build_file_list_panel(
 
 def file_button_label(job: Any) -> str:
     """Build a human-readable list label for a job."""
+    base_name = truncate_middle(getattr(job.path, "name", str(job)), max_length=34)
     if getattr(job, "last_process_state", "") == "failed":
-        return f"［失敗］ {getattr(job.path, 'name', str(job))}"
+        return f"［失敗］ {base_name}"
     if getattr(job, "last_process_state", "") == "success":
-        return f"［完了］ {getattr(job.path, 'name', str(job))}"
-    return getattr(job.path, "name", str(job))
+        return f"［完了］ {base_name}"
+    return base_name
 
 
 def file_passes_filter(job: Any, filter_label: str, file_filter_label_to_id: Mapping[str, str]) -> bool:

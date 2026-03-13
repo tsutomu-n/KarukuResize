@@ -1226,12 +1226,12 @@ def bootstrap_save_current(app: Any) -> None:
             if resized_for_save is not None:
                 job.resized = resized_for_save
             if result.dry_run:
-                msg = f"ドライラン完了: {result.output_path.name} を生成予定です"
+                msg = f"✅ ドライラン完了: {result.output_path.name} を生成予定です"
             else:
-                msg = f"{result.output_path.name} を保存しました"
+                msg = f"✅ {result.output_path.name} を保存しました"
             if attempts > 1:
                 msg = f"{msg}（再試行後に成功）"
-            msg = f"{msg}\n{build_exif_status_text(result)}"
+            detail_line = build_exif_status_text(result)
             if (
                 app.current_index is not None
                 and app.current_index < len(app.jobs)
@@ -1239,8 +1239,26 @@ def bootstrap_save_current(app: Any) -> None:
                 app._draw_previews(app.jobs[app.current_index])
             app._register_recent_setting_from_current()
             app._populate_listbox()
-            app.status_var.set(msg)
-            messagebox.showinfo("保存結果", msg)
+            status_text = f"{msg} / {detail_line}"
+            app.status_var.set(status_text)
+            previous_after_id = getattr(app, "_status_flash_after_id", None)
+            if previous_after_id is not None:
+                try:
+                    app.after_cancel(previous_after_id)
+                except Exception:
+                    pass
+
+            def _restore_status_hint() -> None:
+                try:
+                    if not app.winfo_exists():
+                        return
+                except Exception:
+                    return
+                if str(app.status_var.get()).strip() == status_text:
+                    app._refresh_status_indicators()
+                app._status_flash_after_id = None
+
+            app._status_flash_after_id = app.after(3000, _restore_status_hint)
 
         app.after(0, complete)
 

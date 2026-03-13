@@ -125,6 +125,18 @@ def build_action_hint_text(*, is_loading_files: bool, is_processing: bool, has_j
     return "準備完了です。プレビュー・保存を実行できます。"
 
 
+def truncate_middle(filename: str, max_length: int = 28) -> str:
+    """Keep both head and tail of a filename while shortening the middle."""
+    if len(filename) <= max_length:
+        return filename
+    keep_len = max_length - 3
+    if keep_len <= 1:
+        return filename[:max_length]
+    left_len = keep_len // 2 + (keep_len % 2)
+    right_len = keep_len // 2
+    return f"{filename[:left_len]}...{filename[-right_len:]}"
+
+
 def build_trim_preview_text(value: Optional[str], max_len: int = 40) -> str:
     if value is None:
         return ""
