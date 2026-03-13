@@ -30,6 +30,9 @@ class TopBarWidgets:
     input_group: customtkinter.CTkFrame
     parameter_group: customtkinter.CTkFrame
     output_group: customtkinter.CTkFrame
+    input_content: customtkinter.CTkFrame
+    parameter_content: customtkinter.CTkFrame
+    output_content: customtkinter.CTkFrame
     select_button: customtkinter.CTkButton
     help_button: customtkinter.CTkButton
     settings_button: customtkinter.CTkButton
@@ -158,7 +161,25 @@ class TopBarController:
         )
         topbar_widths = self._scale_topbar_widths("normal")
 
-        output_group = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        def _build_group(parent_frame: Any, title: str) -> tuple[customtkinter.CTkFrame, customtkinter.CTkFrame]:
+            group = customtkinter.CTkFrame(
+                parent_frame,
+                fg_color=self._colors["bg_primary"],
+                border_width=1,
+                border_color=self._colors["border_light"],
+                corner_radius=10,
+            )
+            customtkinter.CTkLabel(
+                group,
+                text=title,
+                font=self._font_small,
+                text_color=self._colors["text_tertiary"],
+            ).pack(anchor="w", padx=self._scale_px(10), pady=(self._scale_px(4), 0))
+            content = customtkinter.CTkFrame(group, fg_color="transparent")
+            content.pack(fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(4)))
+            return group, content
+
+        output_group, output_content = _build_group(top_row_primary, "実行")
         output_group.pack(side="right")
 
         output_separator = customtkinter.CTkFrame(
@@ -168,7 +189,7 @@ class TopBarController:
         )
         output_separator.pack(side="right", fill="y", padx=self._scale_px(8), pady=self._scale_px(4))
 
-        parameter_group = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        parameter_group, parameter_content = _build_group(top_row_primary, "設定")
         parameter_group.pack(side="right")
 
         parameter_separator = customtkinter.CTkFrame(
@@ -178,11 +199,11 @@ class TopBarController:
         )
         parameter_separator.pack(side="left", fill="y", padx=self._scale_px(8), pady=self._scale_px(4))
 
-        input_group = customtkinter.CTkFrame(top_row_primary, fg_color="transparent")
+        input_group, input_content = _build_group(top_row_primary, "入力")
         input_group.pack(side="left")
 
         select_button = customtkinter.CTkButton(
-            input_group,
+            input_content,
             text="画像を選択",
             image=self._icon_folder,
             compound="left",
@@ -193,12 +214,12 @@ class TopBarController:
         self._style_secondary_button(select_button)
         select_button.pack(side="left", padx=(0, self._scale_px(6)), pady=self._scale_px(1))
 
-        size_controls_frame = customtkinter.CTkFrame(input_group, fg_color="transparent")
+        size_controls_frame = customtkinter.CTkFrame(input_content, fg_color="transparent")
         size_controls_frame.pack(side="left", padx=(0, self._scale_px(8)))
         setup_entry_widgets(size_controls_frame)
 
         settings_button = customtkinter.CTkButton(
-            parameter_group,
+            parameter_content,
             text="設定",
             image=self._icon_settings,
             compound="left",
@@ -209,7 +230,7 @@ class TopBarController:
         self._style_tertiary_button(settings_button)
         settings_button.pack(side="right", padx=(self._scale_px(4), 0), pady=self._scale_px(1))
         help_button = customtkinter.CTkButton(
-            parameter_group,
+            parameter_content,
             text="使い方",
             image=self._icon_circle_help,
             compound="left",
@@ -220,7 +241,7 @@ class TopBarController:
         self._style_secondary_button(help_button)
 
         preset_manage_button = customtkinter.CTkButton(
-            parameter_group,
+            parameter_content,
             text="管理",
             width=topbar_widths["preset_action"],
             command=self._on_preset_manage,
@@ -228,7 +249,7 @@ class TopBarController:
         )
         self._style_tertiary_button(preset_manage_button)
         preset_menu = customtkinter.CTkOptionMenu(
-            parameter_group,
+            parameter_content,
             variable=self._preset_var,
             values=[self._preset_var.get()],
             width=topbar_widths["preset_menu"],
@@ -244,7 +265,7 @@ class TopBarController:
         preset_menu.pack(side="right", padx=(0, 0), pady=self._scale_px(1))
         preset_manage_button.pack(side="right", padx=(self._scale_px(2), self._scale_px(2)), pady=self._scale_px(1))
         preset_caption_label = customtkinter.CTkLabel(
-            parameter_group,
+            parameter_content,
             text="プリセット",
             font=self._font_small,
             text_color=self._colors["text_secondary"],
@@ -253,7 +274,7 @@ class TopBarController:
 
         # Mode segmented button is built inside `setup_entry_widgets`
         preview_button = customtkinter.CTkButton(
-            output_group,
+            output_content,
             text="プレビュー",
             image=self._icon_refresh,
             compound="left",
@@ -264,7 +285,7 @@ class TopBarController:
         self._style_secondary_button(preview_button)
         preview_button.pack(side="left", padx=(0, self._scale_px(8)), pady=self._scale_px(2))
         save_button = customtkinter.CTkButton(
-            output_group,
+            output_content,
             text="保存",
             image=self._icon_save,
             compound="left",
@@ -275,7 +296,7 @@ class TopBarController:
         self._style_primary_button(save_button)
         save_button.pack(side="left", pady=self._scale_px(2))
         batch_button = customtkinter.CTkButton(
-            output_group,
+            output_content,
             image=self._icon_folder_open,
             compound="left",
             text=self._batch_button_text_for_density(self._get_topbar_density()),
@@ -287,7 +308,7 @@ class TopBarController:
         batch_button.pack(side="left", padx=self._scale_px(8), pady=self._scale_px(2))
 
         zoom_cb = customtkinter.CTkComboBox(
-            output_group,
+            output_content,
             variable=self._zoom_var,
             values=["画面に合わせる", "100%", "200%", "300%"],
             width=topbar_widths["zoom"],
@@ -314,6 +335,9 @@ class TopBarController:
             input_group=input_group,
             parameter_group=parameter_group,
             output_group=output_group,
+            input_content=input_content,
+            parameter_content=parameter_content,
+            output_content=output_content,
             select_button=select_button,
             help_button=help_button,
             settings_button=settings_button,
