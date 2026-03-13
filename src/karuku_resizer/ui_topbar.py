@@ -164,9 +164,8 @@ class TopBarController:
         def _build_group(parent_frame: Any, title: str) -> tuple[customtkinter.CTkFrame, customtkinter.CTkFrame]:
             group = customtkinter.CTkFrame(
                 parent_frame,
-                fg_color=self._colors["bg_primary"],
-                border_width=1,
-                border_color=self._colors["border_light"],
+                fg_color="transparent",
+                border_width=0,
                 corner_radius=10,
             )
             customtkinter.CTkLabel(
@@ -174,9 +173,9 @@ class TopBarController:
                 text=title,
                 font=self._font_small,
                 text_color=self._colors["text_tertiary"],
-            ).pack(anchor="w", padx=self._scale_px(10), pady=(self._scale_px(4), 0))
+            ).pack(anchor="w", padx=self._scale_px(4), pady=(self._scale_px(2), 0))
             content = customtkinter.CTkFrame(group, fg_color="transparent")
-            content.pack(fill="x", padx=self._scale_px(8), pady=(0, self._scale_px(4)))
+            content.pack(fill="x", padx=self._scale_px(2), pady=(0, self._scale_px(2)))
             return group, content
 
         output_group, output_content = _build_group(top_row_primary, "実行")
