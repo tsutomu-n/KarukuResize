@@ -1755,7 +1755,7 @@ class ResizeApp(customtkinter.CTk):
         self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
         if self._topbar_controller is not None:
-            self._topbar_controller.apply_density(self._topbar_density_window_width(max(self.winfo_width(), MIN_WINDOW_WIDTH)))
+            self._topbar_controller.apply_density(max(self.winfo_width(), MIN_WINDOW_WIDTH))
         self._refresh_recent_settings_buttons()
         self._update_empty_state_hint()
         self._update_settings_summary()
@@ -3344,6 +3344,10 @@ class ResizeApp(customtkinter.CTk):
                 clear_request_tracking()
                 return
 
+            assert precise_options is not None
+            assert precise_cache_key is not None
+            precise_cache_key_value = precise_cache_key
+
             time.sleep(PREVIEW_HIGH_PRECISION_DELAY_MS / 1000)
             if is_stale():
                 clear_request_tracking()
@@ -3364,7 +3368,7 @@ class ResizeApp(customtkinter.CTk):
                 if self.current_index is None or self.current_index >= len(self.jobs):
                     return
                 if precise_kb is not None and precise_kb > 0:
-                    job.preview_size_cache[precise_cache_key] = (precise_kb, False)
+                    job.preview_size_cache[precise_cache_key_value] = (precise_kb, False)
                     reduction_text = self._format_preview_size_with_reduction(
                         job.source_size_bytes,
                         precise_kb,
