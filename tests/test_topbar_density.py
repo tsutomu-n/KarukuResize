@@ -13,7 +13,7 @@ def test_topbar_density_switches_to_normal_above_threshold() -> None:
 
 def test_batch_button_text_changes_with_density() -> None:
     assert ResizeApp._batch_button_text_for_density("normal") == "一括適用保存"
-    assert ResizeApp._batch_button_text_for_density("compact") == "一括適用保存"
+    assert ResizeApp._batch_button_text_for_density("compact") == "一括保存"
 
 
 def test_topbar_density_accounts_for_scaled_ui_density_1366_baseline() -> None:
@@ -22,4 +22,5 @@ def test_topbar_density_accounts_for_scaled_ui_density_1366_baseline() -> None:
     compact_width = app._topbar_density_window_width(1537)
     assert compact_width == 1366
     assert ResizeApp._topbar_density_for_width(compact_width) == "compact"
-    assert ResizeApp._topbar_density_for_width(app._topbar_density_window_width(1538)) == "normal"
+    assert app._topbar_density_window_width(1577) == 1401
+    assert ResizeApp._topbar_density_for_width(app._topbar_density_window_width(1577)) == "normal"

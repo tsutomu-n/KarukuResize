@@ -19,11 +19,11 @@ def test_density_switches_to_normal_above_threshold() -> None:
 
 def test_density_respects_ui_scale_correction() -> None:
     assert effective_topbar_window_width(1537, 1.125) == 1366
-    assert topbar_density_for_width(1538, 1.125) == "normal"
+    assert topbar_density_for_width(1576, 1.125) == "normal"
 
 
 def test_batch_label_is_compact_and_normal() -> None:
-    assert topbar_batch_button_text("compact") == "一括適用保存"
+    assert topbar_batch_button_text("compact") == "一括保存"
     assert topbar_batch_button_text("normal") == "一括適用保存"
 
 

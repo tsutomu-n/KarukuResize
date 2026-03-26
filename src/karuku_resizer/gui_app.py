@@ -58,6 +58,7 @@ from karuku_resizer.image_save_pipeline import (
     SaveResult,
     build_encoder_save_kwargs,
     destination_with_extension,
+    estimate_output_size_kb,
     normalize_avif_speed,
     normalize_quality,
     normalize_webp_method,
@@ -253,7 +254,9 @@ RESIZE_PREVIEW_DEBOUNCE_MS = 80
 ZOOM_PREVIEW_DEBOUNCE_MS = 50
 PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS = 800_000
 PREVIEW_ESTIMATION_FAST_QUALITY = 75
-PREVIEW_ESTIMATION_TIMEOUT_MS = 1500
+PREVIEW_ESTIMATION_TIMEOUT_MS = 2200
+PREVIEW_ESTIMATION_RETRY_DELAY_MS = 180
+PREVIEW_HIGH_PRECISION_DELAY_MS = 320
 QUALITY_VALUES = [str(v) for v in range(5, 101, 5)]
 WEBP_METHOD_VALUES = [str(v) for v in range(0, 7)]
 AVIF_SPEED_VALUES = [str(v) for v in range(0, 11)]
@@ -450,6 +453,14 @@ class BatchSaveStats:
         self.failed_details.append(f"{file_name}: {detail}")
         if file_path is not None:
             self.failed_paths.append(file_path)
+
+
+@dataclass(frozen=True)
+class ResizePlan:
+    mode: str
+    ratio_percent: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 DEBUG = False
@@ -1838,6 +1849,10 @@ class ResizeApp(customtkinter.CTk):
         return num
 
     @staticmethod
+    def _clamp_resized_dimension(value: float) -> int:
+        return max(1, int(value))
+
+    @staticmethod
     def _parse_positive_text(value: str, min_val: int = 1) -> Optional[int]:
         s = value.strip()
         if not s:
@@ -1851,36 +1866,67 @@ class ResizeApp(customtkinter.CTk):
         return num
 
     def _snapshot_resize_target(self, source_size: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        resize_plan = self._snapshot_resize_plan()
+        return self._resolve_target_from_resize_plan(source_size, resize_plan)
+
+    def _snapshot_resize_plan(self) -> ResizePlan:
         mode = self.mode_var.get()
+        if mode == "ratio":
+            return ResizePlan(
+                mode=mode,
+                ratio_percent=self._parse_positive_text(self.pct_var.get()),
+            )
+        if mode == "width":
+            return ResizePlan(
+                mode=mode,
+                width=self._parse_positive_text(self.entry_w_single.get()),
+            )
+        if mode == "height":
+            return ResizePlan(
+                mode=mode,
+                height=self._parse_positive_text(self.entry_h_single.get()),
+            )
+        return ResizePlan(
+            mode=mode,
+            width=self._parse_positive_text(self.entry_w_fixed.get()),
+            height=self._parse_positive_text(self.entry_h_fixed.get()),
+        )
+
+    @staticmethod
+    def _resolve_target_from_resize_plan(
+        source_size: Tuple[int, int],
+        resize_plan: ResizePlan,
+    ) -> Optional[Tuple[int, int]]:
         ow, oh = source_size
         if ow <= 0 or oh <= 0:
             return None
 
-        if mode == "ratio":
-            pct = self._parse_positive_text(self.pct_var.get())
+        if resize_plan.mode == "ratio":
+            pct = resize_plan.ratio_percent
             if pct is None:
                 return None
-            return int(ow * pct / 100), int(oh * pct / 100)
+            return (
+                ResizeApp._clamp_resized_dimension(ow * pct / 100),
+                ResizeApp._clamp_resized_dimension(oh * pct / 100),
+            )
 
-        if mode == "width":
-            w = self._parse_positive_text(self.entry_w_single.get())
-            if w is None:
+        if resize_plan.mode == "width":
+            width = resize_plan.width
+            if width is None:
                 return None
-            return w, int(oh * w / ow)
+            return width, ResizeApp._clamp_resized_dimension(oh * width / ow)
 
-        if mode == "height":
-            h = self._parse_positive_text(self.entry_h_single.get())
-            if h is None:
+        if resize_plan.mode == "height":
+            height = resize_plan.height
+            if height is None:
                 return None
-            return int(ow * h / oh), h
+            return ResizeApp._clamp_resized_dimension(ow * height / oh), height
 
-        w = self._parse_positive_text(self.entry_w_fixed.get())
-        if w is None:
+        width = resize_plan.width
+        height = resize_plan.height
+        if width is None or height is None:
             return None
-        h = self._parse_positive_text(self.entry_h_fixed.get())
-        if h is None:
-            return None
-        return w, h
+        return width, height
 
     @staticmethod
     def _parse_int_or_default(value: str, default: int) -> int:
@@ -1894,6 +1940,29 @@ class ResizeApp(customtkinter.CTk):
         webp_method = normalize_webp_method(self._parse_int_or_default(self.webp_method_var.get(), 6))
         avif_speed = normalize_avif_speed(self._parse_int_or_default(self.avif_speed_var.get(), 6))
         return quality, webp_method, avif_speed, bool(self.webp_lossless_var.get())
+
+    def _snapshot_preview_save_options(self, output_format: SaveFormat) -> Optional[SaveOptions]:
+        quality, webp_method, avif_speed, webp_lossless = self._snapshot_encoder_settings()
+        exif_mode = EXIF_LABEL_TO_ID.get(self.exif_mode_var.get(), "keep")
+        exif_edit_values = (
+            self._current_exif_edit_values(show_warning=False, strict=True)
+            if exif_mode == "edit"
+            else None
+        )
+        if exif_mode == "edit" and exif_edit_values is None:
+            return None
+        return SaveOptions(
+            output_format=output_format,
+            quality=quality,
+            dry_run=False,
+            exif_mode=cast(Any, exif_mode),
+            remove_gps=bool(self.remove_gps_var.get()),
+            exif_edit=exif_edit_values if exif_mode == "edit" else None,
+            verbose=False,
+            webp_method=webp_method,
+            webp_lossless=webp_lossless,
+            avif_speed=avif_speed,
+        )
 
     # ------------------------------------------------------------------
     # Helper: summarize current resize settings for confirmation dialogs
@@ -1935,6 +2004,20 @@ class ResizeApp(customtkinter.CTk):
             source_image=source_image,
             available_formats=self.available_formats,
         )
+
+    def _resolve_output_format_for_image_with_selection(
+        self,
+        source_image: Image.Image,
+        selected_output_format_id: str,
+    ) -> SaveFormat:
+        return resolve_output_format(
+            selected=selected_output_format_id,
+            source_image=source_image,
+            available_formats=self.available_formats,
+        )
+
+    def _snapshot_output_format_id(self) -> str:
+        return FORMAT_LABEL_TO_ID.get(self.output_format_var.get(), "auto")
 
     def _current_quality(self) -> int:
         try:
@@ -2693,17 +2776,20 @@ class ResizeApp(customtkinter.CTk):
             pct = self._parse_positive(self.ratio_entry)
             if pct is None:
                 return None
-            return int(ow * pct / 100), int(oh * pct / 100)
+            return (
+                self._clamp_resized_dimension(ow * pct / 100),
+                self._clamp_resized_dimension(oh * pct / 100),
+            )
         if mode == "width":
             w = self._parse_positive(self.entry_w_single)
             if w is None:
                 return None
-            return w, int(oh * w / ow)
+            return w, self._clamp_resized_dimension(oh * w / ow)
         if mode == "height":
             h = self._parse_positive(self.entry_h_single)
             if h is None:
                 return None
-            return int(ow * h / oh), h
+            return self._clamp_resized_dimension(ow * h / oh), h
         # fixed
         w = self._parse_positive(self.entry_w_fixed)
         if w is None:
@@ -2733,7 +2819,13 @@ class ResizeApp(customtkinter.CTk):
             return None
         return img.resize((tw, th), Resampling.LANCZOS)
 
-    def _resolve_batch_reference(self) -> Optional[Tuple[ImageJob, Tuple[int, int], SaveFormat]]:
+    def _resize_image_with_plan(self, img: Image.Image, resize_plan: ResizePlan) -> Optional[Image.Image]:
+        target_size = self._resolve_target_from_resize_plan(img.size, resize_plan)
+        if not target_size:
+            return None
+        return self._resize_image_to_target(img, target_size)
+
+    def _resolve_batch_reference(self) -> Optional[Tuple[ImageJob, Tuple[int, int], ResizePlan, str, SaveFormat]]:
         """Resolve selected image as batch reference and freeze output params."""
         if not self.jobs:
             return None
@@ -2743,7 +2835,8 @@ class ResizeApp(customtkinter.CTk):
             ref_index = 0
         reference_job = self.jobs[ref_index]
 
-        target_size = self._get_target(reference_job.image.size)
+        resize_plan = self._snapshot_resize_plan()
+        target_size = self._resolve_target_from_resize_plan(reference_job.image.size, resize_plan)
         if not target_size:
             self.status_var.set("基準画像のリサイズ設定が無効です")
             return None
@@ -2751,8 +2844,12 @@ class ResizeApp(customtkinter.CTk):
             self.status_var.set("基準画像のリサイズ後サイズが0以下になります")
             return None
 
-        output_format = self._resolve_output_format_for_image(reference_job.image)
-        return reference_job, target_size, output_format
+        output_format_id = self._snapshot_output_format_id()
+        output_format = self._resolve_output_format_for_image_with_selection(
+            reference_job.image,
+            output_format_id,
+        )
+        return reference_job, target_size, resize_plan, output_format_id, output_format
 
     def _preview_current(self):
         if self.current_index is None:
@@ -2879,6 +2976,8 @@ class ResizeApp(customtkinter.CTk):
         job: ImageJob,
         output_dir: Path,
         reference_target: Tuple[int, int],
+        resize_plan: ResizePlan,
+        output_format_id: str,
         reference_output_format: SaveFormat,
         batch_options: SaveOptions,
         stats: BatchSaveStats,
@@ -2888,6 +2987,8 @@ class ResizeApp(customtkinter.CTk):
             job=job,
             output_dir=output_dir,
             reference_target=reference_target,
+            resize_plan=resize_plan,
+            output_format_id=output_format_id,
             reference_output_format=reference_output_format,
             batch_options=batch_options,
             stats=stats,
@@ -2900,6 +3001,8 @@ class ResizeApp(customtkinter.CTk):
         self,
         output_dir: Path,
         reference_target: Tuple[int, int],
+        resize_plan: ResizePlan,
+        output_format_id: str,
         reference_output_format: SaveFormat,
         batch_options: SaveOptions,
         target_jobs: Optional[List[ImageJob]] = None,
@@ -2908,6 +3011,8 @@ class ResizeApp(customtkinter.CTk):
             self,
             output_dir=output_dir,
             reference_target=reference_target,
+            resize_plan=resize_plan,
+            output_format_id=output_format_id,
             reference_output_format=reference_output_format,
             batch_options=batch_options,
             target_jobs=target_jobs,
@@ -2980,7 +3085,7 @@ class ResizeApp(customtkinter.CTk):
                     format_label=fmt_label,
                     width=size[0],
                     height=size[1],
-                    size_label="サイズ計算中",
+                    size_label="推定計算中",
                 )
             )
             self.resized_title_label.configure(text=f"リサイズ後 ({self._current_resize_settings_text()})")
@@ -3016,8 +3121,10 @@ class ResizeApp(customtkinter.CTk):
         fmt_label: str,
     ) -> None:
         quality, webp_method, avif_speed, webp_lossless = self._snapshot_encoder_settings()
+        precise_options = self._snapshot_preview_save_options(output_format)
         quality_for_preview = min(quality, PREVIEW_ESTIMATION_FAST_QUALITY)
-        cache_key = (
+        fast_cache_key = (
+            "fast",
             source.width,
             source.height,
             source.mode,
@@ -3027,30 +3134,85 @@ class ResizeApp(customtkinter.CTk):
             avif_speed,
             bool(webp_lossless),
         )
-        cached_entry = job.preview_size_cache.get(cache_key)
-        if cached_entry is not None:
-            cached_kb, _ = cached_entry
-            if cached_kb > 0:
+        precise_cache_key: Optional[Tuple[Any, ...]] = None
+        if precise_options is not None:
+            precise_cache_key = (
+                "precise",
+                source.width,
+                source.height,
+                source.mode,
+                output_format,
+                precise_options.quality,
+                precise_options.webp_method,
+                precise_options.avif_speed,
+                bool(precise_options.webp_lossless),
+                precise_options.exif_mode,
+                bool(precise_options.remove_gps),
+                precise_options.exif_edit.artist if precise_options.exif_edit else "",
+                precise_options.exif_edit.copyright_text if precise_options.exif_edit else "",
+                precise_options.exif_edit.user_comment if precise_options.exif_edit else "",
+                precise_options.exif_edit.datetime_original if precise_options.exif_edit else "",
+            )
+
+        precise_cached_entry = (
+            job.preview_size_cache.get(precise_cache_key)
+            if precise_cache_key is not None
+            else None
+        )
+        if precise_cached_entry is not None:
+            precise_cached_kb, _ = precise_cached_entry
+            if precise_cached_kb > 0:
                 reduction_text = self._format_preview_size_with_reduction(
                     job.source_size_bytes,
-                    cached_kb,
+                    precise_cached_kb,
                 )
                 self.info_resized_var.set(
                     build_resized_preview_info_text(
                         format_label=fmt_label,
                         width=source.width,
                         height=source.height,
-                        size_label=f"{int(cached_kb)}KB",
+                        size_label=f"高精度 {int(precise_cached_kb)}KB",
                         ratio_label=reduction_text,
                     )
                 )
                 return
 
-        self._size_estimation_version += 1
-        version = self._size_estimation_version
-        request_key = (id(job), cache_key)
+        fast_size_label = "推定計算中"
+        fast_ratio_label = "-"
+        fast_cached_kb: Optional[float] = None
+        fast_cached_entry = job.preview_size_cache.get(fast_cache_key)
+        if fast_cached_entry is not None:
+            fast_cached_kb, _ = fast_cached_entry
+            if fast_cached_kb > 0:
+                fast_ratio_label = self._format_preview_size_with_reduction(
+                    job.source_size_bytes,
+                    fast_cached_kb,
+                )
+                fast_size_label = f"推定 {int(fast_cached_kb)}KB"
+
+        initial_size_label = fast_size_label
+        if precise_options is None:
+            initial_size_label = (
+                f"{fast_size_label} / EXIF入力確認"
+                if fast_size_label != "推定計算中"
+                else "EXIF入力確認"
+            )
+
+        self.info_resized_var.set(
+            build_resized_preview_info_text(
+                format_label=fmt_label,
+                width=source.width,
+                height=source.height,
+                size_label=initial_size_label,
+                ratio_label=fast_ratio_label,
+            )
+        )
+
+        request_key = (id(job), fast_cache_key, precise_cache_key)
         if self._size_estimation_inflight_key == request_key:
             return
+        self._size_estimation_version += 1
+        version = self._size_estimation_version
         self._size_estimation_inflight_key = request_key
         if self._size_estimation_timeout_id is not None:
             try:
@@ -3058,14 +3220,11 @@ class ResizeApp(customtkinter.CTk):
             except Exception:
                 pass
             self._size_estimation_timeout_id = None
-        self.info_resized_var.set(
-            build_resized_preview_info_text(
-                format_label=fmt_label,
-                width=source.width,
-                height=source.height,
-                size_label="サイズ計算中",
-            )
-        )
+
+        status_state = {
+            "fast_size_label": fast_size_label,
+            "fast_ratio_label": fast_ratio_label,
+        }
 
         def mark_timeout() -> None:
             if self._size_estimation_version != version:
@@ -3074,104 +3233,169 @@ class ResizeApp(customtkinter.CTk):
                 return
             if self.current_index is None or self.current_index >= len(self.jobs):
                 return
+            size_label = (
+                f"{status_state['fast_size_label']} / 高精度計算中"
+                if status_state["fast_size_label"] not in {"推定計算中", "推定計算不可"}
+                else "高精度計算中"
+            )
             self.info_resized_var.set(
                 build_resized_preview_info_text(
                     format_label=fmt_label,
                     width=source.width,
                     height=source.height,
-                    size_label="サイズ計算中（省略）",
+                    size_label=size_label,
+                    ratio_label=status_state["fast_ratio_label"],
                 )
             )
-            self._size_estimation_inflight_key = None
             self._size_estimation_timeout_id = None
 
-        self._size_estimation_timeout_id = self.after(
-            PREVIEW_ESTIMATION_TIMEOUT_MS,
-            mark_timeout,
-        )
+        precise_enabled = precise_options is not None
+        if precise_enabled:
+            self._size_estimation_timeout_id = self.after(
+                PREVIEW_ESTIMATION_TIMEOUT_MS,
+                mark_timeout,
+            )
 
         def worker() -> None:
-            save_img = source
-            estimated = False
-            sample_scale = 1.0
-            source_pixels = source.width * source.height
-            if source_pixels > PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS:
-                estimated = True
-                sample_scale = math.sqrt(PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS / source_pixels)
-                sample_size = (
-                    max(1, int(source.width * sample_scale)),
-                    max(1, int(source.height * sample_scale)),
-                )
-                save_img = source.resize(sample_size, Image.Resampling.LANCZOS)
-            if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
-                save_img = save_img.convert("RGB")
-            preview_kwargs = build_encoder_save_kwargs(
-                output_format=output_format,
-                quality=quality_for_preview,
-                webp_method=webp_method,
-                webp_lossless=webp_lossless,
-                avif_speed=avif_speed,
-                for_preview=True,
-            )
-            try:
-                with io.BytesIO() as bio:
-                    save_img.save(bio, **cast(Dict[str, Any], preview_kwargs))
-                    kb = len(bio.getvalue()) / 1024
-                if estimated and sample_scale > 0:
-                    sample_area = sample_scale * sample_scale
-                    if sample_area > 0:
-                        kb = kb / sample_area
-            except Exception:
-                kb = 0.0
+            def is_stale() -> bool:
+                return version != self._size_estimation_version
 
-            if version != self._size_estimation_version:
+            def clear_request_tracking() -> None:
                 if self._size_estimation_inflight_key == request_key:
                     self._size_estimation_inflight_key = None
-                if self._size_estimation_timeout_id is not None:
+
+            fast_kb = fast_cached_kb or 0.0
+            fast_estimated = False
+
+            if fast_cached_kb is None:
+                save_img = source
+                sample_scale = 1.0
+                source_pixels = source.width * source.height
+                if source_pixels > PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS:
+                    fast_estimated = True
+                    sample_scale = math.sqrt(PREVIEW_ESTIMATION_SAMPLE_MAX_PIXELS / source_pixels)
+                    sample_size = (
+                        max(1, int(source.width * sample_scale)),
+                        max(1, int(source.height * sample_scale)),
+                    )
+                    save_img = source.resize(sample_size, Image.Resampling.LANCZOS)
+                if output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
+                    save_img = save_img.convert("RGB")
+                preview_kwargs = build_encoder_save_kwargs(
+                    output_format=output_format,
+                    quality=quality_for_preview,
+                    webp_method=webp_method,
+                    webp_lossless=webp_lossless,
+                    avif_speed=avif_speed,
+                    for_preview=True,
+                )
+                for attempt in range(2):
                     try:
-                        self.after_cancel(self._size_estimation_timeout_id)
+                        with io.BytesIO() as bio:
+                            save_img.save(bio, **cast(Dict[str, Any], preview_kwargs))
+                            fast_kb = len(bio.getvalue()) / 1024
+                        if fast_estimated and sample_scale > 0:
+                            sample_area = sample_scale * sample_scale
+                            if sample_area > 0:
+                                fast_kb = fast_kb / sample_area
+                        break
                     except Exception:
-                        pass
-                    self._size_estimation_timeout_id = None
+                        fast_kb = 0.0
+                        if attempt == 0:
+                            time.sleep(PREVIEW_ESTIMATION_RETRY_DELAY_MS / 1000)
+
+            if is_stale():
+                clear_request_tracking()
                 return
 
-            def apply() -> None:
+            if fast_cached_kb is None and fast_kb > 0:
+                def apply_fast() -> None:
+                    if version != self._size_estimation_version:
+                        return
+                    if self.current_index is None or self.current_index >= len(self.jobs):
+                        return
+                    job.preview_size_cache[fast_cache_key] = (fast_kb, fast_estimated)
+                    reduction_text = self._format_preview_size_with_reduction(
+                        job.source_size_bytes,
+                        fast_kb,
+                    )
+                    status_state["fast_size_label"] = f"推定 {int(fast_kb)}KB"
+                    status_state["fast_ratio_label"] = reduction_text
+                    size_label = status_state["fast_size_label"]
+                    if not precise_enabled:
+                        size_label = f"{size_label} / EXIF入力確認"
+                    self.info_resized_var.set(
+                        build_resized_preview_info_text(
+                            format_label=fmt_label,
+                            width=source.width,
+                            height=source.height,
+                            size_label=size_label,
+                            ratio_label=reduction_text,
+                        )
+                    )
+
+                self.after(0, apply_fast)
+
+            if is_stale():
+                clear_request_tracking()
+                return
+
+            if not precise_enabled:
+                clear_request_tracking()
+                return
+
+            time.sleep(PREVIEW_HIGH_PRECISION_DELAY_MS / 1000)
+            if is_stale():
+                clear_request_tracking()
+                return
+
+            precise_kb = estimate_output_size_kb(
+                source_image=job.image,
+                resized_image=source,
+                options=precise_options,
+            )
+            if is_stale():
+                clear_request_tracking()
+                return
+
+            def apply_precise() -> None:
                 if version != self._size_estimation_version:
                     return
                 if self.current_index is None or self.current_index >= len(self.jobs):
                     return
-                if kb > 0:
-                    job.preview_size_cache[cache_key] = (kb, estimated)
-                if self._size_estimation_inflight_key == request_key:
-                    self._size_estimation_inflight_key = None
+                if precise_kb is not None and precise_kb > 0:
+                    job.preview_size_cache[precise_cache_key] = (precise_kb, False)
+                    reduction_text = self._format_preview_size_with_reduction(
+                        job.source_size_bytes,
+                        precise_kb,
+                    )
+                    self.info_resized_var.set(
+                        build_resized_preview_info_text(
+                            format_label=fmt_label,
+                            width=source.width,
+                            height=source.height,
+                            size_label=f"高精度 {int(precise_kb)}KB",
+                            ratio_label=reduction_text,
+                        )
+                    )
+                elif status_state["fast_size_label"] == "推定計算中":
+                    self.info_resized_var.set(
+                        build_resized_preview_info_text(
+                            format_label=fmt_label,
+                            width=source.width,
+                            height=source.height,
+                            size_label="高精度計算失敗",
+                        )
+                    )
+                clear_request_tracking()
                 if self._size_estimation_timeout_id is not None:
                     try:
                         self.after_cancel(self._size_estimation_timeout_id)
                     except Exception:
                         pass
                     self._size_estimation_timeout_id = None
-                reduction_text = self._format_preview_size_with_reduction(job.source_size_bytes, kb)
-                if kb > 0:
-                    self.info_resized_var.set(
-                        build_resized_preview_info_text(
-                            format_label=fmt_label,
-                            width=source.width,
-                            height=source.height,
-                            size_label=f"{int(kb)}KB",
-                            ratio_label=reduction_text,
-                        )
-                    )
-                else:
-                    self.info_resized_var.set(
-                        build_resized_preview_info_text(
-                            format_label=fmt_label,
-                            width=source.width,
-                            height=source.height,
-                            size_label="サイズ計算失敗",
-                        )
-                    )
 
-            self.after(0, apply)
+            self.after(0, apply_precise)
 
         thread = threading.Thread(
             target=worker,

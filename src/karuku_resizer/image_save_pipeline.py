@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
 import os
 import logging
 import time
@@ -340,11 +341,10 @@ def save_image(
     """画像を保存する（必要ならEXIFを付与）。"""
     final_path = destination_with_extension(output_path, options.output_format)
 
-    exif_bytes, exif_meta = _build_exif_bytes(
+    save_img, save_kwargs, exif_meta, exif_requested = _prepare_save_payload(
         source_image=source_image,
-        exif_mode=options.exif_mode,
-        remove_gps=options.remove_gps,
-        edit_values=options.exif_edit,
+        resized_image=resized_image,
+        options=options,
     )
     if options.verbose:
         logger.debug(
@@ -366,35 +366,13 @@ def save_image(
             dry_run=True,
             had_source_exif=exif_meta.had_source_exif,
             exif_requested=exif_meta.exif_requested,
-            exif_attached=exif_bytes is not None,
+            exif_attached="exif" in save_kwargs,
             exif_skipped_reason=exif_meta.exif_skipped_reason,
             gps_removed=exif_meta.gps_removed,
             edited_fields=exif_meta.edited_fields,
             skipped_reason="dry-run",
         )
-
-    save_img = resized_image
-    save_kwargs = build_encoder_save_kwargs(
-        output_format=options.output_format,
-        quality=options.quality,
-        webp_method=options.webp_method,
-        webp_lossless=options.webp_lossless,
-        avif_speed=options.avif_speed,
-    )
     write_target = _normalize_windows_long_path(final_path)
-
-    if options.output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
-        # 透過を持つ画像は白背景へ合成して保存する
-        rgba = save_img.convert("RGBA")
-        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-        background.alpha_composite(rgba)
-        save_img = background.convert("RGB")
-    elif options.output_format == "jpeg" and save_img.mode not in {"RGB", "L"}:
-        save_img = save_img.convert("RGB")
-
-    exif_requested = bool(exif_bytes is not None)
-    if exif_bytes is not None and options.output_format in {"jpeg", "png", "webp", "avif"}:
-        save_kwargs["exif"] = exif_bytes
 
     # EXIF付与に失敗した場合は、メタデータなし保存へフォールバックする。
     try:
@@ -460,6 +438,36 @@ def save_image(
             gps_removed=exif_meta.gps_removed,
             edited_fields=exif_meta.edited_fields,
         )
+
+
+def estimate_output_size_kb(
+    source_image: Image.Image,
+    resized_image: Image.Image,
+    options: SaveOptions,
+) -> Optional[float]:
+    """実保存条件に近い設定で、出力サイズをメモリ上で見積もる。"""
+    save_img, save_kwargs, _exif_meta, _exif_requested = _prepare_save_payload(
+        source_image=source_image,
+        resized_image=resized_image,
+        options=options,
+    )
+
+    try:
+        with io.BytesIO() as bio:
+            save_img.save(bio, **save_kwargs)
+            return len(bio.getvalue()) / 1024
+    except Exception:
+        if "exif" not in save_kwargs:
+            return None
+
+    save_kwargs_without_exif = dict(save_kwargs)
+    save_kwargs_without_exif.pop("exif", None)
+    try:
+        with io.BytesIO() as bio:
+            save_img.save(bio, **save_kwargs_without_exif)
+            return len(bio.getvalue()) / 1024
+    except Exception:
+        return None
 
 
 def build_encoder_save_kwargs(
@@ -529,6 +537,42 @@ def build_encoder_save_kwargs(
         "quality": normalized_quality,
         "speed": normalize_avif_speed(avif_speed),
     }
+
+
+def _prepare_save_payload(
+    source_image: Image.Image,
+    resized_image: Image.Image,
+    options: SaveOptions,
+) -> tuple[Image.Image, Dict[str, Any], "ExifBuildMeta", bool]:
+    exif_bytes, exif_meta = _build_exif_bytes(
+        source_image=source_image,
+        exif_mode=options.exif_mode,
+        remove_gps=options.remove_gps,
+        edit_values=options.exif_edit,
+    )
+
+    save_img = resized_image
+    save_kwargs = build_encoder_save_kwargs(
+        output_format=options.output_format,
+        quality=options.quality,
+        webp_method=options.webp_method,
+        webp_lossless=options.webp_lossless,
+        avif_speed=options.avif_speed,
+    )
+
+    if options.output_format in {"jpeg", "avif"} and save_img.mode in {"RGBA", "LA", "P"}:
+        rgba = save_img.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        background.alpha_composite(rgba)
+        save_img = background.convert("RGB")
+    elif options.output_format == "jpeg" and save_img.mode not in {"RGB", "L"}:
+        save_img = save_img.convert("RGB")
+
+    exif_requested = bool(exif_bytes is not None)
+    if exif_bytes is not None and options.output_format in {"jpeg", "png", "webp", "avif"}:
+        save_kwargs["exif"] = exif_bytes
+
+    return save_img, save_kwargs, exif_meta, exif_requested
 
 
 @dataclass(frozen=True)

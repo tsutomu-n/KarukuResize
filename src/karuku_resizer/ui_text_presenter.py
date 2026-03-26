@@ -366,7 +366,7 @@ def build_batch_completion_message(
         f"\n失敗: {failed_count}件 / EXIF付与: {exif_applied_count}件 / EXIFフォールバック: {exif_fallback_count}件 / GPS削除: {gps_removed_count}件"
     )
     msg += (
-        f"\n基準: {reference_job_name} / "
+        f"\n基準画像プレビュー: {reference_job_name} / "
         f"{reference_target[0]}x{reference_target[1]} / {reference_format_label}"
     )
     if dry_run:

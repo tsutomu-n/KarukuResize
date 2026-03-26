@@ -6,8 +6,7 @@
   ],
   "extraPaths": ["src"],
   "exclude": [
-    "src/karuku_resizer/resize_core.py",
-    "src/karuku_resizer/gui_app_backup.py"
+    "src/karuku_resizer/resize_core.py"
   ],
   "venvPath": ".",
   "venv": ".venv",

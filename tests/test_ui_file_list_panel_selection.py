@@ -16,6 +16,7 @@ class _FakeButton:
 def _dummy_refs() -> FileListRefs:
     return FileListRefs(
         main_content=object(),  # type: ignore[arg-type]
+        file_list_column=object(),  # type: ignore[arg-type]
         file_list_frame=object(),  # type: ignore[arg-type]
         file_filter_var=object(),  # type: ignore[arg-type]
         file_filter_segment=object(),  # type: ignore[arg-type]

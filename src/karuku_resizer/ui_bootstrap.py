@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 import queue
@@ -1282,13 +1283,13 @@ def bootstrap_confirm_batch_save(
     return messagebox.askokcancel(
         "一括適用保存の確認",
         f"基準画像: {reference_job.path.name}\n"
-        f"適用サイズ: {reference_target[0]} x {reference_target[1]} px\n"
+        f"基準画像プレビュー: {reference_target[0]} x {reference_target[1]} px\n"
         f"出力形式: {reference_format_label}\n"
         f"モード: {build_batch_run_mode_text(batch_options.dry_run)}\n"
         f"EXIF: {app.exif_mode_var.get()} / GPS削除: {'ON' if app.remove_gps_var.get() else 'OFF'}\n"
         f"保存先: {output_dir}\n"
         f"対象枚数: {len(app.jobs)}枚\n\n"
-        "読み込み済み全画像に同じ設定を適用して処理します。",
+        "読み込み済み全画像に同じリサイズ設定を適用し、各画像の元比率を保って処理します。",
     )
 
 
@@ -1322,23 +1323,31 @@ def bootstrap_process_single_batch_job(
     job: Any,
     output_dir: Path,
     reference_target: Tuple[int, int],
+    resize_plan: Any,
+    output_format_id: str,
     reference_output_format: SaveFormat,
     batch_options: Any,
     stats: Any,
 ) -> None:
     resized_img: Optional[Any] = None
     try:
-        resized_img = app._resize_image_to_target(job.image, reference_target)
+        resized_img = app._resize_image_with_plan(job.image, resize_plan)
         if not resized_img:
             job.last_process_state = "failed"
             job.last_error_detail = "リサイズ失敗"
             stats.record_failure(job.path.name, "リサイズ失敗", file_path=job.path)
             return
 
+        effective_output_format = app._resolve_output_format_for_image_with_selection(
+            job.image,
+            output_format_id,
+        )
+        effective_options = replace(batch_options, output_format=effective_output_format)
+
         out_base = build_unique_batch_base_path(
             output_dir=output_dir,
             stem=job.path.stem,
-            output_format=reference_output_format,
+            output_format=effective_output_format,
             destination_with_extension_func=destination_with_extension,
             dry_run=batch_options.dry_run,
         )
@@ -1346,7 +1355,7 @@ def bootstrap_process_single_batch_job(
             source_image=job.image,
             resized_image=resized_img,
             output_path=out_base,
-            options=batch_options,
+            options=effective_options,
             allow_retry=app._is_pro_mode(),
         )
         if result.success:
@@ -1374,6 +1383,8 @@ def bootstrap_run_batch_save(
     *,
     output_dir: Path,
     reference_target: Tuple[int, int],
+    resize_plan: Any = None,
+    output_format_id: str = "auto",
     reference_output_format: SaveFormat,
     batch_options: Any,
     target_jobs: Optional[List[Any]] = None,
@@ -1411,6 +1422,8 @@ def bootstrap_run_batch_save(
                     job=job,
                     output_dir=output_dir,
                     reference_target=reference_target,
+                    resize_plan=resize_plan,
+                    output_format_id=output_format_id,
                     reference_output_format=reference_output_format,
                     batch_options=batch_options,
                     stats=stats,
@@ -1451,6 +1464,8 @@ def bootstrap_run_batch_save_async(
     *,
     output_dir: Path,
     reference_target: Tuple[int, int],
+    resize_plan: Any,
+    output_format_id: str,
     reference_output_format: SaveFormat,
     batch_options: Any,
     target_jobs: Optional[List[Any]] = None,
@@ -1499,6 +1514,8 @@ def bootstrap_run_batch_save_async(
                         job=job,
                         output_dir=output_dir,
                         reference_target=reference_target,
+                        resize_plan=resize_plan,
+                        output_format_id=output_format_id,
                         reference_output_format=reference_output_format,
                         batch_options=batch_options,
                         stats=stats,
@@ -1660,13 +1677,16 @@ def bootstrap_batch_save(app: Any) -> None:
     if reference is None:
         messagebox.showwarning("設定エラー", "基準画像の設定が無効です")
         return
-    reference_job, reference_target, reference_output_format = reference
-    reference_format_label: str = {
-        "jpeg": "JPEG",
-        "png": "PNG",
-        "webp": "WEBP",
-        "avif": "AVIF",
-    }.get(reference_output_format, str(reference_output_format).upper())
+    reference_job, reference_target, resize_plan, output_format_id, reference_output_format = reference
+    if output_format_id == "auto":
+        reference_format_label = "自動（画像ごと判定）"
+    else:
+        reference_format_label = {
+            "jpeg": "JPEG",
+            "png": "PNG",
+            "webp": "WEBP",
+            "avif": "AVIF",
+        }.get(reference_output_format, str(reference_output_format).upper())
     batch_options = build_batch_save_options(
         app,
         reference_output_format,
@@ -1764,6 +1784,8 @@ def bootstrap_batch_save(app: Any) -> None:
                     app,
                     output_dir=output_dir,
                     reference_target=reference_target,
+                    resize_plan=resize_plan,
+                    output_format_id=output_format_id,
                     reference_output_format=reference_output_format,
                     batch_options=batch_options,
                     target_jobs=retry_jobs,
@@ -1792,6 +1814,8 @@ def bootstrap_batch_save(app: Any) -> None:
         app,
         output_dir=output_dir,
         reference_target=reference_target,
+        resize_plan=resize_plan,
+        output_format_id=output_format_id,
         reference_output_format=reference_output_format,
         batch_options=batch_options,
         on_complete=_handle_batch_result,

@@ -41,6 +41,17 @@ class _FakeWidget:
         return "pack" if self.visible else ""
 
 
+class _FakeVar:
+    def __init__(self, value: str = "") -> None:
+        self.value = value
+
+    def get(self) -> str:
+        return self.value
+
+    def set(self, value: str) -> None:
+        self.value = value
+
+
 def _build_controller(
     *,
     is_pro_mode: bool = True,
@@ -75,8 +86,16 @@ def _build_controller(
     zoom_cb.visible = True
     top_guide_frame = _FakeWidget()
     top_action_guide_label = _FakeWidget()
-    top_action_guide_var = type("Var", (), {"set": lambda self, value: None})()
+    top_action_guide_var = _FakeVar()
     top_row_primary = _FakeWidget()
+    input_group = _FakeWidget()
+    parameter_group = _FakeWidget()
+    output_group = _FakeWidget()
+    input_content = _FakeWidget()
+    parameter_content = _FakeWidget()
+    output_content = _FakeWidget()
+    preset_var = _FakeVar("プリセット")
+    zoom_var = _FakeVar("100%")
 
     widgets = TopBarWidgets(
         top_container=_FakeWidget(),
@@ -84,6 +103,12 @@ def _build_controller(
         top_action_guide_var=top_action_guide_var,  # type: ignore[arg-type]
         top_action_guide_label=top_action_guide_label,
         top_row_primary=top_row_primary,
+        input_group=input_group,  # type: ignore[arg-type]
+        parameter_group=parameter_group,  # type: ignore[arg-type]
+        output_group=output_group,  # type: ignore[arg-type]
+        input_content=input_content,  # type: ignore[arg-type]
+        parameter_content=parameter_content,  # type: ignore[arg-type]
+        output_content=output_content,  # type: ignore[arg-type]
         select_button=select_button,
         help_button=help_button,
         settings_button=settings_button,
@@ -110,6 +135,7 @@ def _build_controller(
         scale_topbar_widths=scale_topbar_widths,
         style_primary_button=lambda widget: None,
         style_secondary_button=lambda widget: None,
+        style_tertiary_button=lambda widget: None,
         style_card_frame=lambda frame: None,
         font_default=None,
         font_small=None,
@@ -123,8 +149,8 @@ def _build_controller(
         icon_refresh=None,
         icon_save=None,
         icon_folder_open=None,
-        preset_var=None,
-        zoom_var=None,
+        preset_var=preset_var,  # type: ignore[arg-type]
+        zoom_var=zoom_var,  # type: ignore[arg-type]
     )
     controller._widgets = widgets
     return controller, density_log, select_button, {"help": help_button, "settings": settings_button, "preset_manage": preset_manage_button, "preset_menu": preset_menu, "preset_caption": preset_caption_label, "preview": preview_button, "save": save_button, "batch": batch_button, "zoom": zoom_cb, "select": select_button}
@@ -136,7 +162,7 @@ def test_apply_density_updates_width_and_label() -> None:
 
     assert density_log == ["compact"]
     assert widgets["select"].width == 100
-    assert widgets["batch"].text == "一括適用保存"
+    assert widgets["batch"].text == "一括保存"
 
 
 def test_apply_ui_mode_hides_and_shows_non_pro_elements() -> None:

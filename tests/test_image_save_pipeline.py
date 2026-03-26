@@ -7,6 +7,7 @@ from karuku_resizer.image_save_pipeline import (
     SaveOptions,
     build_encoder_save_kwargs,
     destination_with_extension,
+    estimate_output_size_kb,
     normalize_avif_speed,
     normalize_quality,
     normalize_webp_method,
@@ -233,3 +234,27 @@ def test_save_image_dry_run_does_not_write_file(temp_dir):
     assert result.dry_run
     assert result.skipped_reason == "dry-run"
     assert not result.output_path.exists()
+
+
+def test_estimate_output_size_kb_matches_saved_jpeg_size_with_exif(temp_dir):
+    source_path = temp_dir / "source_estimate.jpg"
+    source = _make_source_with_artist(source_path, "Estimate Artist")
+    resized = source.resize((32, 24))
+    options = SaveOptions(output_format="jpeg", quality=85, exif_mode="keep")
+
+    estimated_kb = estimate_output_size_kb(
+        source_image=source,
+        resized_image=resized,
+        options=options,
+    )
+    result = save_image(
+        source_image=source,
+        resized_image=resized,
+        output_path=temp_dir / "estimated_output",
+        options=options,
+    )
+
+    assert estimated_kb is not None
+    assert result.success
+    actual_kb = result.output_path.stat().st_size / 1024
+    assert abs(estimated_kb - actual_kb) < 0.5

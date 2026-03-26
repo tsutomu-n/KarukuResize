@@ -6,7 +6,7 @@ def test_normalize_window_geometry_keeps_valid_value() -> None:
 
 
 def test_normalize_window_geometry_clamps_min_width() -> None:
-    assert ResizeApp._normalize_window_geometry("960x700+40+50") == "1200x700+40+50"
+    assert ResizeApp._normalize_window_geometry("960x700+40+50") == "1120x700+40+50"
 
 
 def test_normalize_window_geometry_falls_back_on_invalid_value() -> None:
