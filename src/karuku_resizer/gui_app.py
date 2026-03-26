@@ -1755,7 +1755,9 @@ class ResizeApp(customtkinter.CTk):
         self._apply_ui_mode()
         self._set_details_panel_visibility(details_expanded)
         if self._topbar_controller is not None:
-            self._topbar_controller.apply_density(max(self.winfo_width(), MIN_WINDOW_WIDTH))
+            self._topbar_controller.apply_density(
+                self._topbar_density_window_width(max(self.winfo_width(), MIN_WINDOW_WIDTH))
+            )
         self._refresh_recent_settings_buttons()
         self._update_empty_state_hint()
         self._update_settings_summary()
