@@ -55,6 +55,7 @@ Thumbs.db
 /input/
 /output/
 /archive/
+/karuku_settings.json
 *.log
 
 # Build artifacts
@@ -77,5 +78,6 @@ KarukuResize.exe
 .memo
 .oldfiles
 .ai_memory/
+.serena/
 # zsh-auto-uvによって追加されました。
 .autoenv_approved

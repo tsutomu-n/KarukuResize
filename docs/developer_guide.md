@@ -56,7 +56,7 @@ uv run pre-commit run --all-files
 
 ## 開発上の注意
 
-1. 旧実装は `archive/legacy_karukuresize/` へ退避済み。現行の実行経路として扱わない
+1. 旧実装は必要に応じてローカルの `archive/` 配下へ退避し、現行の実行経路として扱わない
 2. `resize_core.py` は現状型チェック対象から除外中（`pyrightconfig.json`）
 3. ドキュメント更新時は README のリンク整合を必ず確認する
 4. Windowsビルド仕様を変更した場合は `docs/BUILDING.md` と `docs/WINDOWS_GUIDE.md` を同時更新する
